@@ -1,28 +1,17 @@
-import pygame
-from core.galaxy import Galaxy
-from ui.renderer import draw_galaxy
-from config import SCREEN_WIDTH, SCREEN_HEIGHT
+from ecs.entity_manager import EntityManager
+from ecs.component_manager import ComponentManager
+from ecs.components import Position, Name, Owner
+from ecs.systems import NamePrinterSystem
 
-# Init
-pygame.init()
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Mini Master of Orion")
-clock = pygame.time.Clock()
+entity_mgr = EntityManager()
+component_mgr = ComponentManager()
 
-# Galaxy
-galaxy = Galaxy(num_stars=20, width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
+# Create entity and add components
+e1 = entity_mgr.create_entity()
+component_mgr.add_component(e1, Position(100, 200))
+component_mgr.add_component(e1, Name("Sol"))
+component_mgr.add_component(e1, Owner(empire_id=0))
 
-# Main Loop
-running = True
-while running:
-    screen.fill((0, 0, 20))
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
-    draw_galaxy(screen, galaxy)
-    pygame.display.flip()
-    clock.tick(60)
-
-pygame.quit()
+# Run system
+name_printer = NamePrinterSystem(component_mgr)
+name_printer.run()
