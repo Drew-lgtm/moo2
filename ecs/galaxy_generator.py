@@ -5,12 +5,12 @@ from assets.star_name_pool import load_star_names, get_random_star_name
 STAR_IMAGES = ["white_star.png", "red_star.png", "blue_star.png"]
 STAR_SIZE_RANGE = (20, 40)
 STAR_CLASSES = [
-    {"class": "O", "image": "blue_star.png",  "weight": 0.01},
+    {"class": "O", "image": "green_star.png",  "weight": 0.01}, # should be blue but what the heck
     {"class": "B", "image": "blue_star.png",  "weight": 0.03},
     {"class": "A", "image": "white_star.png", "weight": 0.08},
-    {"class": "F", "image": "white_star.png", "weight": 0.12},
-    {"class": "G", "image": "white_star.png", "weight": 0.20},
-    {"class": "K", "image": "red_star.png",   "weight": 0.25},
+    {"class": "F", "image": "yellow_star.png", "weight": 0.12},
+    {"class": "G", "image": "yellow_star2.png", "weight": 0.20},
+    {"class": "K", "image": "orange_star.png",   "weight": 0.25},
     {"class": "M", "image": "red_star.png",   "weight": 0.31}
 ]
 def choose_star_class():
@@ -78,9 +78,24 @@ class GalaxyGenerator:
         used_names = set()
         available_names = load_star_names()
 
+        MIN_STAR_DISTANCE = 60  # pixels between star centers
+        placed_positions = []
+
         for _ in range(self.num_stars):
-            x = random.randint(50, self.width - 50)
-            y = random.randint(50, self.height - 50)
+            for attempt in range(100):  # Try 100 times to place this star
+                x = random.randint(50, self.width - 50)
+                y = random.randint(50, self.height - 50)
+
+                too_close = any(
+                    (abs(x - px) ** 2 + abs(y - py) ** 2) ** 0.5 < MIN_STAR_DISTANCE
+                    for px, py in placed_positions
+                )
+                if not too_close:
+                    placed_positions.append((x, y))
+                    break
+            else:
+                continue  # If no suitable spot found after 100 tries, skip this star
+
             name = get_random_star_name(used_names, available_names)
             used_names.add(name)
 

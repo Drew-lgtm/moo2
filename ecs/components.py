@@ -21,9 +21,11 @@ class Owner:
 
 @dataclass
 class Planet:
-    type: str      # Planet environment
+    planet_type: str
     size: str
     colonizable: bool
+
 @dataclass
 class Orbiting:
-    star_id: int
+    def __init__(self, star_entity):
+        self.star_entity = star_entity
