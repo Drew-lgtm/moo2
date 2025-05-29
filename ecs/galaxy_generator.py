@@ -1,7 +1,7 @@
 import random
-from ecs.components import Position, Name, Planet, Orbiting, StarVisual
+from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner
 from assets.star_name_pool import load_star_names, get_random_star_name
-from ecs.db import init_db, insert_star, insert_planet, get_stars, get_planets_for_star
+from ecs.db import init_db, insert_star, insert_planet, get_stars, get_planets_for_star, insert_empire
 
 STAR_CLASSES = [
     {"class": "O", "image": "green_star.png",  "weight": 0.01},
@@ -98,3 +98,34 @@ class GalaxyGenerator:
                 planet_entity = self.entity_mgr.create_entity()
                 self.component_mgr.add_component(planet_entity, Planet(planet_type, planet_size, bool(colonizable)))
                 self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
+
+        self.assign_empires(num_empires=2)  # ← this must be inside load_from_db
+
+    def assign_empires(self, num_empires=2):  # ← now inside the class
+        stars = get_stars()
+        assigned = 0
+        for star_row in stars:
+            if assigned >= num_empires:
+                break
+            db_star_id = star_row[0]
+            planets = get_planets_for_star(db_star_id)
+            for p in planets:
+                _, _, planet_type, size, colonizable = p
+                if colonizable:
+                    name = f"Empire {assigned + 1}"
+                    race = "Human"
+                    color = ["blue", "red", "green", "yellow"][assigned % 4]
+                    tech = 1
+                    emp_id = insert_empire(name, race, color, db_star_id, tech)
+
+                    for entity_id, planet in self.component_mgr.get_all(Planet):
+                        orbit = self.component_mgr.get_component(entity_id, Orbiting)
+                        if orbit and self.component_mgr.get_component(orbit.star_entity, Name).value == star_row[1]:
+                            if planet.planet_type == planet_type and planet.size == size:
+                                self.component_mgr.add_component(entity_id, Owner(emp_id))
+                                break
+
+                    empire_entity = self.entity_mgr.create_entity()
+                    self.component_mgr.add_component(empire_entity, Empire(name, race, color, tech, db_star_id))
+                    assigned += 1
+                    break

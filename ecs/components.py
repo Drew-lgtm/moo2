@@ -29,3 +29,11 @@ class Planet:
 class Orbiting:
     def __init__(self, star_entity):
         self.star_entity = star_entity
+
+@dataclass
+class Empire:
+    name: str
+    race_type: str
+    color: str
+    tech_level: int
+    home_star_id: int

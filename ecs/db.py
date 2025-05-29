@@ -28,7 +28,18 @@ def init_db():
             colonizable BOOLEAN,
             FOREIGN KEY(star_id) REFERENCES stars(id)
         );
-        """)
+
+
+        CREATE TABLE IF NOT EXISTS empires (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            race_type TEXT,
+            color TEXT,
+            home_star_id INTEGER,
+            tech_level INTEGER
+        );
+            """) 
+
         conn.commit()
 
 def insert_star(name, x, y, star_class, image, size):
@@ -47,6 +58,15 @@ def insert_planet(star_id, planet_type, size, colonizable):
             INSERT INTO planets (star_id, type, size, colonizable)
             VALUES (?, ?, ?, ?)
         """, (star_id, planet_type, size, colonizable))
+
+def insert_empire(name, race_type, color, home_star_id, tech_level):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO empires (name, race_type, color, home_star_id, tech_level)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, race_type, color, home_star_id, tech_level))
+        return cursor.lastrowid
 
 def get_stars():
     with get_connection() as conn:
