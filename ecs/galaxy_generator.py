@@ -1,7 +1,7 @@
 import random
 from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner
 from assets.star_name_pool import load_star_names, get_random_star_name
-from ecs.db import init_db, insert_star, insert_planet, get_stars, get_planets_for_star, insert_empire
+from ecs.db import init_db, insert_star, insert_planet, get_stars, get_planets_for_star, insert_empire, get_connection
 
 STAR_CLASSES = [
     {"class": "O", "image": "green_star.png",  "weight": 0.01},
@@ -86,46 +86,62 @@ class GalaxyGenerator:
         self.load_from_db()
 
     def load_from_db(self):
-        for star_row in get_stars():
-            db_id, name, x, y, star_class, image, size = star_row
-            star_entity = self.entity_mgr.create_entity()
-            self.component_mgr.add_component(star_entity, Position(x, y))
-            self.component_mgr.add_component(star_entity, Name(name))
-            self.component_mgr.add_component(star_entity, StarVisual(image, size, star_class))
+            for star_row in get_stars():
+                db_id, name, x, y, star_class, image, size = star_row
+                star_entity = self.entity_mgr.create_entity()
+                self.component_mgr.add_component(star_entity, Position(x, y))
+                self.component_mgr.add_component(star_entity, Name(name))
+                self.component_mgr.add_component(star_entity, StarVisual(image, size, star_class))
 
-            for planet_row in get_planets_for_star(db_id):
-                _, _, planet_type, planet_size, colonizable = planet_row
-                planet_entity = self.entity_mgr.create_entity()
-                self.component_mgr.add_component(planet_entity, Planet(planet_type, planet_size, bool(colonizable)))
-                self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
+                for planet_row in get_planets_for_star(db_id):
+                    _, _, planet_type, planet_size, colonizable = planet_row
+                    planet_entity = self.entity_mgr.create_entity()
+                    self.component_mgr.add_component(planet_entity, Planet(planet_type, planet_size, bool(colonizable)))
+                    self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
 
-        self.assign_empires(num_empires=2)  # ← this must be inside load_from_db
+            self.assign_empires(num_empires=2)
 
-    def assign_empires(self, num_empires=2):  # ← now inside the class
+    def assign_empires(self, num_empires=2):  # ← Properly indented
         stars = get_stars()
-        assigned = 0
-        for star_row in stars:
-            if assigned >= num_empires:
+        available_stars = stars[:]
+        random.shuffle(available_stars)
+
+        MIN_START_DISTANCE = 150
+        starts = []
+        for star in available_stars:
+            x, y = star[2], star[3]
+            too_close = any(((x - sx) ** 2 + (y - sy) ** 2) ** 0.5 < MIN_START_DISTANCE for _, _, sx, sy, *_ in starts)
+            if too_close:
+                continue
+            starts.append(star)
+            if len(starts) >= num_empires:
                 break
-            db_star_id = star_row[0]
-            planets = get_planets_for_star(db_star_id)
-            for p in planets:
-                _, _, planet_type, size, colonizable = p
-                if colonizable:
-                    name = f"Empire {assigned + 1}"
-                    race = "Human"
-                    color = ["blue", "red", "green", "yellow"][assigned % 4]
-                    tech = 1
-                    emp_id = insert_empire(name, race, color, db_star_id, tech)
 
-                    for entity_id, planet in self.component_mgr.get_all(Planet):
-                        orbit = self.component_mgr.get_component(entity_id, Orbiting)
-                        if orbit and self.component_mgr.get_component(orbit.star_entity, Name).value == star_row[1]:
-                            if planet.planet_type == planet_type and planet.size == size:
-                                self.component_mgr.add_component(entity_id, Owner(emp_id))
-                                break
+        for idx, star_row in enumerate(starts):
+            db_star_id, name, x, y, *_ = star_row
 
-                    empire_entity = self.entity_mgr.create_entity()
-                    self.component_mgr.add_component(empire_entity, Empire(name, race, color, tech, db_star_id))
-                    assigned += 1
-                    break
+            with get_connection() as conn:
+                conn.execute("DELETE FROM planets WHERE star_id = ?", (db_star_id,))
+                conn.commit()
+
+            insert_planet(db_star_id, "Terran", "Medium", True)
+            for _ in range(random.randint(1, 2)):
+                pt = weighted_choice(PLANET_TYPE_WEIGHTS)
+                ps = weighted_choice(SIZE_WEIGHTS)
+                insert_planet(db_star_id, pt, ps, pt in HABITABLE_TYPES)
+
+            race = "Human"
+            color = ["blue", "red", "green", "yellow", "purple", "orange"][idx % 6]
+            emp_name = f"Empire {idx + 1}"
+            tech = 1
+            emp_id = insert_empire(emp_name, race, color, db_star_id, tech)
+
+            for entity_id, planet in self.component_mgr.get_all(Planet):
+                orbit = self.component_mgr.get_component(entity_id, Orbiting)
+                if orbit and self.component_mgr.get_component(orbit.star_entity, Name).value == name:
+                    if planet.planet_type == "Terran" and planet.size == "Medium":
+                        self.component_mgr.add_component(entity_id, Owner(emp_id))
+                        break
+
+            empire_entity = self.entity_mgr.create_entity()
+            self.component_mgr.add_component(empire_entity, Empire(emp_name, race, color, tech, db_star_id))

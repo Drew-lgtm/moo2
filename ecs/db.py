@@ -38,7 +38,7 @@ def init_db():
             home_star_id INTEGER,
             tech_level INTEGER
         );
-            """) 
+            """)
 
         conn.commit()
 
@@ -59,14 +59,16 @@ def insert_planet(star_id, planet_type, size, colonizable):
             VALUES (?, ?, ?, ?)
         """, (star_id, planet_type, size, colonizable))
 
-def insert_empire(name, race_type, color, home_star_id, tech_level):
+def insert_empire(name, race_type, color, home_star_id, tech_level)-> int:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO empires (name, race_type, color, home_star_id, tech_level)
             VALUES (?, ?, ?, ?, ?)
         """, (name, race_type, color, home_star_id, tech_level))
-        return cursor.lastrowid
+        result = cursor.lastrowid
+        assert result is not None
+        return result
 
 def get_stars():
     with get_connection() as conn:
