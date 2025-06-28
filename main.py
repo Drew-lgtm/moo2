@@ -9,6 +9,8 @@ from ecs.system_view import SystemView
 from ecs.menu import Menu
 from ecs.db import clear_galaxy
 from ecs.save_manager import init_save_slots, save_to_slot, load_from_slot
+from ecs.ui_bar import BottomUIBar
+
 
 
 pygame.init()
@@ -34,26 +36,30 @@ component_mgr = ComponentManager()
 background = load_random_background()
 background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
+ui_bar = BottomUIBar(SCREEN_WIDTH, SCREEN_HEIGHT)
+
 # --- Menus ---
 main_menu = Menu(screen, ["New Game", "Load Game", "Quit"], title="Main Menu")
 pause_menu = Menu(screen, ["Resume", "Save Game", "Quit to Menu"], title="Paused")
 
 def start_new_game():
-    global entity_mgr, component_mgr, galaxy, background
-    clear_galaxy()  # ← reset the DB
+    global entity_mgr, component_mgr, galaxy, background, ui_bar
+    clear_galaxy()
     entity_mgr = EntityManager()
     component_mgr = ComponentManager()
     galaxy = GalaxyGenerator(entity_mgr, component_mgr, SCREEN_WIDTH, SCREEN_HEIGHT, num_stars=40)
     galaxy.generate()
     background = load_random_background()
     background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    ui_bar = BottomUIBar(SCREEN_WIDTH, SCREEN_HEIGHT)
 
 def load_game():
-    global entity_mgr, component_mgr, galaxy
+    global entity_mgr, component_mgr, galaxy, ui_bar
     entity_mgr = EntityManager()
     component_mgr = ComponentManager()
     galaxy = GalaxyGenerator(entity_mgr, component_mgr, SCREEN_WIDTH, SCREEN_HEIGHT)
     galaxy.load_from_db()
+    ui_bar = BottomUIBar(SCREEN_WIDTH, SCREEN_HEIGHT)
 
 def save_game():
     # Placeholder: with hybrid ECS model, DB is already up-to-date each turn/save
@@ -117,6 +123,7 @@ while running:
     if game_state == "running":
         # Input: Escape → close system view, or pause menu
         for event in events:
+            ui_bar.handle_event(event)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if active_system_view:
@@ -163,6 +170,8 @@ while running:
                 text_rect = text_surface.get_rect(center=(pos.x, pos.y + 24))
                 text_rect.clamp_ip(screen.get_rect())
                 screen.blit(text_surface, text_rect)
+
+        ui_bar.draw(screen)
 
         pygame.display.flip()
         clock.tick(60)
