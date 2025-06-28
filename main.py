@@ -16,7 +16,7 @@ from ecs.ui_bar import BottomUIBar
 pygame.init()
 init_save_slots()
 
-SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
+SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 800
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Master Of Galaxy")
 clock = pygame.time.Clock()

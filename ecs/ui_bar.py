@@ -34,8 +34,10 @@ class BottomUIBar:
         num_buttons = len(button_names)
         self.buttons = []
 
+
+# redo:  fix buttons scaling
         button_width = screen_width // num_buttons
-        button_height = 60
+        button_height = screen_height // 6
         y = screen_height - button_height
 
         for i, name in enumerate(button_names):
