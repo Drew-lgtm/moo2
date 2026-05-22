@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# SQLite databases (created at runtime)
+*.db
+*.sqlite
+*.sqlite3
+saves/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
