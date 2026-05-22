@@ -3,13 +3,17 @@ from pathlib import Path
 
 DB_PATH = Path("galaxy.db")
 
+
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
 
 def init_db():
     with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.executescript("""
+        conn.executescript("""
         CREATE TABLE IF NOT EXISTS stars (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
@@ -20,67 +24,81 @@ def init_db():
             size INTEGER
         );
 
-        CREATE TABLE IF NOT EXISTS planets (
-            id INTEGER PRIMARY KEY,
-            star_id INTEGER,
-            type TEXT,
-            size TEXT,
-            colonizable BOOLEAN,
-            FOREIGN KEY(star_id) REFERENCES stars(id)
-        );
-
-
         CREATE TABLE IF NOT EXISTS empires (
             id INTEGER PRIMARY KEY,
             name TEXT,
             race_type TEXT,
             color TEXT,
             home_star_id INTEGER,
-            tech_level INTEGER
+            tech_level INTEGER,
+            FOREIGN KEY(home_star_id) REFERENCES stars(id)
         );
-            """)
 
+        CREATE TABLE IF NOT EXISTS planets (
+            id INTEGER PRIMARY KEY,
+            star_id INTEGER,
+            type TEXT,
+            size TEXT,
+            colonizable BOOLEAN,
+            owner_empire_id INTEGER,
+            FOREIGN KEY(star_id) REFERENCES stars(id),
+            FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
+        );
+        """)
         conn.commit()
 
-def insert_star(name, x, y, star_class, image, size):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO stars (name, x, y, class, image, size)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (name, x, y, star_class, image, size))
-        return cursor.lastrowid
 
-def insert_planet(star_id, planet_type, size, colonizable):
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO planets (star_id, type, size, colonizable)
-            VALUES (?, ?, ?, ?)
-        """, (star_id, planet_type, size, colonizable))
+def insert_star(conn, name, x, y, star_class, image, size):
+    cursor = conn.execute(
+        "INSERT INTO stars (name, x, y, class, image, size) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, x, y, star_class, image, size),
+    )
+    return cursor.lastrowid
 
-def insert_empire(name, race_type, color, home_star_id, tech_level)-> int:
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO empires (name, race_type, color, home_star_id, tech_level)
-            VALUES (?, ?, ?, ?, ?)
-        """, (name, race_type, color, home_star_id, tech_level))
-        result = cursor.lastrowid
-        assert result is not None
-        return result
 
-def get_stars():
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM stars").fetchall()
+def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id=None):
+    cursor = conn.execute(
+        "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id) VALUES (?, ?, ?, ?, ?)",
+        (star_id, planet_type, size, colonizable, owner_empire_id),
+    )
+    return cursor.lastrowid
 
-def get_planets_for_star(star_id):
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM planets WHERE star_id = ?", (star_id,)).fetchall()
+
+def insert_empire(conn, name, race_type, color, home_star_id, tech_level) -> int:
+    cursor = conn.execute(
+        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level) VALUES (?, ?, ?, ?, ?)",
+        (name, race_type, color, home_star_id, tech_level),
+    )
+    result = cursor.lastrowid
+    assert result is not None
+    return result
+
+
+def get_stars(conn=None):
+    if conn is None:
+        with get_connection() as c:
+            return c.execute("SELECT * FROM stars").fetchall()
+    return conn.execute("SELECT * FROM stars").fetchall()
+
+
+def get_planets_for_star(star_id, conn=None):
+    sql = "SELECT * FROM planets WHERE star_id = ?"
+    if conn is None:
+        with get_connection() as c:
+            return c.execute(sql, (star_id,)).fetchall()
+    return conn.execute(sql, (star_id,)).fetchall()
+
+
+def get_empires(conn=None):
+    if conn is None:
+        with get_connection() as c:
+            return c.execute("SELECT * FROM empires").fetchall()
+    return conn.execute("SELECT * FROM empires").fetchall()
+
 
 def clear_galaxy():
     with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM planets")
-        cursor.execute("DELETE FROM stars")
+        conn.execute("DELETE FROM planets")
+        conn.execute("DELETE FROM empires")
+        conn.execute("DELETE FROM stars")
         conn.commit()
