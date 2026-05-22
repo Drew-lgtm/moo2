@@ -39,6 +39,10 @@ class Game:
         self.scenes = SceneManager()
         self.running = True
 
+        # Functions called after each advance_turn(). Receives the new turn
+        # number. Future systems (production, research) register hooks here.
+        self.turn_callbacks: list = []
+
     def _load_background(self):
         bg = load_random_background()
         return pygame.transform.scale(bg, (self.screen_width, self.screen_height))
@@ -66,6 +70,14 @@ class Game:
             self.screen_width, self.screen_height,
         )
         self.galaxy.load_from_db()
+
+    def advance_turn(self):
+        if self.galaxy is None:
+            return None
+        new_turn = self.galaxy.advance_turn()
+        for cb in self.turn_callbacks:
+            cb(new_turn)
+        return new_turn
 
     def quit(self):
         self.running = False

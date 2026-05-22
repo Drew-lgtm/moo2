@@ -29,36 +29,44 @@ class UIButton:
             self.image = self.image_normal
 
 class BottomUIBar:
+    BUTTON_NAMES = ["colonies", "planets", "leaders", "races", "info", "turn"]
+
     def __init__(self, screen_width, screen_height):
-        button_names = ["colonies", "planets", "leaders", "races", "info", "turn"]
-        num_buttons = len(button_names)
         self.buttons = []
+        self._by_name = {}
 
-
-# redo:  fix buttons scaling
-        button_width = screen_width // num_buttons
+        # TODO: tune button scaling — currently 1/6 of screen height per button.
+        button_width = screen_width // len(self.BUTTON_NAMES)
         button_height = screen_height // 6
         y = screen_height - button_height
 
-        for i, name in enumerate(button_names):
-            x = i * button_width
-
+        for i, name in enumerate(self.BUTTON_NAMES):
             image_normal = pygame.transform.smoothscale(
                 load_image(f"ui/{name}.png"), (button_width, button_height)
             )
             image_pressed = pygame.transform.smoothscale(
                 load_image(f"ui/{name}_pressed.png"), (button_width, button_height)
             )
-
             button = UIButton(
                 name=name,
-                x=x,
+                x=i * button_width,
                 y=y,
-                callback=lambda n=name: print(f"{n} clicked"),
+                callback=self._noop_for(name),
                 image_normal=image_normal,
-                image_pressed=image_pressed
+                image_pressed=image_pressed,
             )
             self.buttons.append(button)
+            self._by_name[name] = button
+
+    @staticmethod
+    def _noop_for(name):
+        return lambda n=name: print(f"{n} clicked (no handler bound)")
+
+    def set_callback(self, name, fn):
+        """Bind a click handler to a named button. Resets to noop if fn is None."""
+        if name not in self._by_name:
+            raise KeyError(f"unknown UI button: {name}")
+        self._by_name[name].callback = fn if fn is not None else self._noop_for(name)
 
     def draw(self, screen):
         for btn in self.buttons:

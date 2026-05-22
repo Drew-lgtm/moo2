@@ -8,6 +8,25 @@ from assets.loader import load_image
 class GalaxyScene(Scene):
     """Main galaxy view: stars on the background, bottom UI bar."""
 
+    def __init__(self, game):
+        super().__init__(game)
+        # entity_id -> scaled pygame.Surface, rebuilt on_enter from current StarVisuals.
+        self._star_surfaces: dict[int, pygame.Surface] = {}
+
+    def on_enter(self):
+        self._preload_star_surfaces()
+        self.game.ui_bar.set_callback("turn", self.game.advance_turn)
+
+    def on_exit(self):
+        self.game.ui_bar.set_callback("turn", None)
+
+    def _preload_star_surfaces(self):
+        self._star_surfaces.clear()
+        for entity_id, visual in self.game.component_mgr.get_all(StarVisual):
+            self._star_surfaces[entity_id] = load_image(
+                f"stars/{visual.image_name}", size=(visual.size, visual.size)
+            )
+
     def handle_event(self, event):
         self.game.ui_bar.handle_event(event)
 
@@ -38,9 +57,9 @@ class GalaxyScene(Scene):
         font = self.game.font
         for entity_id, position in cm.get_all(Position):
             visual = cm.get_component(entity_id, StarVisual)
-            if visual:
-                star_image = load_image(f"stars/{visual.image_name}", size=(visual.size, visual.size))
-                screen.blit(star_image, (position.x - visual.size // 2, position.y - visual.size // 2))
+            surface = self._star_surfaces.get(entity_id)
+            if visual and surface is not None:
+                screen.blit(surface, (position.x - visual.size // 2, position.y - visual.size // 2))
 
             name = cm.get_component(entity_id, Name)
             if name and visual:
@@ -51,3 +70,13 @@ class GalaxyScene(Scene):
                 screen.blit(text_surface, text_rect)
 
         self.game.ui_bar.draw(screen)
+        self._draw_turn_hud(screen)
+
+    def _draw_turn_hud(self, screen):
+        if self.game.galaxy is None:
+            return
+        text = self.game.font.render(
+            f"Turn {self.game.galaxy.turn}", True, (255, 255, 255)
+        )
+        # 8px padding from top-left.
+        screen.blit(text, (8, 8))
