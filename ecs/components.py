@@ -27,8 +27,7 @@ class Planet:
 
 @dataclass
 class Orbiting:
-    def __init__(self, star_entity):
-        self.star_entity = star_entity
+    star_entity: int
 
 @dataclass
 class Empire:

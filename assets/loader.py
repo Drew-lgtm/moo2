@@ -7,11 +7,12 @@ ASSETS_DIR = os.path.join(os.path.dirname(__file__), '.')
 _image_cache = {}
 
 def load_image(path, size=(32, 32)):
-    if path not in _image_cache:
+    key = (path, size)
+    if key not in _image_cache:
         full_path = os.path.join(ASSETS_DIR, path)
         image = pygame.image.load(full_path).convert_alpha()
-        _image_cache[path] = pygame.transform.scale(image, size)
-    return _image_cache[path]
+        _image_cache[key] = pygame.transform.scale(image, size)
+    return _image_cache[key]
 
 def load_random_background(folder="backgrounds"):
     files = [
