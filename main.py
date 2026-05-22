@@ -1,10 +1,9 @@
 import pygame
 from ecs.entity_manager import EntityManager
 from ecs.component_manager import ComponentManager
-from ecs.components import Position, Name, StarVisual, Orbiting, Planet
+from ecs.components import Position, Name, StarVisual
 from assets.loader import load_image, load_random_background
 from ecs.galaxy_generator import GalaxyGenerator
-from ecs.utils import distance_parsecs
 from ecs.system_view import SystemView
 from ecs.menu import Menu
 from ecs.db import clear_galaxy
@@ -40,7 +39,10 @@ ui_bar = BottomUIBar(SCREEN_WIDTH, SCREEN_HEIGHT)
 
 # --- Menus ---
 main_menu = Menu(screen, ["New Game", "Load Game", "Quit"], title="Main Menu")
-pause_menu = Menu(screen, ["Resume", "Save Game", "Quit to Menu"], title="Paused")
+pause_menu = Menu(screen, ["Resume", "Save Game", "Load Game", "Quit to Menu"], title="Paused")
+
+# When set to "save" or "load", the next 1-9 key press selects a save slot.
+pending_slot_action = None
 
 def start_new_game():
     global entity_mgr, component_mgr, galaxy, background, ui_bar
@@ -60,10 +62,6 @@ def load_game():
     galaxy = GalaxyGenerator(entity_mgr, component_mgr, SCREEN_WIDTH, SCREEN_HEIGHT)
     galaxy.load_from_db()
     ui_bar = BottomUIBar(SCREEN_WIDTH, SCREEN_HEIGHT)
-
-def save_game():
-    # Placeholder: with hybrid ECS model, DB is already up-to-date each turn/save
-    print("Game saved.")
 
 # --- Main Loop ---
 running = True
@@ -95,26 +93,45 @@ while running:
 
     # PAUSED STATE
     if game_state == "paused":
+        SLOT_KEYS = {
+            pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3,
+            pygame.K_4: 4, pygame.K_5: 5, pygame.K_6: 6,
+            pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9,
+        }
         for event in events:
             result = pause_menu.handle_event(event)
             if result == "Resume":
                 game_state = "running"
+                pending_slot_action = None
             elif result == "Save Game":
-                save_to_slot(1)  # Default slot; replace with menu later
+                pending_slot_action = "save"
+            elif result == "Load Game":
+                pending_slot_action = "load"
             elif result == "Quit to Menu":
                 game_state = "main_menu"
+                pending_slot_action = None
 
             if event.type == pygame.KEYDOWN:
-                if event.key in [pygame.K_1, pygame.K_2, pygame.K_3]:
-                    slot = int(pygame.key.name(event.key))
-                    save_to_slot(slot)
-                elif event.key in [pygame.K_4, pygame.K_5, pygame.K_6]:
-                    slot = int(pygame.key.name(event.key)) - 3
-                    if load_from_slot(slot):
-                        load_game()
-                        game_state = "running"
+                if event.key == pygame.K_ESCAPE and pending_slot_action:
+                    pending_slot_action = None
+                elif event.key in SLOT_KEYS:
+                    slot = SLOT_KEYS[event.key]
+                    if pending_slot_action == "save":
+                        save_to_slot(slot)
+                        pending_slot_action = None
+                    elif pending_slot_action == "load":
+                        if load_from_slot(slot):
+                            load_game()
+                            game_state = "running"
+                        pending_slot_action = None
 
         pause_menu.draw()
+        if pending_slot_action:
+            hint = font.render(
+                f"Press 1-9 to choose a {pending_slot_action} slot (Esc to cancel)",
+                True, (255, 255, 0),
+            )
+            screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 40)))
         pygame.display.flip()
         clock.tick(60)
         continue

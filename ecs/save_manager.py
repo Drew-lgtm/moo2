@@ -4,12 +4,8 @@ from pathlib import Path
 SAVE_DIR = Path("saves")
 ACTIVE_DB = Path("galaxy.db")
 
-def init_save_slots(num_slots=9):
+def init_save_slots():
     SAVE_DIR.mkdir(exist_ok=True)
-    for i in range(1, num_slots + 1):
-        slot_path = SAVE_DIR / f"slot{i}.db"
-        if not slot_path.exists():
-            slot_path.touch()
 
 def save_to_slot(slot_number):
     slot_file = SAVE_DIR / f"slot{slot_number}.db"
