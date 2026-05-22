@@ -10,7 +10,12 @@ from ecs.db import (
     get_stars,
     get_planets_for_star,
     get_empires,
+    get_meta,
+    set_meta,
 )
+
+META_TURN = "turn"
+META_SEED = "seed"
 
 STAR_CLASSES = [
     {"class": "O", "image": "green_star.png",  "weight": 0.01},
@@ -59,15 +64,31 @@ class GalaxyGenerator:
         self.width = width
         self.height = height
         self.num_stars = num_stars
+        self.turn = 1
+        self.seed = None
 
-    def generate(self, num_empires=2):
+    def generate(self, num_empires=2, seed=None):
         """Create a fresh galaxy in the DB, then load it into ECS."""
         init_db()
+        if seed is None:
+            seed = random.randint(0, 2**31 - 1)
+        self.seed = seed
+        self.turn = 1
+        random.seed(seed)
         with get_connection() as conn:
             self._place_stars_and_planets(conn)
             self._assign_empires(conn, num_empires)
+            set_meta(conn, META_SEED, seed)
+            set_meta(conn, META_TURN, self.turn)
             conn.commit()
         self.load_from_db()
+
+    def advance_turn(self):
+        self.turn += 1
+        with get_connection() as conn:
+            set_meta(conn, META_TURN, self.turn)
+            conn.commit()
+        return self.turn
 
     def _place_stars_and_planets(self, conn):
         used_names = set()
@@ -141,11 +162,13 @@ class GalaxyGenerator:
     def load_from_db(self):
         """Reconstruct ECS state from the DB without mutating it."""
         with get_connection() as conn:
-            star_entity_by_db_id = {}
+            turn_str = get_meta(conn, META_TURN)
+            seed_str = get_meta(conn, META_SEED)
+            self.turn = int(turn_str) if turn_str is not None else 1
+            self.seed = int(seed_str) if seed_str is not None else None
 
             for star in get_stars(conn):
                 star_entity = self.entity_mgr.create_entity()
-                star_entity_by_db_id[star["id"]] = star_entity
                 self.component_mgr.add_component(star_entity, Position(star["x"], star["y"]))
                 self.component_mgr.add_component(star_entity, Name(star["name"]))
                 self.component_mgr.add_component(

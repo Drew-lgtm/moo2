@@ -44,6 +44,11 @@ def init_db():
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         """)
         conn.commit()
 
@@ -96,9 +101,23 @@ def get_empires(conn=None):
     return conn.execute("SELECT * FROM empires").fetchall()
 
 
+def set_meta(conn, key, value):
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value)),
+    )
+
+
+def get_meta(conn, key, default=None):
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row is not None else default
+
+
 def clear_galaxy():
     with get_connection() as conn:
         conn.execute("DELETE FROM planets")
         conn.execute("DELETE FROM empires")
         conn.execute("DELETE FROM stars")
+        conn.execute("DELETE FROM meta")
         conn.commit()
