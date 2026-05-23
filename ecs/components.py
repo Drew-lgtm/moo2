@@ -31,13 +31,18 @@ class Planet:
 class Population:
     """Per-planet population, attached to colonized planets only.
 
-    current grows toward max each turn following a logistic curve
-    (pop_growth_tick). growth_progress carries fractional growth between
-    turns so the curve decelerates smoothly near the cap.
+    Total pop = farmers + workers + scientists, all of which sum to
+    current. current grows toward max each turn following a logistic
+    curve (pop_growth_tick); growth_progress carries the fractional
+    pop between ticks. New pop units default to workers; starvation
+    removes workers first.
     """
     current: int
     max: int
     growth_progress: float = 0.0
+    farmers: int = 0
+    workers: int = 0
+    scientists: int = 0
 
 
 @dataclass

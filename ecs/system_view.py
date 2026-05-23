@@ -3,7 +3,7 @@ import pygame
 from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire
 from ecs.palette import planet_color
 from ecs.projects import PROJECTS, PROJECT_ORDER
-from ecs.db import get_connection, update_planet_build
+from ecs.db import get_connection, update_planet_build, update_planet_workers
 
 
 SIZE_RADIUS = {
@@ -24,6 +24,8 @@ class SystemView:
 
     PROJECT_BTN_SIZE = (180, 60)
     PROJECT_BTN_GAP = 16
+    WORKER_BTN_SIZE = (28, 28)
+    WORKER_ROLES = [("farmers", "F"), ("workers", "W"), ("scientists", "S")]
 
     def __init__(self, screen, component_mgr, star_id):
         self.screen = screen
@@ -53,9 +55,12 @@ class SystemView:
         # Default focus: first owned planet (the homeworld in a 1-empire system).
         self.selected_entity: int | None = self._first_owned_entity()
 
-        # Lazily computed during draw; cached for hit testing.
+        # Cached for hit testing; computed once.
         self._project_button_rects: list[tuple[str, pygame.Rect]] = []
+        # Each entry: (role, minus_rect, plus_rect, value_pos, label_pos)
+        self._worker_widgets: list[tuple] = []
         self._layout_project_buttons()
+        self._layout_worker_widgets()
 
     def _first_owned_entity(self):
         for entity_id, _planet, _pos, _radius in self.planet_layout:
@@ -80,6 +85,27 @@ class SystemView:
             rect = pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)
             self._project_button_rects.append((project_id, rect))
 
+    def _layout_worker_widgets(self):
+        """Three F/W/S clusters sitting above the project picker row."""
+        sw = self.screen.get_width()
+        btn_w, btn_h = self.WORKER_BTN_SIZE
+        label_w = 16
+        value_w = 28
+        gap = 6
+        cluster_w = label_w + gap + btn_w + gap + value_w + gap + btn_w
+        spacing = 50
+        total_w = len(self.WORKER_ROLES) * cluster_w + (len(self.WORKER_ROLES) - 1) * spacing
+        start_x = (sw - total_w) // 2
+        y = self.screen.get_height() - self.PROJECT_BTN_SIZE[1] - 24 - btn_h - 24
+        self._worker_widgets = []
+        for i, (role, _label) in enumerate(self.WORKER_ROLES):
+            cluster_x = start_x + i * (cluster_w + spacing)
+            label_pos = (cluster_x, y + (btn_h - 16) // 2)
+            minus_rect = pygame.Rect(cluster_x + label_w + gap, y, btn_w, btn_h)
+            value_pos = (minus_rect.right + gap, y + (btn_h - 16) // 2)
+            plus_rect = pygame.Rect(value_pos[0] + value_w + gap, y, btn_w, btn_h)
+            self._worker_widgets.append((role, minus_rect, plus_rect, value_pos, label_pos))
+
     # ---- input ------------------------------------------------------------
 
     def handle_event(self, event):
@@ -87,6 +113,14 @@ class SystemView:
             if self.close_button_rect.collidepoint(event.pos):
                 self.is_open = False
                 return
+            # Worker assignment +/-
+            for role, minus_rect, plus_rect, _v, _l in self._worker_widgets:
+                if minus_rect.collidepoint(event.pos):
+                    self._try_shift_worker(role, -1)
+                    return
+                if plus_rect.collidepoint(event.pos):
+                    self._try_shift_worker(role, +1)
+                    return
             # Project picker
             for project_id, rect in self._project_button_rects:
                 if rect.collidepoint(event.pos):
@@ -103,6 +137,46 @@ class SystemView:
                     return
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.is_open = False
+
+    def _try_shift_worker(self, role: str, delta: int):
+        """Move one pop into or out of `role`. Other roles donate or receive
+        in priority order: workers > scientists > farmers.
+
+        Only player-owned planets are editable.
+        """
+        if self.selected_entity is None or delta == 0:
+            return
+        player_id = self._player_empire_id()
+        owner = self.component_mgr.get_component(self.selected_entity, Owner)
+        if owner is None or owner.empire_id != player_id:
+            return
+        pop = self.component_mgr.get_component(self.selected_entity, Population)
+        if pop is None:
+            return
+
+        other_order = [r for r in ("workers", "scientists", "farmers") if r != role]
+        if delta > 0:
+            # Take 1 from the first non-`role` that has > 0.
+            for src in other_order:
+                if getattr(pop, src) > 0:
+                    setattr(pop, src, getattr(pop, src) - 1)
+                    setattr(pop, role, getattr(pop, role) + 1)
+                    break
+            else:
+                return  # no donor available
+        else:
+            if getattr(pop, role) <= 0:
+                return
+            setattr(pop, role, getattr(pop, role) - 1)
+            setattr(pop, other_order[0], getattr(pop, other_order[0]) + 1)
+
+        # Persist immediately so saves between adjustments and turn-end
+        # don't lose the assignment.
+        planet = self.component_mgr.get_component(self.selected_entity, Planet)
+        if planet is not None:
+            with get_connection() as conn:
+                update_planet_workers(conn, planet.id, pop.farmers, pop.workers, pop.scientists)
+                conn.commit()
 
     def _try_set_project(self, project_id):
         if self.selected_entity is None:
@@ -158,6 +232,7 @@ class SystemView:
         close_text = font.render("Close", True, (255, 255, 255))
         overlay.blit(close_text, (self.close_button_rect.x + 10, self.close_button_rect.y + 5))
 
+        self._draw_worker_widgets(overlay, font)
         self._draw_project_picker(overlay, font)
 
         self.screen.blit(overlay, (0, 0))
@@ -170,11 +245,14 @@ class SystemView:
         overlay.blit(type_label, (x - 15, line_y))
         line_y += 14
 
-        # Line 2: population (only for colonized planets).
+        # Line 2: population + worker split for colonized planets.
         population = self.component_mgr.get_component(entity_id, Population)
         if population is not None:
-            pop_label = font.render(f"{population.current}/{population.max}", True, (180, 220, 255))
-            overlay.blit(pop_label, (x - 15, line_y))
+            pop_label = font.render(
+                f"{population.current}/{population.max}  {population.farmers}/{population.workers}/{population.scientists}",
+                True, (180, 220, 255),
+            )
+            overlay.blit(pop_label, (x - 30, line_y))
             line_y += 14
 
         # Line 3: project status.
@@ -191,6 +269,35 @@ class SystemView:
                 text = "(idle)"
                 color = (160, 160, 160)
             overlay.blit(font.render(text, True, color), (x - 35, line_y))
+
+    def _draw_worker_widgets(self, overlay, font):
+        pop = (
+            self.component_mgr.get_component(self.selected_entity, Population)
+            if self.selected_entity is not None else None
+        )
+        owner = (
+            self.component_mgr.get_component(self.selected_entity, Owner)
+            if self.selected_entity is not None else None
+        )
+        player_id = self._player_empire_id()
+        editable = pop is not None and owner is not None and owner.empire_id == player_id
+
+        for role, minus_rect, plus_rect, value_pos, label_pos in self._worker_widgets:
+            # Labels and current value reflect the selected planet's pop.
+            short = {"farmers": "F", "workers": "W", "scientists": "S"}[role]
+            overlay.blit(font.render(short, True, (200, 200, 200)), label_pos)
+            value = getattr(pop, role) if pop is not None else 0
+            value_surf = font.render(str(value), True, (240, 240, 240))
+            overlay.blit(value_surf, value_pos)
+
+            for btn_rect, glyph in ((minus_rect, "−"), (plus_rect, "+")):
+                bg = (60, 60, 90) if editable else (40, 40, 50)
+                border = (180, 180, 220) if editable else (90, 90, 110)
+                pygame.draw.rect(overlay, bg, btn_rect)
+                pygame.draw.rect(overlay, border, btn_rect, width=1)
+                glyph_color = (240, 240, 240) if editable else (120, 120, 140)
+                glyph_surf = font.render(glyph, True, glyph_color)
+                overlay.blit(glyph_surf, glyph_surf.get_rect(center=btn_rect.center))
 
     def _draw_project_picker(self, overlay, font):
         # Show what the picker targets so the player understands the click action.

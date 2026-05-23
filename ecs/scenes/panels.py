@@ -177,14 +177,17 @@ class ColoniesScene(PanelScene):
 
     # Column x offsets relative to the body rect.
     COL_SWATCH = 0
-    COL_PORTRAIT = 24
-    COL_STAR = 78
-    COL_PLANET = 220
-    COL_SIZE = 350
-    COL_POP = 420
-    COL_BC = 490
-    COL_RES = 540
-    COL_EMPIRE = 600
+    COL_PORTRAIT = 20
+    COL_STAR = 68
+    COL_PLANET = 190
+    COL_SIZE = 310
+    COL_POP = 376
+    COL_FWS = 440        # F/W/S worker split
+    COL_FOOD = 530
+    COL_IND = 580
+    COL_RES = 630
+    COL_BC = 680
+    COL_EMPIRE = 740
 
     def __init__(self, game):
         super().__init__(game)
@@ -244,8 +247,11 @@ class ColoniesScene(PanelScene):
             (self.COL_PLANET, "PLANET"),
             (self.COL_SIZE, "SIZE"),
             (self.COL_POP, "POP"),
-            (self.COL_BC, "BC"),
+            (self.COL_FWS, "F/W/S"),
+            (self.COL_FOOD, "FOOD"),
+            (self.COL_IND, "IND"),
             (self.COL_RES, "RES"),
+            (self.COL_BC, "BC"),
             (self.COL_EMPIRE, "EMPIRE"),
         ]
         for x_off, text in labels:
@@ -281,11 +287,21 @@ class ColoniesScene(PanelScene):
         pop_label = f"{population.current}/{population.max}" if population is not None else "-"
         screen.blit(font.render(pop_label, True, TEXT_COLOR), (x + self.COL_POP, text_y))
 
-        bc, research = planet_output(planet, population, build_state)
-        # If building, the planet's BC is diverted to project progress.
-        bc_to_empire = 0 if build_state and build_state.current_project else bc
-        screen.blit(font.render(str(bc_to_empire), True, TEXT_COLOR), (x + self.COL_BC, text_y))
+        if population is not None:
+            fws_label = f"{population.farmers}/{population.workers}/{population.scientists}"
+        else:
+            fws_label = "-"
+        screen.blit(font.render(fws_label, True, TEXT_COLOR), (x + self.COL_FWS, text_y))
+
+        food, industry, research, bonus_bc = planet_output(planet, population, build_state)
+        # Industry diverts to project progress while building; otherwise it
+        # becomes BC, on top of any flat building bonus.
+        building = bool(build_state and build_state.current_project)
+        bc_to_empire = bonus_bc + (0 if building else industry)
+        screen.blit(font.render(str(food), True, TEXT_COLOR), (x + self.COL_FOOD, text_y))
+        screen.blit(font.render(str(industry), True, TEXT_COLOR), (x + self.COL_IND, text_y))
         screen.blit(font.render(str(research), True, TEXT_COLOR), (x + self.COL_RES, text_y))
+        screen.blit(font.render(str(bc_to_empire), True, TEXT_COLOR), (x + self.COL_BC, text_y))
 
         empire_label = empire.name if empire is not None else "?"
         screen.blit(font.render(empire_label, True, TEXT_COLOR), (x + self.COL_EMPIRE, text_y))

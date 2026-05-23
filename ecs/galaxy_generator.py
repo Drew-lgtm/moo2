@@ -1,7 +1,7 @@
 import random
 from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population, BuildState
 from ecs.palette import EMPIRE_COLOR_RGB
-from ecs.economy import compute_max_population
+from ecs.economy import compute_max_population, default_assignment, normalize_assignment
 from assets.star_name_pool import load_star_names, get_random_star_name
 from assets.loader import list_race_names
 from ecs.db import (
@@ -177,11 +177,15 @@ class GalaxyGenerator:
             tech = 1
             emp_id = insert_empire(conn, emp_name, race, color, star_id, tech, is_player=is_player)
             home_max_pop = compute_max_population("Terran", "Medium")
+            home_farmers, home_workers, home_scientists = default_assignment("Terran", 2)
             insert_planet(
                 conn, star_id, "Terran", "Medium", True,
                 owner_empire_id=emp_id,
                 population=2,
                 max_population=home_max_pop,
+                farmers=home_farmers,
+                workers=home_workers,
+                scientists=home_scientists,
             )
 
             for _ in range(random.randint(1, 2)):
@@ -221,14 +225,23 @@ class GalaxyGenerator:
                         self.component_mgr.add_component(planet_entity, Owner(planet["owner_empire_id"]))
                     max_pop = planet["max_population"] or 0
                     if max_pop > 0:
-                        self.component_mgr.add_component(
-                            planet_entity,
-                            Population(
-                                current=planet["population"] or 0,
-                                max=max_pop,
-                                growth_progress=planet["growth_progress"] or 0.0,
-                            ),
+                        pop = Population(
+                            current=planet["population"] or 0,
+                            max=max_pop,
+                            growth_progress=planet["growth_progress"] or 0.0,
+                            farmers=planet["farmers"] or 0,
+                            workers=planet["workers"] or 0,
+                            scientists=planet["scientists"] or 0,
                         )
+                        # Old saves predate the worker columns: derive a default
+                        # split from planet type instead of treating everyone as idle.
+                        if pop.current > 0 and (pop.farmers + pop.workers + pop.scientists) == 0:
+                            pop.farmers, pop.workers, pop.scientists = default_assignment(
+                                planet["type"], pop.current
+                            )
+                        else:
+                            normalize_assignment(pop)
+                        self.component_mgr.add_component(planet_entity, pop)
                         completed = get_planet_buildings(conn, planet["id"])
                         self.component_mgr.add_component(
                             planet_entity,

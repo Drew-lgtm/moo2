@@ -78,7 +78,9 @@ class GalaxyScene(Scene):
         x, y = 8, 8
 
         if player is not None:
-            bc_pt, res_pt = empire_per_turn(self.game.component_mgr, player.id)
+            per_turn = empire_per_turn(self.game.component_mgr, player.id)
+            food = per_turn["food_balance"]
+            food_label = f"Food {food:+d}"
 
             # Empire color bar.
             pygame.draw.rect(screen, empire_color(player.color), pygame.Rect(x, y + 2, 6, 16))
@@ -86,8 +88,9 @@ class GalaxyScene(Scene):
 
             items = [
                 player.name,
-                f"BC {player.bc} (+{bc_pt})",
-                f"Res {player.research_points} (+{res_pt})",
+                f"BC {player.bc} (+{per_turn['bc']})",
+                f"Res {player.research_points} (+{per_turn['research']})",
+                food_label,
                 f"Turn {self.game.galaxy.turn}",
             ]
             for i, text in enumerate(items):

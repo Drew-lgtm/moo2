@@ -49,6 +49,9 @@ def init_db():
             current_project TEXT,
             project_progress INTEGER DEFAULT 0,
             growth_progress REAL DEFAULT 0,
+            farmers INTEGER DEFAULT 0,
+            workers INTEGER DEFAULT 0,
+            scientists INTEGER DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -93,6 +96,12 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN project_progress INTEGER DEFAULT 0")
     if "growth_progress" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN growth_progress REAL DEFAULT 0")
+    if "farmers" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN farmers INTEGER DEFAULT 0")
+    if "workers" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN workers INTEGER DEFAULT 0")
+    if "scientists" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN scientists INTEGER DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -104,13 +113,23 @@ def insert_star(conn, name, x, y, star_class, image, size):
 
 
 def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id=None,
-                  population=0, max_population=0):
+                  population=0, max_population=0,
+                  farmers=0, workers=0, scientists=0):
     cursor = conn.execute(
-        "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id, population, max_population) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (star_id, planet_type, size, colonizable, owner_empire_id, population, max_population),
+        "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id, "
+        "population, max_population, farmers, workers, scientists) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (star_id, planet_type, size, colonizable, owner_empire_id,
+         population, max_population, farmers, workers, scientists),
     )
     return cursor.lastrowid
+
+
+def update_planet_workers(conn, planet_id, farmers, workers, scientists):
+    conn.execute(
+        "UPDATE planets SET farmers = ?, workers = ?, scientists = ? WHERE id = ?",
+        (farmers, workers, scientists, planet_id),
+    )
 
 
 def update_planet_population(conn, planet_id, current, max_population, growth_progress=0.0):
