@@ -22,29 +22,78 @@ HINT_COLOR = (180, 180, 180)
 
 
 class PanelScene(Scene):
-    """Base class: draws the overlay, title, hint, and the bottom UI bar.
+    """Base class: draws the overlay, title, hint, scrollbar, UI bar.
 
-    Subclasses set `title` and implement `draw_content(screen, rect, font)`,
-    where `rect` is the body area (below the title, above the hint).
+    Subclasses set `title` and implement `draw_content(screen, rect, font)`
+    where `rect` is the visible body area. Subclasses MUST return the total
+    height the content would take if unconstrained; PanelScene uses that to
+    clamp scrolling and decide whether to render the scrollbar. Subclasses
+    can read `self.scroll_offset` and shift their items by it. The body
+    rect is clipped during draw_content, so off-screen items are safe to
+    emit unconditionally.
+
+    Subclasses that override on_enter must call super().on_enter() so the
+    scroll position resets when the panel is entered.
     """
 
     title = "Panel"
+    SCROLL_STEP = 40
+    SCROLLBAR_WIDTH = 6
+    SCROLLBAR_PADDING = 2
+    SCROLLBAR_TRACK = (40, 40, 60)
+    SCROLLBAR_THUMB = (180, 180, 220)
 
     def __init__(self, game):
         super().__init__(game)
         self.title_font = pygame.font.SysFont("Arial", 22, bold=True)
         self.body_font = pygame.font.SysFont("Arial", 14)
+        self.scroll_offset = 0
+        self._content_height = 0
+        self._body_rect_cache: pygame.Rect | None = None
+
+    def on_enter(self):
+        self.scroll_offset = 0
 
     @property
     def _panel_rect(self) -> pygame.Rect:
-        # Above the bottom bar (which takes screen_height // 6).
         bar_height = self.game.screen_height // 6
         return pygame.Rect(0, 0, self.game.screen_width, self.game.screen_height - bar_height)
 
+    def _max_scroll(self) -> int:
+        if self._body_rect_cache is None:
+            return 0
+        return max(0, self._content_height - self._body_rect_cache.height)
+
+    def _clamp_scroll(self):
+        self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll()))
+
+    def _page_size(self) -> int:
+        if self._body_rect_cache is None:
+            return 100
+        return max(40, self._body_rect_cache.height - 40)
+
     def handle_event(self, event):
         self.game.ui_bar.handle_event(event)
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.game.scenes.replace("galaxy")
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.game.scenes.replace("galaxy")
+                return
+            if event.key == pygame.K_PAGEDOWN:
+                self.scroll_offset += self._page_size()
+            elif event.key == pygame.K_PAGEUP:
+                self.scroll_offset -= self._page_size()
+            elif event.key == pygame.K_HOME:
+                self.scroll_offset = 0
+            elif event.key == pygame.K_END:
+                self.scroll_offset = self._max_scroll()
+            elif event.key == pygame.K_DOWN:
+                self.scroll_offset += self.SCROLL_STEP
+            elif event.key == pygame.K_UP:
+                self.scroll_offset -= self.SCROLL_STEP
+            self._clamp_scroll()
+        elif event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset -= event.y * self.SCROLL_STEP
+            self._clamp_scroll()
 
     def draw(self, screen):
         panel = self._panel_rect
@@ -55,15 +104,41 @@ class PanelScene(Scene):
         title_surf = self.title_font.render(self.title, True, TITLE_COLOR)
         screen.blit(title_surf, (panel.x + 20, panel.y + 16))
 
-        hint = self.body_font.render("Esc to return to galaxy", True, HINT_COLOR)
+        hint = self.body_font.render(
+            "Esc to return  ·  scroll / PgUp / PgDn / Home / End",
+            True, HINT_COLOR,
+        )
         screen.blit(hint, (panel.right - hint.get_width() - 20, panel.bottom - hint.get_height() - 10))
 
         body = pygame.Rect(panel.x + 20, panel.y + 60, panel.width - 40, panel.height - 100)
-        self.draw_content(screen, body, self.body_font)
+        self._body_rect_cache = body
+
+        prev_clip = screen.get_clip()
+        screen.set_clip(body)
+        height = self.draw_content(screen, body, self.body_font) or 0
+        screen.set_clip(prev_clip)
+
+        self._content_height = int(height)
+        self._clamp_scroll()
+        self._draw_scrollbar(screen, body)
 
         self.game.ui_bar.draw(screen)
 
-    def draw_content(self, screen, rect, font):
+    def _draw_scrollbar(self, screen, body):
+        max_scroll = self._max_scroll()
+        if max_scroll <= 0:
+            return
+        track = pygame.Rect(
+            body.right - self.SCROLLBAR_WIDTH - self.SCROLLBAR_PADDING,
+            body.y, self.SCROLLBAR_WIDTH, body.height,
+        )
+        pygame.draw.rect(screen, self.SCROLLBAR_TRACK, track)
+        thumb_h = max(20, int(body.height * body.height / max(self._content_height, 1)))
+        thumb_y = body.y + int((body.height - thumb_h) * (self.scroll_offset / max_scroll))
+        pygame.draw.rect(screen, self.SCROLLBAR_THUMB, (track.x, thumb_y, track.w, thumb_h))
+
+    def draw_content(self, screen, rect, font) -> int:
+        """Render content and return the unconstrained content height in px."""
         raise NotImplementedError
 
     # ---- helpers shared across subclasses --------------------------------
@@ -113,6 +188,7 @@ class ColoniesScene(PanelScene):
         self._header_font = pygame.font.SysFont("Arial", 13, bold=True)
 
     def on_enter(self):
+        super().on_enter()
         # Preload portraits for every empire's race so draw() is allocation-free.
         for _eid, empire in self.game.component_mgr.get_all(Empire):
             self._ensure_portrait(empire.race_type)
@@ -134,15 +210,26 @@ class ColoniesScene(PanelScene):
 
         if not rows:
             _draw_lines(screen, font, ["No colonies yet."], rect, color=HINT_COLOR)
-            return
+            return 0
 
+        # Sticky column header sits at body top and never scrolls.
         self._draw_header(screen, rect)
-        body_top = rect.y + self.HEADER_HEIGHT
+
+        # Rows scroll within a sub-clip below the header.
+        scroll_area = pygame.Rect(
+            rect.x, rect.y + self.HEADER_HEIGHT,
+            rect.width, rect.height - self.HEADER_HEIGHT,
+        )
+        prev_clip = screen.get_clip()
+        screen.set_clip(scroll_area)
         for i, (planet, owner_id, star_name) in enumerate(rows):
-            row_top = body_top + i * self.ROW_HEIGHT
-            if row_top + self.ROW_HEIGHT > rect.bottom:
-                break
+            row_top = scroll_area.y + i * self.ROW_HEIGHT - self.scroll_offset
+            if row_top + self.ROW_HEIGHT < scroll_area.y or row_top > scroll_area.bottom:
+                continue
             self._draw_row(screen, font, rect.x, row_top, planet, empires.get(owner_id), star_name)
+        screen.set_clip(prev_clip)
+
+        return self.HEADER_HEIGHT + len(rows) * self.ROW_HEIGHT
 
     def _draw_header(self, screen, rect):
         labels = [
@@ -221,21 +308,24 @@ class PlanetsScene(PanelScene):
 
         if not groups:
             _draw_lines(screen, font, ["No planets generated."], rect, color=HINT_COLOR)
-            return
+            return 0
 
         empires = self._empires_by_id()
-        y = rect.y
+        total = 0
+        base_y = rect.y - self.scroll_offset
         for star_name in sorted(groups):
-            if y + self.GROUP_HEADER_HEIGHT > rect.bottom:
-                return
-            screen.blit(self._group_font.render(star_name, True, TITLE_COLOR), (rect.x, y))
-            y += self.GROUP_HEADER_HEIGHT
+            y = base_y + total
+            if rect.y - self.GROUP_HEADER_HEIGHT < y < rect.bottom:
+                screen.blit(self._group_font.render(star_name, True, TITLE_COLOR), (rect.x, y))
+            total += self.GROUP_HEADER_HEIGHT
 
             for planet, owner_id in groups[star_name]:
-                if y + self.ROW_HEIGHT > rect.bottom:
-                    return
-                self._draw_row(screen, font, rect.x, y, planet, owner_id, empires)
-                y += self.ROW_HEIGHT
+                y = base_y + total
+                if rect.y - self.ROW_HEIGHT < y < rect.bottom:
+                    self._draw_row(screen, font, rect.x, y, planet, owner_id, empires)
+                total += self.ROW_HEIGHT
+
+        return total
 
     def _draw_row(self, screen, font, x, y, planet, owner_id, empires):
         dot_center_y = y + self.ROW_HEIGHT // 2
@@ -283,6 +373,7 @@ class RacesScene(PanelScene):
         self._thumbs: list[tuple[str, pygame.Surface]] = []
 
     def on_enter(self):
+        super().on_enter()
         if self._thumbs:
             return
         races_dir = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "races")
