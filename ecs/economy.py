@@ -14,7 +14,7 @@ from ecs.db import (
     update_planet_build,
     insert_planet_building,
 )
-from ecs.projects import PROJECTS
+from ecs.projects import PROJECTS, building_growth_bonus
 
 
 SIZE_BASE = {
@@ -155,14 +155,18 @@ unit can pop out. The curve decelerates near max."""
 
 def pop_growth_tick(game, new_turn: int):
     """advance_turn callback. Logistic growth: faster mid-range, slower near
-    cap. Accumulated fractional growth is kept in growth_progress."""
+    cap. Completed growth_rate buildings (Granary, Marketplace) add to the
+    base rate. Fractional growth is kept in growth_progress."""
     cm = game.component_mgr
     updates: list[tuple[int, int, int, float]] = []
     for entity_id, pop in cm.get_all(Population):
         if pop.max <= 0:
             continue
         if pop.current < pop.max:
-            increment = POP_GROWTH_RATE * pop.current * (pop.max - pop.current) / pop.max
+            build_state = cm.get_component(entity_id, BuildState)
+            bonus = building_growth_bonus(build_state.completed) if build_state else 0.0
+            rate = POP_GROWTH_RATE + bonus
+            increment = rate * pop.current * (pop.max - pop.current) / pop.max
             pop.growth_progress += increment
             while pop.growth_progress >= 1.0 and pop.current < pop.max:
                 pop.current += 1
