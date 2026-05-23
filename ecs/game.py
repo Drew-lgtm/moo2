@@ -16,6 +16,7 @@ from ecs.ui_bar import BottomUIBar
 from ecs.db import clear_galaxy
 from ecs.components import Empire
 from ecs.economy import production_tick, pop_growth_tick
+from ecs.ai import ai_tick
 from assets.loader import load_random_background
 
 
@@ -55,7 +56,7 @@ class Game:
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(self.screen_width, self.screen_height)
 
-    def start_new_game(self, player_empire=None, num_empires=2):
+    def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal"):
         clear_galaxy()
         self._reset_world()
         self.galaxy = GalaxyGenerator(
@@ -63,7 +64,7 @@ class Game:
             self.screen_width, self.screen_height,
             num_stars=self.num_stars,
         )
-        self.galaxy.generate(num_empires=num_empires, player_empire=player_empire)
+        self.galaxy.generate(num_empires=num_empires, player_empire=player_empire, difficulty=difficulty)
         self._bind_game_ui()
 
     def load_game(self):
@@ -94,9 +95,10 @@ class Game:
             )
         self.ui_bar.set_callback("turn", self.advance_turn)
 
-        # Register per-turn systems. Order matters: pop_growth runs first so
-        # the same turn's production reflects the new population.
-        for cb in (pop_growth_tick, production_tick):
+        # Register per-turn systems. Order matters: AI rebalances workers
+        # and queues builds first, then population grows, then production
+        # applies — so the AI's choices take effect on the same turn.
+        for cb in (ai_tick, pop_growth_tick, production_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 

@@ -22,6 +22,8 @@ from ecs.db import (
 
 META_TURN = "turn"
 META_SEED = "seed"
+META_DIFFICULTY = "difficulty"
+DEFAULT_DIFFICULTY = "normal"
 
 STAR_CLASSES = [
     {"class": "O", "image": "green_star.png",  "weight": 0.01},
@@ -72,8 +74,9 @@ class GalaxyGenerator:
         self.num_stars = num_stars
         self.turn = 1
         self.seed = None
+        self.difficulty = DEFAULT_DIFFICULTY
 
-    def generate(self, num_empires=2, seed=None, player_empire=None):
+    def generate(self, num_empires=2, seed=None, player_empire=None, difficulty=DEFAULT_DIFFICULTY):
         """Create a fresh galaxy in the DB, then load it into ECS.
 
         If ``player_empire`` is provided, it lands on the first generated
@@ -85,12 +88,14 @@ class GalaxyGenerator:
             seed = random.randint(0, 2**31 - 1)
         self.seed = seed
         self.turn = 1
+        self.difficulty = difficulty
         random.seed(seed)
         with get_connection() as conn:
             self._place_stars_and_planets(conn)
             self._assign_empires(conn, num_empires, player_empire)
             set_meta(conn, META_SEED, seed)
             set_meta(conn, META_TURN, self.turn)
+            set_meta(conn, META_DIFFICULTY, self.difficulty)
             conn.commit()
         self.load_from_db()
 
@@ -200,8 +205,10 @@ class GalaxyGenerator:
         with get_connection() as conn:
             turn_str = get_meta(conn, META_TURN)
             seed_str = get_meta(conn, META_SEED)
+            difficulty_str = get_meta(conn, META_DIFFICULTY)
             self.turn = int(turn_str) if turn_str is not None else 1
             self.seed = int(seed_str) if seed_str is not None else None
+            self.difficulty = difficulty_str or DEFAULT_DIFFICULTY
 
             for star in get_stars(conn):
                 star_entity = self.entity_mgr.create_entity()

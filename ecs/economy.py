@@ -29,6 +29,7 @@ from ecs.db import (
 )
 from ecs.projects import PROJECTS, building_growth_bonus
 from ecs.techs import TECHS
+from ecs.difficulty import ai_output_multiplier
 
 
 # ---- planet capacity (max population) ---------------------------------
@@ -406,18 +407,23 @@ def production_tick(game, new_turn: int):
     empire_updates: list[tuple[int, int, int]] = []
     tech_updates: list[tuple[int, str | None, int]] = []
     tech_unlocks: list[tuple[int, str]] = []
-    # Map empire id -> TechState component for routing research below.
-    tech_by_empire: dict[int, TechState] = {}
-    for _eid, tech in cm.get_all(TechState):
-        tech_by_empire[tech.empire_id] = tech
+    tech_by_empire: dict[int, TechState] = {
+        t.empire_id: t for _eid, t in cm.get_all(TechState)
+    }
+
+    ai_mult = ai_output_multiplier(getattr(game.galaxy, "difficulty", "normal"))
 
     for _eid, empire in cm.get_all(Empire):
         gain_bc, gain_res = empire_gains.get(empire.id, (0, 0))
+        # AI empires get a flat cheating bonus per difficulty. The player's
+        # gains are unchanged.
+        if not empire.is_player and ai_mult != 1.0:
+            gain_bc = int(round(gain_bc * ai_mult))
+            gain_res = int(round(gain_res * ai_mult))
         if gain_bc:
             empire.bc += gain_bc
         if gain_res:
             empire.research_points += gain_res
-            # Route research toward the empire's active tech target.
             tech = tech_by_empire.get(empire.id)
             if tech is not None and tech.current_target:
                 tech.progress += gain_res

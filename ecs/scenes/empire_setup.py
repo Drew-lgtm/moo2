@@ -13,6 +13,7 @@ import pygame
 from ecs.scene import Scene
 from ecs.empire_preset import EmpirePreset
 from ecs.palette import EMPIRE_COLOR_RGB, empire_color
+from ecs.difficulty import DIFFICULTIES, DEFAULT_DIFFICULTY
 from assets.loader import load_image, find_race_portrait, list_race_names
 
 
@@ -36,6 +37,8 @@ class EmpireSetupScene(Scene):
     NUM_EMPIRES_MAX = 8
     NUM_EMPIRES_DEFAULT = 4
     PICKER_BTN = (32, 32)
+    DIFFICULTY_BTN_SIZE = (110, 32)
+    DIFFICULTY_BTN_GAP = 8
 
     def __init__(self, game):
         super().__init__(game)
@@ -51,6 +54,7 @@ class EmpireSetupScene(Scene):
         self.selected_color: str = self.colors[0]
         self.selected_race: str = "Humans" if "Humans" in self.races else self.races[0]
         self.num_empires: int = self.NUM_EMPIRES_DEFAULT
+        self.difficulty: str = DEFAULT_DIFFICULTY
 
         self._color_rects: list[tuple[str, pygame.Rect]] = []
         self._race_rects: list[tuple[str, pygame.Rect, pygame.Surface | None]] = []
@@ -65,6 +69,8 @@ class EmpireSetupScene(Scene):
         self._color_label_pos = (0, 0)
         self._race_label_pos = (0, 0)
         self._empires_label_pos = (0, 0)
+        self._difficulty_label_pos = (0, 0)
+        self._difficulty_rects: list[tuple[str, pygame.Rect]] = []
 
         self._caret_timer = 0.0
         self._caret_visible = True
@@ -110,7 +116,18 @@ class EmpireSetupScene(Scene):
         self._count_box_rect = pygame.Rect(x + btn_w + gap, y, count_w, btn_h)
         self._plus_rect = pygame.Rect(x + btn_w + gap + count_w + gap, y, btn_w, btn_h)
         self._count_text_pos = self._count_box_rect
-        y += btn_h + 24
+        y += btn_h + 20
+
+        # Difficulty picker: row of 4 toggle buttons.
+        self._difficulty_label_pos = (x, y)
+        y += 24
+        diff_w, diff_h = self.DIFFICULTY_BTN_SIZE
+        self._difficulty_rects = []
+        cx = x
+        for diff in DIFFICULTIES:
+            self._difficulty_rects.append((diff, pygame.Rect(cx, y, diff_w, diff_h)))
+            cx += diff_w + self.DIFFICULTY_BTN_GAP
+        y += diff_h + 20
 
         self._race_label_pos = (x, y)
         y += 24
@@ -165,6 +182,10 @@ class EmpireSetupScene(Scene):
             if self._plus_rect.collidepoint(pos):
                 self.num_empires = min(self.NUM_EMPIRES_MAX, self.num_empires + 1)
                 return
+            for diff, rect in self._difficulty_rects:
+                if rect.collidepoint(pos):
+                    self.difficulty = diff
+                    return
             for color_name, rect in self._color_rects:
                 if rect.collidepoint(pos):
                     self.selected_color = color_name
@@ -180,7 +201,11 @@ class EmpireSetupScene(Scene):
             color=self.selected_color,
             race=self.selected_race,
         )
-        self.game.start_new_game(player_empire=preset, num_empires=self.num_empires)
+        self.game.start_new_game(
+            player_empire=preset,
+            num_empires=self.num_empires,
+            difficulty=self.difficulty,
+        )
         self.game.scenes.replace("galaxy")
 
     def _back(self):
@@ -192,9 +217,21 @@ class EmpireSetupScene(Scene):
         self._draw_name_field(screen)
         self._draw_color_row(screen)
         self._draw_empire_count(screen)
+        self._draw_difficulty_row(screen)
         self._draw_race_grid(screen)
         self._draw_button(screen, self._back_rect, "Back")
         self._draw_button(screen, self._start_rect, "Start")
+
+    def _draw_difficulty_row(self, screen):
+        screen.blit(self.label_font.render("Difficulty", True, LABEL_COLOR), self._difficulty_label_pos)
+        for diff, rect in self._difficulty_rects:
+            selected = diff == self.difficulty
+            bg = BUTTON_BG
+            border = SELECTED_RING if selected else BUTTON_BORDER
+            pygame.draw.rect(screen, bg, rect)
+            pygame.draw.rect(screen, border, rect, width=3 if selected else 1)
+            label = self.body_font.render(diff.capitalize(), True, TEXT_COLOR)
+            screen.blit(label, label.get_rect(center=rect.center))
 
     def _draw_name_field(self, screen):
         screen.blit(self.label_font.render("Empire Name", True, LABEL_COLOR), self._name_label_pos)
