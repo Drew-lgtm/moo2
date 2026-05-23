@@ -147,24 +147,37 @@ def _per_turn_by_empire(component_mgr) -> dict[int, tuple[int, int]]:
     return totals
 
 
+POP_GROWTH_RATE = 0.4
+"""Per-turn logistic coefficient. growth = r * pop * (max - pop) / max,
+accumulated as a float in Population.growth_progress until a whole pop
+unit can pop out. The curve decelerates near max."""
+
+
 def pop_growth_tick(game, new_turn: int):
-    """advance_turn callback. Each colonized planet grows by +1 up to max."""
+    """advance_turn callback. Logistic growth: faster mid-range, slower near
+    cap. Accumulated fractional growth is kept in growth_progress."""
     cm = game.component_mgr
-    updates: list[tuple[int, int, int]] = []
+    updates: list[tuple[int, int, int, float]] = []
     for entity_id, pop in cm.get_all(Population):
         if pop.max <= 0:
             continue
         if pop.current < pop.max:
-            pop.current += 1
+            increment = POP_GROWTH_RATE * pop.current * (pop.max - pop.current) / pop.max
+            pop.growth_progress += increment
+            while pop.growth_progress >= 1.0 and pop.current < pop.max:
+                pop.current += 1
+                pop.growth_progress -= 1.0
+            if pop.current >= pop.max:
+                pop.growth_progress = 0.0
         planet = cm.get_component(entity_id, Planet)
         if planet is not None:
-            updates.append((planet.id, pop.current, pop.max))
+            updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
 
     if not updates:
         return
     with get_connection() as conn:
-        for planet_id, current, mx in updates:
-            update_planet_population(conn, planet_id, current, mx)
+        for planet_id, current, mx, growth in updates:
+            update_planet_population(conn, planet_id, current, mx, growth)
         conn.commit()
 
 
@@ -190,7 +203,7 @@ def production_tick(game, new_turn: int):
     empire_gains: dict[int, tuple[int, int]] = {}
     planet_build_updates: list[tuple[int, str | None, int]] = []  # planet_id, current_project, progress
     completed_inserts: list[tuple[int, str]] = []  # planet_id, project_id
-    pop_updates: list[tuple[int, int, int]] = []  # planet_id, current, max  (for hydroponics)
+    pop_updates: list[tuple[int, int, int, float]] = []  # planet_id, current, max, growth_progress (for hydroponics)
 
     for entity_id, owner in cm.get_all(Owner):
         planet = cm.get_component(entity_id, Planet)
@@ -216,7 +229,7 @@ def production_tick(game, new_turn: int):
                 effects = proj.get("effects", {})
                 if "max_pop" in effects and population is not None:
                     population.max += effects["max_pop"]
-                    pop_updates.append((planet.id, population.current, population.max))
+                    pop_updates.append((planet.id, population.current, population.max, population.growth_progress))
 
                 build_state.current_project = None
                 build_state.progress = 0
@@ -242,6 +255,6 @@ def production_tick(game, new_turn: int):
             update_planet_build(conn, planet_id, current_project, progress)
         for planet_id, project_id in completed_inserts:
             insert_planet_building(conn, planet_id, project_id)
-        for planet_id, current, mx in pop_updates:
-            update_planet_population(conn, planet_id, current, mx)
+        for planet_id, current, mx, growth in pop_updates:
+            update_planet_population(conn, planet_id, current, mx, growth)
         conn.commit()

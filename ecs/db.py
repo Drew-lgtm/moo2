@@ -48,6 +48,7 @@ def init_db():
             max_population INTEGER DEFAULT 0,
             current_project TEXT,
             project_progress INTEGER DEFAULT 0,
+            growth_progress REAL DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -90,6 +91,8 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN current_project TEXT")
     if "project_progress" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN project_progress INTEGER DEFAULT 0")
+    if "growth_progress" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN growth_progress REAL DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -110,10 +113,10 @@ def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id
     return cursor.lastrowid
 
 
-def update_planet_population(conn, planet_id, current, max_population):
+def update_planet_population(conn, planet_id, current, max_population, growth_progress=0.0):
     conn.execute(
-        "UPDATE planets SET population = ?, max_population = ? WHERE id = ?",
-        (current, max_population, planet_id),
+        "UPDATE planets SET population = ?, max_population = ?, growth_progress = ? WHERE id = ?",
+        (current, max_population, growth_progress, planet_id),
     )
 
 

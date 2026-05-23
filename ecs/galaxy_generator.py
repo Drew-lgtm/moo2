@@ -223,7 +223,11 @@ class GalaxyGenerator:
                     if max_pop > 0:
                         self.component_mgr.add_component(
                             planet_entity,
-                            Population(current=planet["population"] or 0, max=max_pop),
+                            Population(
+                                current=planet["population"] or 0,
+                                max=max_pop,
+                                growth_progress=planet["growth_progress"] or 0.0,
+                            ),
                         )
                         completed = get_planet_buildings(conn, planet["id"])
                         self.component_mgr.add_component(

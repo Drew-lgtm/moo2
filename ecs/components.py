@@ -31,11 +31,13 @@ class Planet:
 class Population:
     """Per-planet population, attached to colonized planets only.
 
-    current grows up to max each turn (pop_growth_tick). Per-turn output
-    scales by current/max — see ecs.economy.planet_output.
+    current grows toward max each turn following a logistic curve
+    (pop_growth_tick). growth_progress carries fractional growth between
+    turns so the curve decelerates smoothly near the cap.
     """
     current: int
     max: int
+    growth_progress: float = 0.0
 
 
 @dataclass
