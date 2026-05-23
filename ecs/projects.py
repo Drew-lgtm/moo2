@@ -23,27 +23,6 @@ PROJECTS: dict[str, dict] = {
         "description": "+2 BC per turn",
         "effects": {"bc": 2},
     },
-    "research_lab": {
-        "id": "research_lab",
-        "name": "Research Lab",
-        "cost": 60,
-        "description": "+3 Research per turn",
-        "effects": {"research": 3},
-    },
-    "hydroponics": {
-        "id": "hydroponics",
-        "name": "Hydroponics",
-        "cost": 80,
-        "description": "+2 max population",
-        "effects": {"max_pop": 2},
-    },
-    "marketplace": {
-        "id": "marketplace",
-        "name": "Marketplace",
-        "cost": 80,
-        "description": "+3 BC, faster growth",
-        "effects": {"bc": 3, "growth_rate": 0.1},
-    },
     "granary": {
         "id": "granary",
         "name": "Granary",
@@ -51,17 +30,54 @@ PROJECTS: dict[str, dict] = {
         "description": "Population grows faster",
         "effects": {"growth_rate": 0.2},
     },
+    "research_lab": {
+        "id": "research_lab",
+        "name": "Research Lab",
+        "cost": 60,
+        "description": "+3 Research per turn",
+        "effects": {"research": 3},
+        "required_tech": "computer_science",
+    },
+    "hydroponics": {
+        "id": "hydroponics",
+        "name": "Hydroponics",
+        "cost": 80,
+        "description": "+2 max population",
+        "effects": {"max_pop": 2},
+        "required_tech": "agriculture",
+    },
+    "marketplace": {
+        "id": "marketplace",
+        "name": "Marketplace",
+        "cost": 80,
+        "description": "+3 BC, faster growth",
+        "effects": {"bc": 3, "growth_rate": 0.1},
+        "required_tech": "trade",
+    },
     "capital": {
         "id": "capital",
         "name": "Capital",
         "cost": 120,
         "description": "+2 BC, +2 Research, +1 max pop",
         "effects": {"bc": 2, "research": 2, "max_pop": 1},
+        "required_tech": "governance",
     },
 }
 
 # Display order in pickers.
-PROJECT_ORDER = ["factory", "research_lab", "hydroponics", "marketplace", "granary", "capital"]
+PROJECT_ORDER = ["factory", "granary", "research_lab", "hydroponics", "marketplace", "capital"]
+
+
+def project_is_available(project_id: str, unlocked_techs: set[str] | list) -> bool:
+    """A project requires its `required_tech` (if any) to be in
+    `unlocked_techs`. Projects without that key are always available."""
+    proj = PROJECTS.get(project_id)
+    if proj is None:
+        return False
+    required = proj.get("required_tech")
+    if required is None:
+        return True
+    return required in set(unlocked_techs)
 
 
 def building_growth_bonus(completed_ids) -> float:

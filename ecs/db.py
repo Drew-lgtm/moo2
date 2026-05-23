@@ -34,7 +34,16 @@ def init_db():
             bc INTEGER DEFAULT 0,
             research_points INTEGER DEFAULT 0,
             is_player INTEGER DEFAULT 0,
+            tech_target TEXT,
+            tech_progress INTEGER DEFAULT 0,
             FOREIGN KEY(home_star_id) REFERENCES stars(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS empire_techs (
+            empire_id INTEGER NOT NULL,
+            tech_id TEXT NOT NULL,
+            PRIMARY KEY(empire_id, tech_id),
+            FOREIGN KEY(empire_id) REFERENCES empires(id)
         );
 
         CREATE TABLE IF NOT EXISTS planets (
@@ -90,6 +99,10 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN research_points INTEGER DEFAULT 0")
     if "is_player" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN is_player INTEGER DEFAULT 0")
+    if "tech_target" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN tech_target TEXT")
+    if "tech_progress" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN tech_progress INTEGER DEFAULT 0")
 
 
 def _migrate_planets(conn):
@@ -208,6 +221,30 @@ def update_empire_economy(conn, empire_id, bc, research_points):
         "UPDATE empires SET bc = ?, research_points = ? WHERE id = ?",
         (bc, research_points, empire_id),
     )
+
+
+def update_empire_tech(conn, empire_id, tech_target, tech_progress):
+    conn.execute(
+        "UPDATE empires SET tech_target = ?, tech_progress = ? WHERE id = ?",
+        (tech_target, tech_progress, empire_id),
+    )
+
+
+def insert_empire_tech(conn, empire_id, tech_id):
+    conn.execute(
+        "INSERT OR IGNORE INTO empire_techs (empire_id, tech_id) VALUES (?, ?)",
+        (empire_id, tech_id),
+    )
+
+
+def get_empire_techs(conn, empire_id):
+    return [
+        row["tech_id"]
+        for row in conn.execute(
+            "SELECT tech_id FROM empire_techs WHERE empire_id = ?",
+            (empire_id,),
+        )
+    ]
 
 
 def get_stars(conn=None):

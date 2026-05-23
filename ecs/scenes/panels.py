@@ -10,9 +10,11 @@ import os
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population, BuildState
+from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population, BuildState, TechState
 from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output
+from ecs.techs import TECHS, TECH_ORDER, is_available
+from ecs.db import get_connection, update_empire_tech
 from assets.loader import load_image, find_race_portrait
 
 
@@ -437,6 +439,45 @@ class RacesScene(PanelScene):
 class InfoScene(PanelScene):
     title = "Info"
 
+    SECTION_HEADER_COLOR = (255, 230, 120)
+    TECH_ROW_HEIGHT = 22
+
+    def __init__(self, game):
+        super().__init__(game)
+        self._section_font = pygame.font.SysFont("Arial", 16, bold=True)
+        # (tech_id, rect, available) recorded per draw so handle_event can hit-test.
+        self._tech_row_hits: list[tuple[str, pygame.Rect, bool]] = []
+
+    def _player_tech_state(self) -> TechState | None:
+        player = self.game.player_empire()
+        if player is None:
+            return None
+        for _eid, tech in self.game.component_mgr.get_all(TechState):
+            if tech.empire_id == player.id:
+                return tech
+        return None
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            tech_state = self._player_tech_state()
+            if tech_state is not None:
+                for tech_id, rect, available in self._tech_row_hits:
+                    if available and rect.collidepoint(event.pos):
+                        self._set_tech_target(tech_state, tech_id)
+                        return
+        super().handle_event(event)
+
+    def _set_tech_target(self, tech_state: TechState, tech_id: str):
+        # Switching mid-research keeps progress only if same target; otherwise reset.
+        if tech_state.current_target == tech_id:
+            tech_state.current_target = None  # toggle off
+        else:
+            tech_state.current_target = tech_id
+            tech_state.progress = 0
+        with get_connection() as conn:
+            update_empire_tech(conn, tech_state.empire_id, tech_state.current_target, tech_state.progress)
+            conn.commit()
+
     def draw_content(self, screen, rect, font):
         cm = self.game.component_mgr
         galaxy = self.game.galaxy
@@ -444,11 +485,73 @@ class InfoScene(PanelScene):
         planet_count = sum(1 for _ in cm.get_all(Planet))
         empire_count = sum(1 for _ in cm.get_all(Empire))
 
-        lines = [
+        y = rect.y
+        # ---- Empire Stats ----
+        screen.blit(self._section_font.render("Empire Stats", True, self.SECTION_HEADER_COLOR), (rect.x, y))
+        y += 24
+        stat_lines = [
             f"Turn:    {galaxy.turn if galaxy else '-'}",
             f"Seed:    {galaxy.seed if galaxy else '-'}",
             f"Stars:   {star_count}",
             f"Planets: {planet_count}",
             f"Empires: {empire_count}",
         ]
-        _draw_lines(screen, font, lines, rect)
+        for line in stat_lines:
+            screen.blit(font.render(line, True, TEXT_COLOR), (rect.x, y))
+            y += 20
+        y += 12
+
+        # ---- Research ----
+        screen.blit(self._section_font.render("Research", True, self.SECTION_HEADER_COLOR), (rect.x, y))
+        y += 24
+
+        tech_state = self._player_tech_state()
+        self._tech_row_hits = []
+        if tech_state is None:
+            screen.blit(font.render("No player empire.", True, HINT_COLOR), (rect.x, y))
+            return y - rect.y
+
+        # Current target line.
+        if tech_state.current_target:
+            proj = TECHS.get(tech_state.current_target, {})
+            target_label = f"Current: {proj.get('name', tech_state.current_target)} ({tech_state.progress}/{proj.get('cost', '?')})"
+            color = (220, 200, 120)
+        else:
+            target_label = "Current: (none — click a tech below to start research)"
+            color = HINT_COLOR
+        screen.blit(font.render(target_label, True, color), (rect.x, y))
+        y += 22
+
+        unlocked = set(tech_state.unlocked)
+        # ---- Tech list ----
+        for tech_id in TECH_ORDER:
+            tech = TECHS[tech_id]
+            row_rect = pygame.Rect(rect.x, y, rect.width - 20, self.TECH_ROW_HEIGHT)
+            is_unlocked = tech_id in unlocked
+            is_current = tech_state.current_target == tech_id
+            available = (not is_unlocked) and is_available(tech_id, unlocked) and not is_current
+
+            if is_unlocked:
+                marker = "✓"
+                row_color = (160, 200, 160)
+                status = "unlocked"
+            elif is_current:
+                marker = "▶"
+                row_color = (220, 200, 120)
+                status = "researching"
+            elif available:
+                marker = "○"
+                row_color = TEXT_COLOR
+                status = f"cost {tech['cost']}"
+            else:
+                marker = "✕"
+                row_color = (130, 130, 150)
+                prereqs = [TECHS[p]["name"] for p in tech["prereqs"] if p not in unlocked]
+                status = f"needs {', '.join(prereqs)}" if prereqs else "locked"
+
+            label = f"{marker} {tech['name']:<24} {status}"
+            screen.blit(font.render(label, True, row_color), (row_rect.x, y))
+            self._tech_row_hits.append((tech_id, row_rect, available))
+            y += self.TECH_ROW_HEIGHT
+
+        return y - rect.y

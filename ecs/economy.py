@@ -15,7 +15,7 @@ industry / max_pop / growth_rate. See ecs.projects.PROJECTS.
 """
 from __future__ import annotations
 
-from ecs.components import Planet, Owner, Empire, Population, BuildState
+from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState
 from ecs.db import (
     get_connection,
     update_empire_economy,
@@ -24,8 +24,11 @@ from ecs.db import (
     update_planet_workers,
     insert_planet_building,
     save_planet_build_queue,
+    update_empire_tech,
+    insert_empire_tech,
 )
 from ecs.projects import PROJECTS, building_growth_bonus
+from ecs.techs import TECHS
 
 
 # ---- planet capacity (max population) ---------------------------------
@@ -401,16 +404,40 @@ def production_tick(game, new_turn: int):
         empire_gains[owner.empire_id] = (cur_bc + bc_to_empire, cur_res + research)
 
     empire_updates: list[tuple[int, int, int]] = []
+    tech_updates: list[tuple[int, str | None, int]] = []
+    tech_unlocks: list[tuple[int, str]] = []
+    # Map empire id -> TechState component for routing research below.
+    tech_by_empire: dict[int, TechState] = {}
+    for _eid, tech in cm.get_all(TechState):
+        tech_by_empire[tech.empire_id] = tech
+
     for _eid, empire in cm.get_all(Empire):
         gain_bc, gain_res = empire_gains.get(empire.id, (0, 0))
-        if gain_bc or gain_res:
+        if gain_bc:
             empire.bc += gain_bc
+        if gain_res:
             empire.research_points += gain_res
+            # Route research toward the empire's active tech target.
+            tech = tech_by_empire.get(empire.id)
+            if tech is not None and tech.current_target:
+                tech.progress += gain_res
+                proj = TECHS.get(tech.current_target)
+                if proj and tech.progress >= proj["cost"]:
+                    completed_tech = tech.current_target
+                    tech.unlocked.append(completed_tech)
+                    tech_unlocks.append((empire.id, completed_tech))
+                    tech.current_target = None
+                    tech.progress = 0
+                tech_updates.append((empire.id, tech.current_target, tech.progress))
         empire_updates.append((empire.id, empire.bc, empire.research_points))
 
     with get_connection() as conn:
         for empire_id, bc, research in empire_updates:
             update_empire_economy(conn, empire_id, bc, research)
+        for empire_id, target, progress in tech_updates:
+            update_empire_tech(conn, empire_id, target, progress)
+        for empire_id, tech_id in tech_unlocks:
+            insert_empire_tech(conn, empire_id, tech_id)
         for planet_id, current_project, progress in planet_build_updates:
             update_planet_build(conn, planet_id, current_project, progress)
         for planet_id, project_id in completed_inserts:

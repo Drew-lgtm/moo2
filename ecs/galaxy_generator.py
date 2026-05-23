@@ -1,5 +1,5 @@
 import random
-from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population, BuildState
+from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population, BuildState, TechState
 from ecs.palette import EMPIRE_COLOR_RGB
 from ecs.economy import compute_max_population, default_assignment, normalize_assignment
 from assets.star_name_pool import load_star_names, get_random_star_name
@@ -17,6 +17,7 @@ from ecs.db import (
     set_meta,
     get_planet_buildings,
     get_planet_build_queue,
+    get_empire_techs,
 )
 
 META_TURN = "turn"
@@ -269,5 +270,14 @@ class GalaxyGenerator:
                         bc=emp["bc"] or 0,
                         research_points=emp["research_points"] or 0,
                         is_player=bool(emp["is_player"]),
+                    ),
+                )
+                self.component_mgr.add_component(
+                    empire_entity,
+                    TechState(
+                        empire_id=emp["id"],
+                        current_target=emp["tech_target"],
+                        progress=emp["tech_progress"] or 0,
+                        unlocked=get_empire_techs(conn, emp["id"]),
                     ),
                 )

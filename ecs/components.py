@@ -73,3 +73,17 @@ class Empire:
     bc: int = 0
     research_points: int = 0
     is_player: bool = False
+
+
+@dataclass
+class TechState:
+    """Per-empire tech research state.
+
+    Attached to the same entity as the Empire component. `current_target`
+    is the tech id whose progress accumulates from per-turn research.
+    Completed techs land in `unlocked`.
+    """
+    empire_id: int
+    current_target: str | None = None
+    progress: int = 0
+    unlocked: list[str] = field(default_factory=list)

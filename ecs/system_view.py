@@ -1,8 +1,9 @@
 import pygame
 
-from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire
+from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState
 from ecs.palette import planet_color
-from ecs.projects import PROJECTS, PROJECT_ORDER
+from ecs.projects import PROJECTS, PROJECT_ORDER, project_is_available
+from ecs.techs import TECHS
 from ecs.db import get_connection, update_planet_build, update_planet_workers, save_planet_build_queue
 
 
@@ -73,6 +74,15 @@ class SystemView:
             if empire.is_player:
                 return empire.id
         return None
+
+    def _player_unlocked_techs(self) -> set[str]:
+        player_id = self._player_empire_id()
+        if player_id is None:
+            return set()
+        for _eid, tech in self.component_mgr.get_all(TechState):
+            if tech.empire_id == player_id:
+                return set(tech.unlocked)
+        return set()
 
     def _layout_project_buttons(self):
         btn_w, btn_h = self.PROJECT_BTN_SIZE
@@ -199,6 +209,9 @@ class SystemView:
         if project_id in build_state.completed:
             return
         if build_state.current_project == project_id:
+            return
+        # Tech-locked projects can't be queued.
+        if not project_is_available(project_id, self._player_unlocked_techs()):
             return
 
         queue_changed = False
@@ -339,6 +352,7 @@ class SystemView:
             )
             overlay.blit(hint, (24, self.screen.get_height() - 110))
 
+        unlocked = self._player_unlocked_techs()
         for project_id, rect in self._project_button_rects:
             proj = PROJECTS[project_id]
             already_built = build_state is not None and project_id in build_state.completed
@@ -349,7 +363,8 @@ class SystemView:
                 else None
             )
             queued = queue_index is not None
-            available = owned_by_player and not already_built
+            tech_locked = not project_is_available(project_id, unlocked)
+            available = owned_by_player and not already_built and not tech_locked
 
             bg = (60, 60, 90) if available else (40, 40, 50)
             if currently_building:
@@ -373,6 +388,9 @@ class SystemView:
                 cost_text = "BUILDING"
             elif queued:
                 cost_text = f"QUEUED #{queue_index + 2}"  # +2: current_project is #1, queue starts at #2
+            elif tech_locked:
+                required = proj.get("required_tech")
+                cost_text = f"Locked: {TECHS.get(required, {}).get('name', required)}"
             else:
                 cost_text = f"Cost {proj['cost']}"
             cost = font.render(cost_text, True, (180, 220, 255) if available else (130, 130, 150))
