@@ -160,18 +160,20 @@ class GalaxyGenerator:
                 emp_name = player_empire.name
                 race = player_empire.race
                 color = player_empire.color
+                is_player = True
             else:
                 color_pool = [c for c in EMPIRE_COLORS if c not in used_colors] or EMPIRE_COLORS
                 race_pool = [r for r in all_races if r not in used_races] or all_races
                 color = random.choice(color_pool)
                 race = random.choice(race_pool)
                 emp_name = f"Empire {idx + 1}"
+                is_player = False
 
             used_colors.add(color)
             used_races.add(race)
 
             tech = 1
-            emp_id = insert_empire(conn, emp_name, race, color, star_id, tech)
+            emp_id = insert_empire(conn, emp_name, race, color, star_id, tech, is_player=is_player)
             insert_planet(conn, star_id, "Terran", "Medium", True, owner_empire_id=emp_id)
 
             for _ in range(random.randint(1, 2)):
@@ -210,11 +212,14 @@ class GalaxyGenerator:
                 self.component_mgr.add_component(
                     empire_entity,
                     Empire(
-                        emp["id"],
-                        emp["name"],
-                        emp["race_type"],
-                        emp["color"],
-                        emp["tech_level"],
-                        emp["home_star_id"],
+                        id=emp["id"],
+                        name=emp["name"],
+                        race_type=emp["race_type"],
+                        color=emp["color"],
+                        tech_level=emp["tech_level"],
+                        home_star_id=emp["home_star_id"],
+                        bc=emp["bc"] or 0,
+                        research_points=emp["research_points"] or 0,
+                        is_player=bool(emp["is_player"]),
                     ),
                 )

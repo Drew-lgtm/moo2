@@ -2,6 +2,8 @@ import pygame
 
 from ecs.scene import Scene
 from ecs.components import Position, Name, StarVisual
+from ecs.palette import empire_color
+from ecs.economy import empire_per_turn
 from assets.loader import load_image
 
 
@@ -66,13 +68,38 @@ class GalaxyScene(Scene):
                 screen.blit(text_surface, text_rect)
 
         self.game.ui_bar.draw(screen)
-        self._draw_turn_hud(screen)
+        self._draw_hud(screen)
 
-    def _draw_turn_hud(self, screen):
+    def _draw_hud(self, screen):
         if self.game.galaxy is None:
             return
-        text = self.game.font.render(
-            f"Turn {self.game.galaxy.turn}", True, (255, 255, 255)
-        )
-        # 8px padding from top-left.
-        screen.blit(text, (8, 8))
+        font = self.game.font
+        player = self.game.player_empire()
+        x, y = 8, 8
+
+        if player is not None:
+            bc_pt, res_pt = empire_per_turn(self.game.component_mgr, player.id)
+
+            # Empire color bar.
+            pygame.draw.rect(screen, empire_color(player.color), pygame.Rect(x, y + 2, 6, 16))
+            x += 12
+
+            items = [
+                player.name,
+                f"BC {player.bc} (+{bc_pt})",
+                f"Res {player.research_points} (+{res_pt})",
+                f"Turn {self.game.galaxy.turn}",
+            ]
+            for i, text in enumerate(items):
+                if i > 0:
+                    sep = font.render("   ·   ", True, (140, 140, 160))
+                    screen.blit(sep, (x, y))
+                    x += sep.get_width()
+                surf = font.render(text, True, (255, 255, 255))
+                screen.blit(surf, (x, y))
+                x += surf.get_width()
+        else:
+            screen.blit(
+                font.render(f"Turn {self.game.galaxy.turn}", True, (255, 255, 255)),
+                (x, y),
+            )

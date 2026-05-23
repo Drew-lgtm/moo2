@@ -12,6 +12,7 @@ import pygame
 from ecs.scene import Scene
 from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual
 from ecs.palette import empire_color, planet_color
+from ecs.economy import planet_output
 from assets.loader import load_image, find_race_portrait
 
 
@@ -179,8 +180,10 @@ class ColoniesScene(PanelScene):
     COL_PORTRAIT = 24
     COL_STAR = 78
     COL_PLANET = 220
-    COL_SIZE = 370
-    COL_EMPIRE = 450
+    COL_SIZE = 350
+    COL_BC = 420
+    COL_RES = 480
+    COL_EMPIRE = 540
 
     def __init__(self, game):
         super().__init__(game)
@@ -236,6 +239,8 @@ class ColoniesScene(PanelScene):
             (self.COL_STAR, "STAR"),
             (self.COL_PLANET, "PLANET"),
             (self.COL_SIZE, "SIZE"),
+            (self.COL_BC, "BC"),
+            (self.COL_RES, "RES"),
             (self.COL_EMPIRE, "EMPIRE"),
         ]
         for x_off, text in labels:
@@ -267,6 +272,10 @@ class ColoniesScene(PanelScene):
         screen.blit(font.render(planet.planet_type, True, TEXT_COLOR), (dot_x + 18, text_y))
 
         screen.blit(font.render(planet.size, True, TEXT_COLOR), (x + self.COL_SIZE, text_y))
+
+        bc, research = planet_output(planet)
+        screen.blit(font.render(str(bc), True, TEXT_COLOR), (x + self.COL_BC, text_y))
+        screen.blit(font.render(str(research), True, TEXT_COLOR), (x + self.COL_RES, text_y))
 
         empire_label = empire.name if empire is not None else "?"
         screen.blit(font.render(empire_label, True, TEXT_COLOR), (x + self.COL_EMPIRE, text_y))

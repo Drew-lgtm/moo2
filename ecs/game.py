@@ -14,6 +14,8 @@ from ecs.galaxy_generator import GalaxyGenerator
 from ecs.scene import SceneManager
 from ecs.ui_bar import BottomUIBar
 from ecs.db import clear_galaxy
+from ecs.components import Empire
+from ecs.economy import production_tick
 from assets.loader import load_random_background
 
 
@@ -39,8 +41,8 @@ class Game:
         self.scenes = SceneManager()
         self.running = True
 
-        # Functions called after each advance_turn(). Receives the new turn
-        # number. Future systems (production, research) register hooks here.
+        # Functions called after each advance_turn(). Each receives
+        # (game, new_turn). Future systems (production, research) register here.
         self.turn_callbacks: list = []
 
     def _load_background(self):
@@ -92,12 +94,22 @@ class Game:
             )
         self.ui_bar.set_callback("turn", self.advance_turn)
 
+        # Register the production system. Idempotent: only added once per game.
+        if production_tick not in self.turn_callbacks:
+            self.turn_callbacks.append(production_tick)
+
+    def player_empire(self) -> Empire | None:
+        for _eid, emp in self.component_mgr.get_all(Empire):
+            if emp.is_player:
+                return emp
+        return None
+
     def advance_turn(self):
         if self.galaxy is None:
             return None
         new_turn = self.galaxy.advance_turn()
         for cb in self.turn_callbacks:
-            cb(new_turn)
+            cb(self, new_turn)
         return new_turn
 
     def quit(self):

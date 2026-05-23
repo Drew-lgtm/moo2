@@ -31,6 +31,9 @@ def init_db():
             color TEXT,
             home_star_id INTEGER,
             tech_level INTEGER,
+            bc INTEGER DEFAULT 0,
+            research_points INTEGER DEFAULT 0,
+            is_player INTEGER DEFAULT 0,
             FOREIGN KEY(home_star_id) REFERENCES stars(id)
         );
 
@@ -50,7 +53,19 @@ def init_db():
             value TEXT
         );
         """)
+        _migrate_empires(conn)
         conn.commit()
+
+
+def _migrate_empires(conn):
+    """Add columns introduced after the initial schema to existing DBs."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(empires)")}
+    if "bc" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN bc INTEGER DEFAULT 0")
+    if "research_points" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN research_points INTEGER DEFAULT 0")
+    if "is_player" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN is_player INTEGER DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -69,14 +84,22 @@ def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id
     return cursor.lastrowid
 
 
-def insert_empire(conn, name, race_type, color, home_star_id, tech_level) -> int:
+def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *, is_player=False) -> int:
     cursor = conn.execute(
-        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level) VALUES (?, ?, ?, ?, ?)",
-        (name, race_type, color, home_star_id, tech_level),
+        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level, is_player) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, race_type, color, home_star_id, tech_level, 1 if is_player else 0),
     )
     result = cursor.lastrowid
     assert result is not None
     return result
+
+
+def update_empire_economy(conn, empire_id, bc, research_points):
+    conn.execute(
+        "UPDATE empires SET bc = ?, research_points = ? WHERE id = ?",
+        (bc, research_points, empire_id),
+    )
 
 
 def get_stars(conn=None):
