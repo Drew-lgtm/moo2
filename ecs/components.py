@@ -73,6 +73,7 @@ class Empire:
     bc: int = 0
     research_points: int = 0
     is_player: bool = False
+    personality: str = "balanced"
 
 
 @dataclass

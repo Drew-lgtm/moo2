@@ -2,6 +2,7 @@ import random
 from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population, BuildState, TechState
 from ecs.palette import EMPIRE_COLOR_RGB
 from ecs.economy import compute_max_population, default_assignment, normalize_assignment
+from ecs.personalities import AI_PERSONALITY_CYCLE
 from assets.star_name_pool import load_star_names, get_random_star_name
 from assets.loader import list_race_names
 from ecs.db import (
@@ -170,6 +171,7 @@ class GalaxyGenerator:
                 race = player_empire.race
                 color = player_empire.color
                 is_player = True
+                personality = "balanced"
             else:
                 color_pool = [c for c in EMPIRE_COLORS if c not in used_colors] or EMPIRE_COLORS
                 race_pool = [r for r in all_races if r not in used_races] or all_races
@@ -177,12 +179,20 @@ class GalaxyGenerator:
                 race = random.choice(race_pool)
                 emp_name = f"Empire {idx + 1}"
                 is_player = False
+                # Cycle through AI personalities so up to 4 distinct AIs get
+                # one each before any repeats. AI index = idx (with offset
+                # depending on whether slot 0 was the player).
+                ai_index = idx - 1 if player_empire is not None else idx
+                personality = AI_PERSONALITY_CYCLE[ai_index % len(AI_PERSONALITY_CYCLE)]
 
             used_colors.add(color)
             used_races.add(race)
 
             tech = 1
-            emp_id = insert_empire(conn, emp_name, race, color, star_id, tech, is_player=is_player)
+            emp_id = insert_empire(
+                conn, emp_name, race, color, star_id, tech,
+                is_player=is_player, personality=personality,
+            )
             home_max_pop = compute_max_population("Terran", "Medium")
             home_farmers, home_workers, home_scientists = default_assignment("Terran", 2)
             insert_planet(
@@ -277,6 +287,7 @@ class GalaxyGenerator:
                         bc=emp["bc"] or 0,
                         research_points=emp["research_points"] or 0,
                         is_player=bool(emp["is_player"]),
+                        personality=emp["personality"] or "balanced",
                     ),
                 )
                 self.component_mgr.add_component(

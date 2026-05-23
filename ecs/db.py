@@ -36,6 +36,7 @@ def init_db():
             is_player INTEGER DEFAULT 0,
             tech_target TEXT,
             tech_progress INTEGER DEFAULT 0,
+            personality TEXT DEFAULT 'balanced',
             FOREIGN KEY(home_star_id) REFERENCES stars(id)
         );
 
@@ -103,6 +104,8 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN tech_target TEXT")
     if "tech_progress" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN tech_progress INTEGER DEFAULT 0")
+    if "personality" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN personality TEXT DEFAULT 'balanced'")
 
 
 def _migrate_planets(conn):
@@ -205,11 +208,12 @@ def save_planet_build_queue(conn, planet_id, project_ids):
         )
 
 
-def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *, is_player=False) -> int:
+def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *,
+                  is_player=False, personality="balanced") -> int:
     cursor = conn.execute(
-        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level, is_player) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (name, race_type, color, home_star_id, tech_level, 1 if is_player else 0),
+        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level, is_player, personality) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, race_type, color, home_star_id, tech_level, 1 if is_player else 0, personality),
     )
     result = cursor.lastrowid
     assert result is not None

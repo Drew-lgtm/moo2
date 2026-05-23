@@ -25,25 +25,7 @@ from ecs.db import (
     update_planet_build,
     update_empire_tech,
 )
-
-# Priority order the AI follows when queueing builds.
-BUILD_PRIORITY = [
-    "factory",        # always first
-    "granary",        # growth boost
-    "research_lab",   # accelerate tech
-    "marketplace",    # bc + growth
-    "hydroponics",    # +max_pop
-    "capital",        # late-game multi-stat
-]
-
-# Order the AI prefers when picking research.
-RESEARCH_PRIORITY = [
-    "agriculture",
-    "trade",
-    "computer_science",
-    "industrial_engineering",
-    "governance",
-]
+from ecs.personalities import get as get_personality
 
 
 def ai_tick(game, new_turn: int):
@@ -63,15 +45,16 @@ def ai_tick(game, new_turn: int):
     for _eid, empire in cm.get_all(Empire):
         if empire.is_player:
             continue
+        personality = get_personality(empire.personality)
         tech_state = tech_by_empire.get(empire.id)
         unlocked = set(tech_state.unlocked) if tech_state else set()
 
         for entity_id in empire_planets.get(empire.id, []):
-            _ai_rebalance_workers(cm, entity_id, pending_writes)
-            _ai_queue_building(cm, entity_id, unlocked, pending_writes)
+            _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
+            _ai_queue_building(cm, entity_id, personality["build_priority"], unlocked, pending_writes)
 
         if tech_state is not None:
-            _ai_pick_research(tech_state, pending_writes)
+            _ai_pick_research(tech_state, personality["research_priority"], pending_writes)
 
     if not pending_writes:
         return
@@ -86,11 +69,10 @@ def ai_tick(game, new_turn: int):
         conn.commit()
 
 
-def _ai_rebalance_workers(cm, entity_id, pending_writes):
-    """Cover food locally + split the rest 60/40 workers/scientists.
-
-    Simple per-planet self-sufficiency. Suboptimal across empires that
-    have a food surplus (the AI doesn't pool food currently), but safe.
+def _ai_rebalance_workers(cm, entity_id, worker_pct, pending_writes):
+    """Cover food locally, then split the rest by ``worker_pct`` (0-100)
+    between workers and scientists. Always reserve at least 1 worker when
+    any non-farmer slot exists so early-game pop=2 still produces industry.
     """
     planet = cm.get_component(entity_id, Planet)
     pop = cm.get_component(entity_id, Population)
@@ -104,14 +86,11 @@ def _ai_rebalance_workers(cm, entity_id, pending_writes):
         farmers = min(pop.current, (pop.current + food_per_farmer - 1) // food_per_farmer)
 
     remaining = pop.current - farmers
-    # Favor workers (75%) so the AI can actually build; reserve at least 1
-    # worker whenever any non-farmer slot exists so early-game pop=2 still
-    # produces industry.
     if remaining <= 0:
         workers = 0
         scientists = 0
     else:
-        workers = max(1, (remaining * 75) // 100)
+        workers = max(1, (remaining * worker_pct) // 100)
         scientists = remaining - workers
 
     # Only persist if anything actually changed — avoids touching the DB
@@ -124,7 +103,7 @@ def _ai_rebalance_workers(cm, entity_id, pending_writes):
     pending_writes.append(("workers", (planet.id, farmers, workers, scientists)))
 
 
-def _ai_queue_building(cm, entity_id, unlocked: set, pending_writes):
+def _ai_queue_building(cm, entity_id, build_priority, unlocked: set, pending_writes):
     build_state = cm.get_component(entity_id, BuildState)
     planet = cm.get_component(entity_id, Planet)
     if build_state is None or planet is None:
@@ -133,7 +112,7 @@ def _ai_queue_building(cm, entity_id, unlocked: set, pending_writes):
         return
 
     completed = set(build_state.completed)
-    for proj_id in BUILD_PRIORITY:
+    for proj_id in build_priority:
         if proj_id in completed:
             continue
         if not project_is_available(proj_id, unlocked):
@@ -143,11 +122,11 @@ def _ai_queue_building(cm, entity_id, unlocked: set, pending_writes):
         return
 
 
-def _ai_pick_research(tech_state: TechState, pending_writes):
+def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
     if tech_state.current_target:
         return
     unlocked = set(tech_state.unlocked)
-    for tech_id in RESEARCH_PRIORITY:
+    for tech_id in research_priority:
         if tech_id in unlocked:
             continue
         if not is_available(tech_id, unlocked):
