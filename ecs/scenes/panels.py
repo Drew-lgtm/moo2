@@ -188,27 +188,82 @@ class ColoniesScene(PanelScene):
 class PlanetsScene(PanelScene):
     title = "Planets"
 
+    ROW_HEIGHT = 24
+    GROUP_HEADER_HEIGHT = 28
+
+    # Column offsets relative to the body rect's left edge.
+    COL_INDENT = 16
+    COL_DOT = COL_INDENT
+    COL_TYPE = COL_INDENT + 18
+    COL_SIZE = COL_INDENT + 160
+    COL_HABITABLE = COL_INDENT + 240
+    COL_OWNER = COL_INDENT + 360
+
+    HABITABLE_COLOR = (120, 220, 120)
+
+    def __init__(self, game):
+        super().__init__(game)
+        self._group_font = pygame.font.SysFont("Arial", 16, bold=True)
+
     def draw_content(self, screen, rect, font):
         cm = self.game.component_mgr
-        # Group planets by their parent star name.
-        by_star: dict[str, list[Planet]] = {}
+
+        # star_name -> list[(planet, owner_id_or_None)]
+        groups: dict[str, list[tuple[Planet, int | None]]] = {}
         for entity_id, planet in cm.get_all(Planet):
             orbit = cm.get_component(entity_id, Orbiting)
             if orbit is None:
                 continue
             star_name = cm.get_component(orbit.star_entity, Name)
             key = star_name.value if star_name else "?"
-            by_star.setdefault(key, []).append(planet)
+            owner = cm.get_component(entity_id, Owner)
+            groups.setdefault(key, []).append((planet, owner.empire_id if owner else None))
 
-        lines = []
-        for star_name in sorted(by_star):
-            lines.append(f"{star_name}:")
-            for p in by_star[star_name]:
-                flag = "*" if p.colonizable else " "
-                lines.append(f"   {flag} {p.planet_type:<10} {p.size}")
-        if not lines:
-            lines = ["No planets generated."]
-        _draw_lines(screen, font, lines, rect)
+        if not groups:
+            _draw_lines(screen, font, ["No planets generated."], rect, color=HINT_COLOR)
+            return
+
+        empires = self._empires_by_id()
+        y = rect.y
+        for star_name in sorted(groups):
+            if y + self.GROUP_HEADER_HEIGHT > rect.bottom:
+                return
+            screen.blit(self._group_font.render(star_name, True, TITLE_COLOR), (rect.x, y))
+            y += self.GROUP_HEADER_HEIGHT
+
+            for planet, owner_id in groups[star_name]:
+                if y + self.ROW_HEIGHT > rect.bottom:
+                    return
+                self._draw_row(screen, font, rect.x, y, planet, owner_id, empires)
+                y += self.ROW_HEIGHT
+
+    def _draw_row(self, screen, font, x, y, planet, owner_id, empires):
+        dot_center_y = y + self.ROW_HEIGHT // 2
+        pygame.draw.circle(
+            screen, planet_color(planet.planet_type),
+            (x + self.COL_DOT + 6, dot_center_y), 5,
+        )
+
+        text_y = y + (self.ROW_HEIGHT - font.get_height()) // 2
+        screen.blit(font.render(planet.planet_type, True, TEXT_COLOR), (x + self.COL_TYPE, text_y))
+        screen.blit(font.render(planet.size, True, TEXT_COLOR), (x + self.COL_SIZE, text_y))
+
+        if planet.colonizable:
+            screen.blit(
+                font.render("habitable", True, self.HABITABLE_COLOR),
+                (x + self.COL_HABITABLE, text_y),
+            )
+
+        empire = empires.get(owner_id) if owner_id is not None else None
+        if empire is not None:
+            pygame.draw.rect(
+                screen, empire_color(empire.color),
+                pygame.Rect(x + self.COL_OWNER, y + 4, 10, self.ROW_HEIGHT - 8),
+            )
+            screen.blit(
+                font.render(empire.name, True, TEXT_COLOR),
+                (x + self.COL_OWNER + 16, text_y),
+            )
 
 
 class LeadersScene(PanelScene):
