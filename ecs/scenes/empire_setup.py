@@ -32,6 +32,11 @@ class EmpireSetupScene(Scene):
     RACE_COLS = 6
     NAME_MAX = 24
 
+    NUM_EMPIRES_MIN = 2
+    NUM_EMPIRES_MAX = 8
+    NUM_EMPIRES_DEFAULT = 4
+    PICKER_BTN = (32, 32)
+
     def __init__(self, game):
         super().__init__(game)
         self.title_font = pygame.font.SysFont("Arial", 28, bold=True)
@@ -45,15 +50,21 @@ class EmpireSetupScene(Scene):
         self.name: str = "My Empire"
         self.selected_color: str = self.colors[0]
         self.selected_race: str = "Humans" if "Humans" in self.races else self.races[0]
+        self.num_empires: int = self.NUM_EMPIRES_DEFAULT
 
         self._color_rects: list[tuple[str, pygame.Rect]] = []
         self._race_rects: list[tuple[str, pygame.Rect, pygame.Surface | None]] = []
         self._name_rect = pygame.Rect(0, 0, 0, 0)
         self._start_rect = pygame.Rect(0, 0, 0, 0)
         self._back_rect = pygame.Rect(0, 0, 0, 0)
+        self._minus_rect = pygame.Rect(0, 0, 0, 0)
+        self._plus_rect = pygame.Rect(0, 0, 0, 0)
+        self._count_text_pos = (0, 0)
+        self._count_box_rect = pygame.Rect(0, 0, 0, 0)
         self._name_label_pos = (0, 0)
         self._color_label_pos = (0, 0)
         self._race_label_pos = (0, 0)
+        self._empires_label_pos = (0, 0)
 
         self._caret_timer = 0.0
         self._caret_visible = True
@@ -88,6 +99,18 @@ class EmpireSetupScene(Scene):
             self._color_rects.append((color_name, rect))
             cx += self.SWATCH_SIZE[0] + 12
         y += self.SWATCH_SIZE[1] + 24
+
+        # Empire count picker: [-] [count] [+]
+        self._empires_label_pos = (x, y)
+        y += 24
+        btn_w, btn_h = self.PICKER_BTN
+        gap = 8
+        count_w = 56
+        self._minus_rect = pygame.Rect(x, y, btn_w, btn_h)
+        self._count_box_rect = pygame.Rect(x + btn_w + gap, y, count_w, btn_h)
+        self._plus_rect = pygame.Rect(x + btn_w + gap + count_w + gap, y, btn_w, btn_h)
+        self._count_text_pos = self._count_box_rect
+        y += btn_h + 24
 
         self._race_label_pos = (x, y)
         y += 24
@@ -136,6 +159,12 @@ class EmpireSetupScene(Scene):
             if self._back_rect.collidepoint(pos):
                 self._back()
                 return
+            if self._minus_rect.collidepoint(pos):
+                self.num_empires = max(self.NUM_EMPIRES_MIN, self.num_empires - 1)
+                return
+            if self._plus_rect.collidepoint(pos):
+                self.num_empires = min(self.NUM_EMPIRES_MAX, self.num_empires + 1)
+                return
             for color_name, rect in self._color_rects:
                 if rect.collidepoint(pos):
                     self.selected_color = color_name
@@ -151,7 +180,7 @@ class EmpireSetupScene(Scene):
             color=self.selected_color,
             race=self.selected_race,
         )
-        self.game.start_new_game(player_empire=preset)
+        self.game.start_new_game(player_empire=preset, num_empires=self.num_empires)
         self.game.scenes.replace("galaxy")
 
     def _back(self):
@@ -162,6 +191,7 @@ class EmpireSetupScene(Scene):
 
         self._draw_name_field(screen)
         self._draw_color_row(screen)
+        self._draw_empire_count(screen)
         self._draw_race_grid(screen)
         self._draw_button(screen, self._back_rect, "Back")
         self._draw_button(screen, self._start_rect, "Start")
@@ -181,6 +211,32 @@ class EmpireSetupScene(Scene):
                 (caret_x, self._name_rect.bottom - 6),
                 2,
             )
+
+    def _draw_empire_count(self, screen):
+        screen.blit(self.label_font.render("Number of Empires", True, LABEL_COLOR), self._empires_label_pos)
+
+        # Minus button (disabled style if at min).
+        minus_active = self.num_empires > self.NUM_EMPIRES_MIN
+        self._draw_picker_button(screen, self._minus_rect, "−", active=minus_active)
+
+        # Count box.
+        pygame.draw.rect(screen, FIELD_BG, self._count_box_rect)
+        pygame.draw.rect(screen, FIELD_BORDER, self._count_box_rect, width=1)
+        count_surf = self.button_font.render(str(self.num_empires), True, TEXT_COLOR)
+        screen.blit(count_surf, count_surf.get_rect(center=self._count_box_rect.center))
+
+        # Plus button.
+        plus_active = self.num_empires < self.NUM_EMPIRES_MAX
+        self._draw_picker_button(screen, self._plus_rect, "+", active=plus_active)
+
+    def _draw_picker_button(self, screen, rect, glyph, active):
+        bg = BUTTON_BG if active else (40, 40, 50)
+        border = BUTTON_BORDER if active else (90, 90, 110)
+        fg = TEXT_COLOR if active else (120, 120, 140)
+        pygame.draw.rect(screen, bg, rect)
+        pygame.draw.rect(screen, border, rect, width=1)
+        label = self.button_font.render(glyph, True, fg)
+        screen.blit(label, label.get_rect(center=rect.center))
 
     def _draw_color_row(self, screen):
         screen.blit(self.label_font.render("Color", True, LABEL_COLOR), self._color_label_pos)
