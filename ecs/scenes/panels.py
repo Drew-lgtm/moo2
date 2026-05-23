@@ -10,7 +10,7 @@ import os
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual
+from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population
 from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output
 from assets.loader import load_image, find_race_portrait
@@ -148,7 +148,7 @@ class PanelScene(Scene):
         return {emp.id: emp for _eid, emp in self.game.component_mgr.get_all(Empire)}
 
     def _list_owned_planets(self):
-        """Yield (planet, owner_id, star_name) for every planet with an Owner."""
+        """Yield (entity_id, planet, owner_id, star_name) for every planet with an Owner."""
         cm = self.game.component_mgr
         for entity_id, owner in cm.get_all(Owner):
             planet = cm.get_component(entity_id, Planet)
@@ -156,7 +156,7 @@ class PanelScene(Scene):
             if planet is None or orbit is None:
                 continue
             name = cm.get_component(orbit.star_entity, Name)
-            yield planet, owner.empire_id, (name.value if name else "?")
+            yield entity_id, planet, owner.empire_id, (name.value if name else "?")
 
 
 def _draw_lines(screen, font, lines, rect, color=TEXT_COLOR, line_height=20):
@@ -181,9 +181,10 @@ class ColoniesScene(PanelScene):
     COL_STAR = 78
     COL_PLANET = 220
     COL_SIZE = 350
-    COL_BC = 420
-    COL_RES = 480
-    COL_EMPIRE = 540
+    COL_POP = 420
+    COL_BC = 490
+    COL_RES = 540
+    COL_EMPIRE = 600
 
     def __init__(self, game):
         super().__init__(game)
@@ -208,7 +209,7 @@ class ColoniesScene(PanelScene):
         empires = self._empires_by_id()
         rows = sorted(
             self._list_owned_planets(),
-            key=lambda r: (empires[r[1]].name if r[1] in empires else "", r[2]),
+            key=lambda r: (empires[r[2]].name if r[2] in empires else "", r[3]),
         )
 
         if not rows:
@@ -225,11 +226,13 @@ class ColoniesScene(PanelScene):
         )
         prev_clip = screen.get_clip()
         screen.set_clip(scroll_area)
-        for i, (planet, owner_id, star_name) in enumerate(rows):
+        cm = self.game.component_mgr
+        for i, (entity_id, planet, owner_id, star_name) in enumerate(rows):
             row_top = scroll_area.y + i * self.ROW_HEIGHT - self.scroll_offset
             if row_top + self.ROW_HEIGHT < scroll_area.y or row_top > scroll_area.bottom:
                 continue
-            self._draw_row(screen, font, rect.x, row_top, planet, empires.get(owner_id), star_name)
+            population = cm.get_component(entity_id, Population)
+            self._draw_row(screen, font, rect.x, row_top, planet, population, empires.get(owner_id), star_name)
         screen.set_clip(prev_clip)
 
         return self.HEADER_HEIGHT + len(rows) * self.ROW_HEIGHT
@@ -239,6 +242,7 @@ class ColoniesScene(PanelScene):
             (self.COL_STAR, "STAR"),
             (self.COL_PLANET, "PLANET"),
             (self.COL_SIZE, "SIZE"),
+            (self.COL_POP, "POP"),
             (self.COL_BC, "BC"),
             (self.COL_RES, "RES"),
             (self.COL_EMPIRE, "EMPIRE"),
@@ -249,7 +253,7 @@ class ColoniesScene(PanelScene):
                 (rect.x + x_off, rect.y),
             )
 
-    def _draw_row(self, screen, font, x, y, planet, empire, star_name):
+    def _draw_row(self, screen, font, x, y, planet, population, empire, star_name):
         # Empire color swatch (vertical bar).
         if empire is not None:
             pygame.draw.rect(
@@ -273,7 +277,10 @@ class ColoniesScene(PanelScene):
 
         screen.blit(font.render(planet.size, True, TEXT_COLOR), (x + self.COL_SIZE, text_y))
 
-        bc, research = planet_output(planet)
+        pop_label = f"{population.current}/{population.max}" if population is not None else "-"
+        screen.blit(font.render(pop_label, True, TEXT_COLOR), (x + self.COL_POP, text_y))
+
+        bc, research = planet_output(planet, population)
         screen.blit(font.render(str(bc), True, TEXT_COLOR), (x + self.COL_BC, text_y))
         screen.blit(font.render(str(research), True, TEXT_COLOR), (x + self.COL_RES, text_y))
 

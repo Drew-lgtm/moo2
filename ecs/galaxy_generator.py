@@ -1,6 +1,7 @@
 import random
-from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner
+from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population
 from ecs.palette import EMPIRE_COLOR_RGB
+from ecs.economy import compute_max_population
 from assets.star_name_pool import load_star_names, get_random_star_name
 from assets.loader import list_race_names
 from ecs.db import (
@@ -174,7 +175,13 @@ class GalaxyGenerator:
 
             tech = 1
             emp_id = insert_empire(conn, emp_name, race, color, star_id, tech, is_player=is_player)
-            insert_planet(conn, star_id, "Terran", "Medium", True, owner_empire_id=emp_id)
+            home_max_pop = compute_max_population("Terran", "Medium")
+            insert_planet(
+                conn, star_id, "Terran", "Medium", True,
+                owner_empire_id=emp_id,
+                population=2,
+                max_population=home_max_pop,
+            )
 
             for _ in range(random.randint(1, 2)):
                 pt = weighted_choice(PLANET_TYPE_WEIGHTS)
@@ -201,11 +208,22 @@ class GalaxyGenerator:
                     planet_entity = self.entity_mgr.create_entity()
                     self.component_mgr.add_component(
                         planet_entity,
-                        Planet(planet["type"], planet["size"], bool(planet["colonizable"])),
+                        Planet(
+                            id=planet["id"],
+                            planet_type=planet["type"],
+                            size=planet["size"],
+                            colonizable=bool(planet["colonizable"]),
+                        ),
                     )
                     self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
                     if planet["owner_empire_id"] is not None:
                         self.component_mgr.add_component(planet_entity, Owner(planet["owner_empire_id"]))
+                    max_pop = planet["max_population"] or 0
+                    if max_pop > 0:
+                        self.component_mgr.add_component(
+                            planet_entity,
+                            Population(current=planet["population"] or 0, max=max_pop),
+                        )
 
             for emp in get_empires(conn):
                 empire_entity = self.entity_mgr.create_entity()

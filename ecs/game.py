@@ -15,7 +15,7 @@ from ecs.scene import SceneManager
 from ecs.ui_bar import BottomUIBar
 from ecs.db import clear_galaxy
 from ecs.components import Empire
-from ecs.economy import production_tick
+from ecs.economy import production_tick, pop_growth_tick
 from assets.loader import load_random_background
 
 
@@ -94,9 +94,11 @@ class Game:
             )
         self.ui_bar.set_callback("turn", self.advance_turn)
 
-        # Register the production system. Idempotent: only added once per game.
-        if production_tick not in self.turn_callbacks:
-            self.turn_callbacks.append(production_tick)
+        # Register per-turn systems. Order matters: pop_growth runs first so
+        # the same turn's production reflects the new population.
+        for cb in (pop_growth_tick, production_tick):
+            if cb not in self.turn_callbacks:
+                self.turn_callbacks.append(cb)
 
     def player_empire(self) -> Empire | None:
         for _eid, emp in self.component_mgr.get_all(Empire):

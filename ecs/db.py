@@ -44,6 +44,8 @@ def init_db():
             size TEXT,
             colonizable BOOLEAN,
             owner_empire_id INTEGER,
+            population INTEGER DEFAULT 0,
+            max_population INTEGER DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -54,6 +56,7 @@ def init_db():
         );
         """)
         _migrate_empires(conn)
+        _migrate_planets(conn)
         conn.commit()
 
 
@@ -68,6 +71,14 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN is_player INTEGER DEFAULT 0")
 
 
+def _migrate_planets(conn):
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(planets)")}
+    if "population" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN population INTEGER DEFAULT 0")
+    if "max_population" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN max_population INTEGER DEFAULT 0")
+
+
 def insert_star(conn, name, x, y, star_class, image, size):
     cursor = conn.execute(
         "INSERT INTO stars (name, x, y, class, image, size) VALUES (?, ?, ?, ?, ?, ?)",
@@ -76,12 +87,21 @@ def insert_star(conn, name, x, y, star_class, image, size):
     return cursor.lastrowid
 
 
-def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id=None):
+def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id=None,
+                  population=0, max_population=0):
     cursor = conn.execute(
-        "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id) VALUES (?, ?, ?, ?, ?)",
-        (star_id, planet_type, size, colonizable, owner_empire_id),
+        "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id, population, max_population) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (star_id, planet_type, size, colonizable, owner_empire_id, population, max_population),
     )
     return cursor.lastrowid
+
+
+def update_planet_population(conn, planet_id, current, max_population):
+    conn.execute(
+        "UPDATE planets SET population = ?, max_population = ? WHERE id = ?",
+        (current, max_population, planet_id),
+    )
 
 
 def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *, is_player=False) -> int:

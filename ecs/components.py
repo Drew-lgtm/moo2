@@ -21,9 +21,21 @@ class Owner:
 
 @dataclass
 class Planet:
+    id: int
     planet_type: str
     size: str
     colonizable: bool
+
+
+@dataclass
+class Population:
+    """Per-planet population, attached to colonized planets only.
+
+    current grows up to max each turn (pop_growth_tick). Per-turn output
+    scales by current/max — see ecs.economy.planet_output.
+    """
+    current: int
+    max: int
 
 @dataclass
 class Orbiting:

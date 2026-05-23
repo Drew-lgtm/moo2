@@ -1,5 +1,5 @@
 import pygame
-from ecs.components import Planet, Orbiting, Position
+from ecs.components import Planet, Orbiting, Position, Population
 from ecs.palette import planet_color
 
 class SystemView:
@@ -10,14 +10,15 @@ class SystemView:
         self.is_open = True
         self.close_button_rect = pygame.Rect(700, 20, 80, 30)
 
-        # Preload data
+        # Preload (entity_id, planet) tuples. Population/BuildState are looked
+        # up on draw so they reflect the current state.
         self.star_pos = component_mgr.get_component(star_id, Position)
         self.planets = []
         for entity_id, orbit in component_mgr.get_all(Orbiting):
             if orbit.star_entity == star_id:
                 planet = component_mgr.get_component(entity_id, Planet)
                 if planet:
-                    self.planets.append(planet)
+                    self.planets.append((entity_id, planet))
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -43,7 +44,7 @@ class SystemView:
 
         # Draw star and orbits
         center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
-        for i, planet in enumerate(self.planets):
+        for i, (entity_id, planet) in enumerate(self.planets):
             orbit_radius = 60 + i * 40
             pygame.draw.circle(overlay, (100, 100, 100), center, orbit_radius, 1)
             planet_x = center[0] + orbit_radius
@@ -52,10 +53,14 @@ class SystemView:
             radius = size_radius.get(planet.size, 8)  # Fallback to 8
             pygame.draw.circle(overlay, color, (planet_x, planet_y), radius)
 
-
             label = f"{planet.planet_type[:3]} {planet.size[:1]}"
             text_surface = font.render(label, True, (255, 255, 255))
             overlay.blit(text_surface, (planet_x - 15, planet_y + 14))
+
+            population = self.component_mgr.get_component(entity_id, Population)
+            if population is not None:
+                pop_label = font.render(f"{population.current}/{population.max}", True, (180, 220, 255))
+                overlay.blit(pop_label, (planet_x - 15, planet_y + 28))
 
         # Draw close button
         pygame.draw.rect(overlay, (150, 0, 0), self.close_button_rect)
