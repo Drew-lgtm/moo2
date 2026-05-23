@@ -10,7 +10,7 @@ import os
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population
+from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population, BuildState
 from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output
 from assets.loader import load_image, find_race_portrait
@@ -232,7 +232,8 @@ class ColoniesScene(PanelScene):
             if row_top + self.ROW_HEIGHT < scroll_area.y or row_top > scroll_area.bottom:
                 continue
             population = cm.get_component(entity_id, Population)
-            self._draw_row(screen, font, rect.x, row_top, planet, population, empires.get(owner_id), star_name)
+            build_state = cm.get_component(entity_id, BuildState)
+            self._draw_row(screen, font, rect.x, row_top, planet, population, build_state, empires.get(owner_id), star_name)
         screen.set_clip(prev_clip)
 
         return self.HEADER_HEIGHT + len(rows) * self.ROW_HEIGHT
@@ -253,7 +254,7 @@ class ColoniesScene(PanelScene):
                 (rect.x + x_off, rect.y),
             )
 
-    def _draw_row(self, screen, font, x, y, planet, population, empire, star_name):
+    def _draw_row(self, screen, font, x, y, planet, population, build_state, empire, star_name):
         # Empire color swatch (vertical bar).
         if empire is not None:
             pygame.draw.rect(
@@ -280,8 +281,10 @@ class ColoniesScene(PanelScene):
         pop_label = f"{population.current}/{population.max}" if population is not None else "-"
         screen.blit(font.render(pop_label, True, TEXT_COLOR), (x + self.COL_POP, text_y))
 
-        bc, research = planet_output(planet, population)
-        screen.blit(font.render(str(bc), True, TEXT_COLOR), (x + self.COL_BC, text_y))
+        bc, research = planet_output(planet, population, build_state)
+        # If building, the planet's BC is diverted to project progress.
+        bc_to_empire = 0 if build_state and build_state.current_project else bc
+        screen.blit(font.render(str(bc_to_empire), True, TEXT_COLOR), (x + self.COL_BC, text_y))
         screen.blit(font.render(str(research), True, TEXT_COLOR), (x + self.COL_RES, text_y))
 
         empire_label = empire.name if empire is not None else "?"

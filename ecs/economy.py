@@ -6,8 +6,15 @@ assignment, no food. Empire totals accumulate on every advance_turn.
 """
 from __future__ import annotations
 
-from ecs.components import Planet, Owner, Empire, Population
-from ecs.db import get_connection, update_empire_economy, update_planet_population
+from ecs.components import Planet, Owner, Empire, Population, BuildState
+from ecs.db import (
+    get_connection,
+    update_empire_economy,
+    update_planet_population,
+    update_planet_build,
+    insert_planet_building,
+)
+from ecs.projects import PROJECTS
 
 
 SIZE_BASE = {
@@ -87,11 +94,25 @@ def compute_max_population(planet_type: str, size: str) -> int:
     return int(round(cap))
 
 
-def planet_output(planet: Planet, population: Population | None) -> tuple[int, int]:
+def _building_bonus(build_state: BuildState | None) -> tuple[int, int]:
+    """Sum the flat bc/research bonuses from completed buildings."""
+    if build_state is None:
+        return 0, 0
+    bc = research = 0
+    for project_id in build_state.completed:
+        effects = PROJECTS.get(project_id, {}).get("effects", {})
+        bc += effects.get("bc", 0)
+        research += effects.get("research", 0)
+    return bc, research
+
+
+def planet_output(planet: Planet, population: Population | None,
+                  build_state: BuildState | None = None) -> tuple[int, int]:
     """Return (bc, research) for one planet's per-turn output.
 
     Output scales linearly with population: an uncolonized planet (no
-    Population component) or one at zero pop produces nothing.
+    Population component) or one at zero pop produces nothing. Completed
+    buildings add flat bc/research on top of the scaled base.
     """
     if population is None or population.current <= 0 or population.max <= 0:
         return 0, 0
@@ -100,18 +121,27 @@ def planet_output(planet: Planet, population: Population | None) -> tuple[int, i
     research_base = round(base * RESEARCH_MULT.get(planet.planet_type, 0))
     bc = bc_base * population.current // population.max
     research = research_base * population.current // population.max
-    return bc, research
+    bonus_bc, bonus_research = _building_bonus(build_state)
+    return bc + bonus_bc, research + bonus_research
 
 
 def _per_turn_by_empire(component_mgr) -> dict[int, tuple[int, int]]:
-    """Sum (bc, research) per empire across every owned planet."""
+    """Sum (bc, research) per empire across every owned planet.
+
+    Planets currently building a project redirect their BC to progress,
+    so only research counts toward the empire HUD this turn. Research
+    always flows to the empire.
+    """
     totals: dict[int, tuple[int, int]] = {}
     for entity_id, owner in component_mgr.get_all(Owner):
         planet = component_mgr.get_component(entity_id, Planet)
         if planet is None:
             continue
         population = component_mgr.get_component(entity_id, Population)
-        bc, research = planet_output(planet, population)
+        build_state = component_mgr.get_component(entity_id, BuildState)
+        bc, research = planet_output(planet, population, build_state)
+        if build_state and build_state.current_project:
+            bc = 0  # diverted to project progress
         cur_bc, cur_res = totals.get(owner.empire_id, (0, 0))
         totals[owner.empire_id] = (cur_bc + bc, cur_res + research)
     return totals
@@ -144,23 +174,74 @@ def empire_per_turn(component_mgr, empire_id: int) -> tuple[int, int]:
 
 
 def production_tick(game, new_turn: int):
-    """advance_turn callback. Adds each empire's per-turn output to its
-    running BC/research totals and persists the new totals to the DB."""
-    cm = game.component_mgr
-    totals = _per_turn_by_empire(cm)
-    if not totals:
-        return
+    """advance_turn callback. Runs every owned planet's economy:
 
-    # Update ECS components in place.
-    updates: list[tuple[int, int, int]] = []  # (empire_id, bc, research)
+    - If a project is active, the planet's BC goes to project progress.
+      On completion: the project moves to `completed`, flat effects
+      (bc/research) start applying next turn via planet_output; one-off
+      effects (max_pop) apply immediately.
+    - Otherwise the planet's BC flows to the empire.
+    - Research always flows to the empire regardless of build state.
+
+    Mutates ECS components and persists to DB in one transaction.
+    """
+    cm = game.component_mgr
+
+    empire_gains: dict[int, tuple[int, int]] = {}
+    planet_build_updates: list[tuple[int, str | None, int]] = []  # planet_id, current_project, progress
+    completed_inserts: list[tuple[int, str]] = []  # planet_id, project_id
+    pop_updates: list[tuple[int, int, int]] = []  # planet_id, current, max  (for hydroponics)
+
+    for entity_id, owner in cm.get_all(Owner):
+        planet = cm.get_component(entity_id, Planet)
+        if planet is None:
+            continue
+        population = cm.get_component(entity_id, Population)
+        build_state = cm.get_component(entity_id, BuildState)
+        bc, research = planet_output(planet, population, build_state)
+
+        bc_to_empire = bc
+        if build_state and build_state.current_project:
+            # BC diverts to project progress.
+            build_state.progress += bc
+            bc_to_empire = 0
+
+            proj = PROJECTS.get(build_state.current_project)
+            if proj and build_state.progress >= proj["cost"]:
+                completed_id = build_state.current_project
+                build_state.completed.append(completed_id)
+                completed_inserts.append((planet.id, completed_id))
+
+                # One-off effects applied at completion.
+                effects = proj.get("effects", {})
+                if "max_pop" in effects and population is not None:
+                    population.max += effects["max_pop"]
+                    pop_updates.append((planet.id, population.current, population.max))
+
+                build_state.current_project = None
+                build_state.progress = 0
+
+            planet_build_updates.append((planet.id, build_state.current_project, build_state.progress))
+
+        cur_bc, cur_res = empire_gains.get(owner.empire_id, (0, 0))
+        empire_gains[owner.empire_id] = (cur_bc + bc_to_empire, cur_res + research)
+
+    # Accumulate on Empire components.
+    empire_updates: list[tuple[int, int, int]] = []
     for _eid, empire in cm.get_all(Empire):
-        bc_gain, res_gain = totals.get(empire.id, (0, 0))
-        if bc_gain or res_gain:
-            empire.bc += bc_gain
-            empire.research_points += res_gain
-        updates.append((empire.id, empire.bc, empire.research_points))
+        gain_bc, gain_res = empire_gains.get(empire.id, (0, 0))
+        if gain_bc or gain_res:
+            empire.bc += gain_bc
+            empire.research_points += gain_res
+        empire_updates.append((empire.id, empire.bc, empire.research_points))
 
     with get_connection() as conn:
-        for empire_id, bc, research in updates:
+        for empire_id, bc, research in empire_updates:
             update_empire_economy(conn, empire_id, bc, research)
+        for planet_id, current_project, progress in planet_build_updates:
+            update_planet_build(conn, planet_id, current_project, progress)
+        for planet_id, project_id in completed_inserts:
+            insert_planet_building(conn, planet_id, project_id)
+        for planet_id, current, mx in pop_updates:
+            update_planet_population(conn, planet_id, current, mx)
         conn.commit()

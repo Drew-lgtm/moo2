@@ -46,8 +46,17 @@ def init_db():
             owner_empire_id INTEGER,
             population INTEGER DEFAULT 0,
             max_population INTEGER DEFAULT 0,
+            current_project TEXT,
+            project_progress INTEGER DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS planet_buildings (
+            planet_id INTEGER NOT NULL,
+            project_id TEXT NOT NULL,
+            PRIMARY KEY(planet_id, project_id),
+            FOREIGN KEY(planet_id) REFERENCES planets(id)
         );
 
         CREATE TABLE IF NOT EXISTS meta (
@@ -77,6 +86,10 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN population INTEGER DEFAULT 0")
     if "max_population" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN max_population INTEGER DEFAULT 0")
+    if "current_project" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN current_project TEXT")
+    if "project_progress" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN project_progress INTEGER DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -102,6 +115,30 @@ def update_planet_population(conn, planet_id, current, max_population):
         "UPDATE planets SET population = ?, max_population = ? WHERE id = ?",
         (current, max_population, planet_id),
     )
+
+
+def update_planet_build(conn, planet_id, current_project, progress):
+    conn.execute(
+        "UPDATE planets SET current_project = ?, project_progress = ? WHERE id = ?",
+        (current_project, progress, planet_id),
+    )
+
+
+def insert_planet_building(conn, planet_id, project_id):
+    conn.execute(
+        "INSERT OR IGNORE INTO planet_buildings (planet_id, project_id) VALUES (?, ?)",
+        (planet_id, project_id),
+    )
+
+
+def get_planet_buildings(conn, planet_id):
+    return [
+        row["project_id"]
+        for row in conn.execute(
+            "SELECT project_id FROM planet_buildings WHERE planet_id = ?",
+            (planet_id,),
+        )
+    ]
 
 
 def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *, is_player=False) -> int:
