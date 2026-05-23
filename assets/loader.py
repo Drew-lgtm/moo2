@@ -15,6 +15,25 @@ def load_image(path, size=(32, 32)):
     return _image_cache[key]
 
 _race_portrait_cache: dict[str, str | None] = {}
+_cached_race_names: list[str] | None = None
+
+
+def list_race_names() -> list[str]:
+    """Return display names for every race that has a portrait in
+    assets/races/. Lower-case file stems are title-cased; ones already
+    capitalized are left alone. Cached after first scan."""
+    global _cached_race_names
+    if _cached_race_names is not None:
+        return list(_cached_race_names)
+    races_dir = os.path.join(ASSETS_DIR, "races")
+    names = []
+    for fname in sorted(os.listdir(races_dir)):
+        if not fname.lower().endswith(".png"):
+            continue
+        stem = os.path.splitext(fname)[0]
+        names.append(stem if stem[0].isupper() else stem.capitalize())
+    _cached_race_names = names
+    return list(names)
 
 
 def find_race_portrait(race_name: str) -> str | None:

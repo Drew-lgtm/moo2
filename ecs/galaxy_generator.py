@@ -1,6 +1,8 @@
 import random
 from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner
+from ecs.palette import EMPIRE_COLOR_RGB
 from assets.star_name_pool import load_star_names, get_random_star_name
+from assets.loader import list_race_names
 from ecs.db import (
     init_db,
     get_connection,
@@ -44,7 +46,7 @@ PLANET_TYPE_WEIGHTS = {
     "Asteroids": 0.06, "Gas Giant": 0.07,
 }
 
-EMPIRE_COLORS = ["blue", "red", "green", "yellow", "purple", "orange"]
+EMPIRE_COLORS = list(EMPIRE_COLOR_RGB.keys())
 
 
 def weighted_choice(choices):
@@ -67,8 +69,13 @@ class GalaxyGenerator:
         self.turn = 1
         self.seed = None
 
-    def generate(self, num_empires=2, seed=None):
-        """Create a fresh galaxy in the DB, then load it into ECS."""
+    def generate(self, num_empires=2, seed=None, player_empire=None):
+        """Create a fresh galaxy in the DB, then load it into ECS.
+
+        If ``player_empire`` is provided, it lands on the first generated
+        empire slot. Remaining slots are filled with random race/color
+        picks that avoid the player's choices.
+        """
         init_db()
         if seed is None:
             seed = random.randint(0, 2**31 - 1)
@@ -77,7 +84,7 @@ class GalaxyGenerator:
         random.seed(seed)
         with get_connection() as conn:
             self._place_stars_and_planets(conn)
-            self._assign_empires(conn, num_empires)
+            self._assign_empires(conn, num_empires, player_empire)
             set_meta(conn, META_SEED, seed)
             set_meta(conn, META_TURN, self.turn)
             conn.commit()
@@ -126,7 +133,7 @@ class GalaxyGenerator:
         if placed < self.num_stars:
             print(f"[galaxy] Only placed {placed}/{self.num_stars} stars (min-distance constraint).")
 
-    def _assign_empires(self, conn, num_empires):
+    def _assign_empires(self, conn, num_empires, player_empire=None):
         stars = list(get_stars(conn))
         random.shuffle(stars)
 
@@ -141,17 +148,30 @@ class GalaxyGenerator:
             if len(chosen) >= num_empires:
                 break
 
+        used_colors: set[str] = set()
+        used_races: set[str] = set()
+        all_races = list_race_names() or ["Humans"]
+
         for idx, star in enumerate(chosen):
             star_id = star["id"]
-
             conn.execute("DELETE FROM planets WHERE star_id = ?", (star_id,))
 
-            race = "Human"
-            color = EMPIRE_COLORS[idx % len(EMPIRE_COLORS)]
-            emp_name = f"Empire {idx + 1}"
+            if idx == 0 and player_empire is not None:
+                emp_name = player_empire.name
+                race = player_empire.race
+                color = player_empire.color
+            else:
+                color_pool = [c for c in EMPIRE_COLORS if c not in used_colors] or EMPIRE_COLORS
+                race_pool = [r for r in all_races if r not in used_races] or all_races
+                color = random.choice(color_pool)
+                race = random.choice(race_pool)
+                emp_name = f"Empire {idx + 1}"
+
+            used_colors.add(color)
+            used_races.add(race)
+
             tech = 1
             emp_id = insert_empire(conn, emp_name, race, color, star_id, tech)
-
             insert_planet(conn, star_id, "Terran", "Medium", True, owner_empire_id=emp_id)
 
             for _ in range(random.randint(1, 2)):

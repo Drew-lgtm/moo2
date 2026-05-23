@@ -53,7 +53,7 @@ class Game:
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(self.screen_width, self.screen_height)
 
-    def start_new_game(self):
+    def start_new_game(self, player_empire=None):
         clear_galaxy()
         self._reset_world()
         self.galaxy = GalaxyGenerator(
@@ -61,7 +61,7 @@ class Game:
             self.screen_width, self.screen_height,
             num_stars=self.num_stars,
         )
-        self.galaxy.generate()
+        self.galaxy.generate(player_empire=player_empire)
         self._bind_game_ui()
 
     def load_game(self):

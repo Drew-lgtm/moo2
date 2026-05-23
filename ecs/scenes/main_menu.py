@@ -10,8 +10,7 @@ class MainMenuScene(Scene):
     def handle_event(self, event):
         result = self.menu.handle_event(event)
         if result == "New Game":
-            self.game.start_new_game()
-            self.game.scenes.replace("galaxy")
+            self.game.scenes.replace("empire_setup")
         elif result == "Load Game":
             self.game.load_game()
             self.game.scenes.replace("galaxy")
