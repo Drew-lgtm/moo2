@@ -1,9 +1,10 @@
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Position, Name, StarVisual, Ship, ShipOwner, ShipAt, Empire
+from ecs.components import Position, Name, StarVisual, Ship, ShipOwner, ShipAt, ShipInTransit, Empire
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
+from ecs.fleet import start_fleet_movement
 from assets.loader import load_image
 
 
@@ -14,6 +15,8 @@ class GalaxyScene(Scene):
         super().__init__(game)
         # entity_id -> scaled pygame.Surface, rebuilt on_enter from current StarVisuals.
         self._star_surfaces: dict[int, pygame.Surface] = {}
+        # Star entity holding the player's currently-selected fleet, if any.
+        self.selected_fleet_star: int | None = None
 
     def on_enter(self):
         self._preload_star_surfaces()
@@ -28,15 +31,62 @@ class GalaxyScene(Scene):
     def handle_event(self, event):
         self.game.ui_bar.handle_event(event)
 
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.game.scenes.replace("pause")
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if self.selected_fleet_star is not None:
+                    self.selected_fleet_star = None
+                else:
+                    self.game.scenes.replace("pause")
             return
 
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        if event.type == pygame.MOUSEBUTTONDOWN:
             star = self._star_at(event.pos)
-            if star is not None:
+            if event.button == 1 and star is not None:
+                # Left-click: open System View as before.
                 self.game.selected_star = star
                 self.game.scenes.replace("system")
+            elif event.button == 3 and star is not None:
+                # Right-click: select/move fleet.
+                self._handle_fleet_click(star)
+
+    def _handle_fleet_click(self, star_entity: int):
+        """Right-click flow:
+
+        - If we're not selecting a fleet yet and this star has player ships:
+          select it.
+        - If we're already selecting from this star: deselect (toggle).
+        - If we're selecting from another star: move those ships here.
+        """
+        player = self.game.player_empire()
+        if player is None:
+            return
+        ships_here = self._player_ships_at(star_entity, player.id)
+        if self.selected_fleet_star is None:
+            if ships_here:
+                self.selected_fleet_star = star_entity
+        elif self.selected_fleet_star == star_entity:
+            self.selected_fleet_star = None
+        else:
+            source_ships = self._player_ships_at(self.selected_fleet_star, player.id)
+            if source_ships:
+                start_fleet_movement(
+                    self.game.component_mgr,
+                    source_ships,
+                    self.selected_fleet_star,
+                    star_entity,
+                )
+            self.selected_fleet_star = None
+
+    def _player_ships_at(self, star_entity: int, player_empire_id: int) -> list[int]:
+        out: list[int] = []
+        cm = self.game.component_mgr
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != star_entity:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            if owner is not None and owner.empire_id == player_empire_id:
+                out.append(ship_entity)
+        return out
 
     def _star_at(self, pos):
         mouse_x, mouse_y = pos
@@ -67,9 +117,39 @@ class GalaxyScene(Scene):
                 text_rect.clamp_ip(screen.get_rect())
                 screen.blit(text_surface, text_rect)
 
+        self._draw_in_transit_ships(screen)
+        self._draw_selection_ring(screen)
         self._draw_fleet_badges(screen)
         self.game.ui_bar.draw(screen)
         self._draw_hud(screen)
+
+    def _draw_selection_ring(self, screen):
+        if self.selected_fleet_star is None:
+            return
+        cm = self.game.component_mgr
+        pos = cm.get_component(self.selected_fleet_star, Position)
+        visual = cm.get_component(self.selected_fleet_star, StarVisual)
+        if pos is None or visual is None:
+            return
+        pygame.draw.circle(screen, (255, 230, 120), (pos.x, pos.y), visual.size // 2 + 6, 2)
+
+    def _draw_in_transit_ships(self, screen):
+        """Render a small empire-colored dot at the midpoint between
+        source and destination for each ship in transit. Crude — a future
+        pass could animate position based on turns_remaining vs total."""
+        cm = self.game.component_mgr
+        empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
+        for ship_entity, transit in cm.get_all(ShipInTransit):
+            from_pos = cm.get_component(transit.from_star_entity, Position)
+            to_pos = cm.get_component(transit.to_star_entity, Position)
+            owner = cm.get_component(ship_entity, ShipOwner)
+            if from_pos is None or to_pos is None or owner is None:
+                continue
+            mid_x = (from_pos.x + to_pos.x) // 2
+            mid_y = (from_pos.y + to_pos.y) // 2
+            rgb = empire_color(empire_colors_by_id.get(owner.empire_id, "blue"))
+            pygame.draw.circle(screen, rgb, (mid_x, mid_y), 4)
+            pygame.draw.circle(screen, (255, 255, 255), (mid_x, mid_y), 4, 1)
 
     def _draw_fleet_badges(self, screen):
         """Render per-empire ship counts under each star.

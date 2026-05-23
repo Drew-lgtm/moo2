@@ -17,6 +17,7 @@ from ecs.db import clear_galaxy
 from ecs.components import Empire
 from ecs.economy import production_tick, pop_growth_tick
 from ecs.ai import ai_tick
+from ecs.fleet import fleet_tick
 from assets.loader import load_random_background
 
 
@@ -97,8 +98,10 @@ class Game:
 
         # Register per-turn systems. Order matters: AI rebalances workers
         # and queues builds first, then population grows, then production
-        # applies — so the AI's choices take effect on the same turn.
-        for cb in (ai_tick, pop_growth_tick, production_tick):
+        # applies, then fleet movement advances. fleet_tick runs last so
+        # newly spawned ships don't start moving the same turn they're
+        # built.
+        for cb in (ai_tick, pop_growth_tick, production_tick, fleet_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 
