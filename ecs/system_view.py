@@ -118,15 +118,15 @@ class SystemView:
         # Already completed projects can't be queued again.
         if project_id in build_state.completed:
             return
-        # Picking a new project mid-build resets progress.
+        # MOO2 carries accumulated progress to the new project — switching
+        # doesn't waste industry already spent.
         build_state.current_project = project_id
-        build_state.progress = 0
         # Persist immediately: saving between pick and turn-end shouldn't
         # silently revert the choice.
         planet = self.component_mgr.get_component(self.selected_entity, Planet)
         if planet is not None:
             with get_connection() as conn:
-                update_planet_build(conn, planet.id, project_id, 0)
+                update_planet_build(conn, planet.id, project_id, build_state.progress)
                 conn.commit()
 
     # ---- draw -------------------------------------------------------------
