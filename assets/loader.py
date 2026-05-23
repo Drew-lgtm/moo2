@@ -14,6 +14,29 @@ def load_image(path, size=(32, 32)):
         _image_cache[key] = pygame.transform.scale(image, size)
     return _image_cache[key]
 
+_race_portrait_cache: dict[str, str | None] = {}
+
+
+def find_race_portrait(race_name: str) -> str | None:
+    """Return a relative path like 'races/humans.png' matching race_name.
+
+    Case-insensitive prefix match against assets/races/*.png. Returns None
+    if nothing matches. Cached because it scans the directory each miss.
+    """
+    if race_name in _race_portrait_cache:
+        return _race_portrait_cache[race_name]
+    target = race_name.lower()
+    races_dir = os.path.join(ASSETS_DIR, "races")
+    for fname in os.listdir(races_dir):
+        if not fname.lower().endswith(".png"):
+            continue
+        if fname.lower().startswith(target):
+            _race_portrait_cache[race_name] = f"races/{fname}"
+            return _race_portrait_cache[race_name]
+    _race_portrait_cache[race_name] = None
+    return None
+
+
 def load_random_background(folder="backgrounds"):
     files = [
         f for f in os.listdir(os.path.join(ASSETS_DIR, folder))

@@ -11,7 +11,8 @@ import pygame
 
 from ecs.scene import Scene
 from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual
-from assets.loader import load_image
+from ecs.palette import empire_color, planet_color
+from assets.loader import load_image, find_race_portrait
 
 
 PANEL_BG = (10, 12, 24, 220)
@@ -94,16 +95,94 @@ def _draw_lines(screen, font, lines, rect, color=TEXT_COLOR, line_height=20):
 class ColoniesScene(PanelScene):
     title = "Colonies"
 
+    PORTRAIT_SIZE = (40, 40)
+    ROW_HEIGHT = 48
+    HEADER_HEIGHT = 24
+
+    # Column x offsets relative to the body rect.
+    COL_SWATCH = 0
+    COL_PORTRAIT = 24
+    COL_STAR = 78
+    COL_PLANET = 220
+    COL_SIZE = 370
+    COL_EMPIRE = 450
+
+    def __init__(self, game):
+        super().__init__(game)
+        self._portraits: dict[str, pygame.Surface] = {}
+        self._header_font = pygame.font.SysFont("Arial", 13, bold=True)
+
+    def on_enter(self):
+        # Preload portraits for every empire's race so draw() is allocation-free.
+        for _eid, empire in self.game.component_mgr.get_all(Empire):
+            self._ensure_portrait(empire.race_type)
+
+    def _ensure_portrait(self, race_name: str) -> pygame.Surface | None:
+        if race_name in self._portraits:
+            return self._portraits[race_name]
+        path = find_race_portrait(race_name)
+        surface = load_image(path, size=self.PORTRAIT_SIZE) if path else None
+        self._portraits[race_name] = surface
+        return surface
+
     def draw_content(self, screen, rect, font):
         empires = self._empires_by_id()
-        lines = []
-        for planet, owner_id, star_name in self._list_owned_planets():
-            empire = empires.get(owner_id)
-            empire_label = empire.name if empire else f"Empire #{owner_id}"
-            lines.append(f"{star_name:<14}  {planet.planet_type:<10} {planet.size:<6}  {empire_label}")
-        if not lines:
-            lines = ["No colonies yet."]
-        _draw_lines(screen, font, lines, rect)
+        rows = sorted(
+            self._list_owned_planets(),
+            key=lambda r: (empires[r[1]].name if r[1] in empires else "", r[2]),
+        )
+
+        if not rows:
+            _draw_lines(screen, font, ["No colonies yet."], rect, color=HINT_COLOR)
+            return
+
+        self._draw_header(screen, rect)
+        body_top = rect.y + self.HEADER_HEIGHT
+        for i, (planet, owner_id, star_name) in enumerate(rows):
+            row_top = body_top + i * self.ROW_HEIGHT
+            if row_top + self.ROW_HEIGHT > rect.bottom:
+                break
+            self._draw_row(screen, font, rect.x, row_top, planet, empires.get(owner_id), star_name)
+
+    def _draw_header(self, screen, rect):
+        labels = [
+            (self.COL_STAR, "STAR"),
+            (self.COL_PLANET, "PLANET"),
+            (self.COL_SIZE, "SIZE"),
+            (self.COL_EMPIRE, "EMPIRE"),
+        ]
+        for x_off, text in labels:
+            screen.blit(
+                self._header_font.render(text, True, HINT_COLOR),
+                (rect.x + x_off, rect.y),
+            )
+
+    def _draw_row(self, screen, font, x, y, planet, empire, star_name):
+        # Empire color swatch (vertical bar).
+        if empire is not None:
+            pygame.draw.rect(
+                screen, empire_color(empire.color),
+                pygame.Rect(x + self.COL_SWATCH, y + 4, 12, self.ROW_HEIGHT - 8),
+            )
+
+        # Race portrait.
+        portrait = self._ensure_portrait(empire.race_type) if empire is not None else None
+        if portrait is not None:
+            screen.blit(portrait, (x + self.COL_PORTRAIT, y + (self.ROW_HEIGHT - self.PORTRAIT_SIZE[1]) // 2))
+
+        text_y = y + (self.ROW_HEIGHT - font.get_height()) // 2
+        screen.blit(font.render(star_name, True, TEXT_COLOR), (x + self.COL_STAR, text_y))
+
+        # Planet type with a colored dot.
+        dot_x = x + self.COL_PLANET
+        dot_center_y = y + self.ROW_HEIGHT // 2
+        pygame.draw.circle(screen, planet_color(planet.planet_type), (dot_x + 6, dot_center_y), 6)
+        screen.blit(font.render(planet.planet_type, True, TEXT_COLOR), (dot_x + 18, text_y))
+
+        screen.blit(font.render(planet.size, True, TEXT_COLOR), (x + self.COL_SIZE, text_y))
+
+        empire_label = empire.name if empire is not None else "?"
+        screen.blit(font.render(empire_label, True, TEXT_COLOR), (x + self.COL_EMPIRE, text_y))
 
 
 class PlanetsScene(PanelScene):

@@ -1,5 +1,6 @@
 import pygame
 from ecs.components import Planet, Orbiting, Position
+from ecs.palette import planet_color
 
 class SystemView:
     def __init__(self, screen, component_mgr, star_id):
@@ -47,24 +48,7 @@ class SystemView:
             pygame.draw.circle(overlay, (100, 100, 100), center, orbit_radius, 1)
             planet_x = center[0] + orbit_radius
             planet_y = center[1]
-            planet_colors = {
-                "Terran": (100, 200, 255),
-                "Ocean": (80, 160, 255),
-                "Jungle": (50, 180, 50),
-                "Arid": (210, 180, 100),
-                "Desert": (230, 200, 120),
-                "Tundra": (180, 180, 220),
-                "Steppe": (160, 200, 140),
-                "Barren": (150, 150, 150),
-                "Gaia": (0, 255, 0),
-                "Radiated": (255, 100, 255),
-                "Toxic": (255, 80, 80),
-                "Inferno": (255, 50, 0),
-                "Volcanic": (255, 100, 0),
-                "Asteroids": (100, 100, 100),
-                "Gas Giant": (120, 120, 255),
-            }
-            color = planet_colors.get(planet.planet_type, (200, 200, 200))
+            color = planet_color(planet.planet_type)
             radius = size_radius.get(planet.size, 8)  # Fallback to 8
             pygame.draw.circle(overlay, color, (planet_x, planet_y), radius)
 
