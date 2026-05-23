@@ -49,14 +49,14 @@ class Population:
 class BuildState:
     """Per-planet construction state.
 
-    Attached to colonized planets. While current_project is set, the
-    planet's BC accumulates as progress instead of flowing to the empire.
-    Completed projects' flat effects (bc, research) apply to the planet's
-    output every subsequent turn.
+    `current_project` is the active build. `queue` holds items behind it,
+    in order. When a project completes, the next queued item becomes
+    current and any progress overflow carries over.
     """
     current_project: str | None = None
     progress: int = 0
     completed: list[str] = field(default_factory=list)
+    queue: list[str] = field(default_factory=list)
 
 @dataclass
 class Orbiting:

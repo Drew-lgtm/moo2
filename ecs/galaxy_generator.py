@@ -16,6 +16,7 @@ from ecs.db import (
     get_meta,
     set_meta,
     get_planet_buildings,
+    get_planet_build_queue,
 )
 
 META_TURN = "turn"
@@ -243,12 +244,14 @@ class GalaxyGenerator:
                             normalize_assignment(pop)
                         self.component_mgr.add_component(planet_entity, pop)
                         completed = get_planet_buildings(conn, planet["id"])
+                        queue = get_planet_build_queue(conn, planet["id"])
                         self.component_mgr.add_component(
                             planet_entity,
                             BuildState(
                                 current_project=planet["current_project"],
                                 progress=planet["project_progress"] or 0,
                                 completed=completed,
+                                queue=queue,
                             ),
                         )
 

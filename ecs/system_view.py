@@ -3,7 +3,7 @@ import pygame
 from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire
 from ecs.palette import planet_color
 from ecs.projects import PROJECTS, PROJECT_ORDER
-from ecs.db import get_connection, update_planet_build, update_planet_workers
+from ecs.db import get_connection, update_planet_build, update_planet_workers, save_planet_build_queue
 
 
 SIZE_RADIUS = {
@@ -179,9 +179,16 @@ class SystemView:
                 conn.commit()
 
     def _try_set_project(self, project_id):
+        """Clicking a project button:
+
+        - If completed already: no-op.
+        - If currently building it: no-op (can't cancel mid-build).
+        - If already queued: remove from queue (toggle off).
+        - Else if nothing is being built: start it.
+        - Else: append to queue.
+        """
         if self.selected_entity is None:
             return
-        # Only the player can change projects on their own planets.
         player_id = self._player_empire_id()
         owner = self.component_mgr.get_component(self.selected_entity, Owner)
         if owner is None or owner.empire_id != player_id:
@@ -189,18 +196,30 @@ class SystemView:
         build_state = self.component_mgr.get_component(self.selected_entity, BuildState)
         if build_state is None:
             return
-        # Already completed projects can't be queued again.
         if project_id in build_state.completed:
             return
-        # MOO2 carries accumulated progress to the new project — switching
-        # doesn't waste industry already spent.
-        build_state.current_project = project_id
-        # Persist immediately: saving between pick and turn-end shouldn't
-        # silently revert the choice.
+        if build_state.current_project == project_id:
+            return
+
+        queue_changed = False
+        current_changed = False
+        if project_id in build_state.queue:
+            build_state.queue.remove(project_id)
+            queue_changed = True
+        elif build_state.current_project is None:
+            build_state.current_project = project_id
+            current_changed = True
+        else:
+            build_state.queue.append(project_id)
+            queue_changed = True
+
         planet = self.component_mgr.get_component(self.selected_entity, Planet)
         if planet is not None:
             with get_connection() as conn:
-                update_planet_build(conn, planet.id, project_id, build_state.progress)
+                if current_changed:
+                    update_planet_build(conn, planet.id, build_state.current_project, build_state.progress)
+                if queue_changed:
+                    save_planet_build_queue(conn, planet.id, list(build_state.queue))
                 conn.commit()
 
     # ---- draw -------------------------------------------------------------
@@ -261,6 +280,8 @@ class SystemView:
             if build_state.current_project:
                 proj = PROJECTS.get(build_state.current_project, {})
                 text = f"{proj.get('name', build_state.current_project)} {build_state.progress}/{proj.get('cost', '?')}"
+                if build_state.queue:
+                    text += f" +{len(build_state.queue)}"
                 color = (220, 200, 120)
             elif build_state.completed:
                 text = f"Built: {len(build_state.completed)}"
@@ -322,18 +343,38 @@ class SystemView:
             proj = PROJECTS[project_id]
             already_built = build_state is not None and project_id in build_state.completed
             currently_building = build_state is not None and build_state.current_project == project_id
+            queue_index = (
+                build_state.queue.index(project_id)
+                if build_state is not None and project_id in build_state.queue
+                else None
+            )
+            queued = queue_index is not None
             available = owned_by_player and not already_built
 
             bg = (60, 60, 90) if available else (40, 40, 50)
-            border = (255, 230, 120) if currently_building else ((180, 180, 220) if available else (90, 90, 110))
+            if currently_building:
+                border = (255, 230, 120)
+            elif queued:
+                border = (120, 180, 255)
+            elif available:
+                border = (180, 180, 220)
+            else:
+                border = (90, 90, 110)
             pygame.draw.rect(overlay, bg, rect)
-            pygame.draw.rect(overlay, border, rect, width=2 if currently_building else 1)
+            pygame.draw.rect(overlay, border, rect, width=2 if (currently_building or queued) else 1)
 
             name_color = (240, 240, 240) if available else (120, 120, 140)
             name = font.render(proj["name"], True, name_color)
             overlay.blit(name, (rect.x + 12, rect.y + 8))
 
-            cost_text = "BUILT" if already_built else f"Cost {proj['cost']}"
+            if already_built:
+                cost_text = "BUILT"
+            elif currently_building:
+                cost_text = "BUILDING"
+            elif queued:
+                cost_text = f"QUEUED #{queue_index + 2}"  # +2: current_project is #1, queue starts at #2
+            else:
+                cost_text = f"Cost {proj['cost']}"
             cost = font.render(cost_text, True, (180, 220, 255) if available else (130, 130, 150))
             overlay.blit(cost, (rect.x + 12, rect.y + 26))
 

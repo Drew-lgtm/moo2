@@ -63,6 +63,14 @@ def init_db():
             FOREIGN KEY(planet_id) REFERENCES planets(id)
         );
 
+        CREATE TABLE IF NOT EXISTS planet_build_queue (
+            planet_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            project_id TEXT NOT NULL,
+            PRIMARY KEY(planet_id, position),
+            FOREIGN KEY(planet_id) REFERENCES planets(id)
+        );
+
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -161,6 +169,27 @@ def get_planet_buildings(conn, planet_id):
             (planet_id,),
         )
     ]
+
+
+def get_planet_build_queue(conn, planet_id):
+    return [
+        row["project_id"]
+        for row in conn.execute(
+            "SELECT project_id FROM planet_build_queue "
+            "WHERE planet_id = ? ORDER BY position",
+            (planet_id,),
+        )
+    ]
+
+
+def save_planet_build_queue(conn, planet_id, project_ids):
+    conn.execute("DELETE FROM planet_build_queue WHERE planet_id = ?", (planet_id,))
+    for position, project_id in enumerate(project_ids):
+        conn.execute(
+            "INSERT INTO planet_build_queue (planet_id, position, project_id) "
+            "VALUES (?, ?, ?)",
+            (planet_id, position, project_id),
+        )
 
 
 def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *, is_player=False) -> int:

@@ -23,6 +23,7 @@ from ecs.db import (
     update_planet_build,
     update_planet_workers,
     insert_planet_building,
+    save_planet_build_queue,
 )
 from ecs.projects import PROJECTS, building_growth_bonus
 
@@ -348,6 +349,7 @@ def production_tick(game, new_turn: int):
 
     empire_gains: dict[int, tuple[int, int]] = {}  # empire_id -> (bc, research)
     planet_build_updates: list[tuple[int, str | None, int]] = []
+    queue_updates: list[tuple[int, list[str]]] = []
     completed_inserts: list[tuple[int, str]] = []
     pop_updates: list[tuple[int, int, int, float]] = []  # for max_pop bumps
 
@@ -362,8 +364,13 @@ def production_tick(game, new_turn: int):
         bc_to_empire = bonus_bc
         if build_state and build_state.current_project:
             build_state.progress += industry
-            proj = PROJECTS.get(build_state.current_project)
-            if proj and build_state.progress >= proj["cost"]:
+            queue_changed = False
+            # Resolve as many completions as the progress allows (rare, but
+            # cheap buildings + big industry can finish multiple per turn).
+            while True:
+                proj = PROJECTS.get(build_state.current_project) if build_state.current_project else None
+                if proj is None or build_state.progress < proj["cost"]:
+                    break
                 completed_id = build_state.current_project
                 build_state.completed.append(completed_id)
                 completed_inserts.append((planet.id, completed_id))
@@ -373,10 +380,20 @@ def production_tick(game, new_turn: int):
                     pop.max += effects["max_pop"]
                     pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
 
-                build_state.current_project = None
-                build_state.progress = 0
+                # Carry over progress overflow to the next queued item.
+                overflow = build_state.progress - proj["cost"]
+                if build_state.queue:
+                    build_state.current_project = build_state.queue.pop(0)
+                    queue_changed = True
+                    build_state.progress = overflow
+                else:
+                    build_state.current_project = None
+                    build_state.progress = 0
+                    break
 
             planet_build_updates.append((planet.id, build_state.current_project, build_state.progress))
+            if queue_changed:
+                queue_updates.append((planet.id, list(build_state.queue)))
         else:
             bc_to_empire += industry  # idle planet's industry becomes BC
 
@@ -398,6 +415,8 @@ def production_tick(game, new_turn: int):
             update_planet_build(conn, planet_id, current_project, progress)
         for planet_id, project_id in completed_inserts:
             insert_planet_building(conn, planet_id, project_id)
+        for planet_id, queue in queue_updates:
+            save_planet_build_queue(conn, planet_id, queue)
         for planet_id, current, mx, growth in pop_updates:
             update_planet_population(conn, planet_id, current, mx, growth)
         conn.commit()
