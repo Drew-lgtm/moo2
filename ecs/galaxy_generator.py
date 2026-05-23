@@ -1,5 +1,5 @@
 import random
-from ecs.components import Position, Name, Planet, Orbiting, StarVisual, Empire, Owner, Population, BuildState, TechState
+from ecs.components import Position, Name, Planet, Orbiting, StarVisual, StarRef, Empire, Owner, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, ShipInTransit
 from ecs.palette import EMPIRE_COLOR_RGB
 from ecs.economy import compute_max_population, default_assignment, normalize_assignment
 from ecs.personalities import AI_PERSONALITY_CYCLE
@@ -19,6 +19,7 @@ from ecs.db import (
     get_planet_buildings,
     get_planet_build_queue,
     get_empire_techs,
+    get_ships,
 )
 
 META_TURN = "turn"
@@ -220,13 +221,16 @@ class GalaxyGenerator:
             self.seed = int(seed_str) if seed_str is not None else None
             self.difficulty = difficulty_str or DEFAULT_DIFFICULTY
 
+            star_entity_by_db_id: dict[int, int] = {}
             for star in get_stars(conn):
                 star_entity = self.entity_mgr.create_entity()
+                star_entity_by_db_id[star["id"]] = star_entity
                 self.component_mgr.add_component(star_entity, Position(star["x"], star["y"]))
                 self.component_mgr.add_component(star_entity, Name(star["name"]))
                 self.component_mgr.add_component(
                     star_entity, StarVisual(star["image"], star["size"], star["class"])
                 )
+                self.component_mgr.add_component(star_entity, StarRef(star["id"]))
 
                 for planet in get_planets_for_star(star["id"], conn):
                     planet_entity = self.entity_mgr.create_entity()
@@ -299,3 +303,31 @@ class GalaxyGenerator:
                         unlocked=get_empire_techs(conn, emp["id"]),
                     ),
                 )
+
+            # Ships — created in production_tick on completion of a
+            # type="ship" project. Each row reconstructs into a ship
+            # entity with Ship + ShipOwner + (ShipAt | ShipInTransit).
+            for ship_row in get_ships(conn):
+                ship_entity = self.entity_mgr.create_entity()
+                self.component_mgr.add_component(
+                    ship_entity, Ship(id=ship_row["id"], ship_class=ship_row["ship_class"])
+                )
+                self.component_mgr.add_component(
+                    ship_entity, ShipOwner(empire_id=ship_row["owner_empire_id"])
+                )
+                if ship_row["dest_star_id"] is None:
+                    star_eid = star_entity_by_db_id.get(ship_row["current_star_id"])
+                    if star_eid is not None:
+                        self.component_mgr.add_component(ship_entity, ShipAt(star_entity=star_eid))
+                else:
+                    from_eid = star_entity_by_db_id.get(ship_row["current_star_id"])
+                    to_eid = star_entity_by_db_id.get(ship_row["dest_star_id"])
+                    if from_eid is not None and to_eid is not None:
+                        self.component_mgr.add_component(
+                            ship_entity,
+                            ShipInTransit(
+                                from_star_entity=from_eid,
+                                to_star_entity=to_eid,
+                                turns_remaining=ship_row["turns_remaining"] or 0,
+                            ),
+                        )

@@ -15,7 +15,7 @@ industry / max_pop / growth_rate. See ecs.projects.PROJECTS.
 """
 from __future__ import annotations
 
-from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState
+from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, Orbiting, StarRef
 from ecs.db import (
     get_connection,
     update_empire_economy,
@@ -26,6 +26,7 @@ from ecs.db import (
     save_planet_build_queue,
     update_empire_tech,
     insert_empire_tech,
+    insert_ship,
 )
 from ecs.projects import PROJECTS, building_growth_bonus
 from ecs.techs import TECHS
@@ -347,6 +348,14 @@ def pop_growth_tick(game, new_turn: int):
         conn.commit()
 
 
+def _star_db_id_for_planet(component_mgr, planet_entity):
+    orbit = component_mgr.get_component(planet_entity, Orbiting)
+    if orbit is None:
+        return None
+    ref = component_mgr.get_component(orbit.star_entity, StarRef)
+    return ref.db_id if ref else None
+
+
 def production_tick(game, new_turn: int):
     """Apply per-planet industry/research to empires; resolve project progress."""
     cm = game.component_mgr
@@ -356,6 +365,8 @@ def production_tick(game, new_turn: int):
     queue_updates: list[tuple[int, list[str]]] = []
     completed_inserts: list[tuple[int, str]] = []
     pop_updates: list[tuple[int, int, int, float]] = []  # for max_pop bumps
+    # (owner_empire_id, ship_class, current_star_db_id, planet_entity_id, owner_obj)
+    ship_spawns: list[tuple[int, str, int, int, Owner]] = []
 
     for entity_id, owner in cm.get_all(Owner):
         planet = cm.get_component(entity_id, Planet)
@@ -376,13 +387,25 @@ def production_tick(game, new_turn: int):
                 if proj is None or build_state.progress < proj["cost"]:
                     break
                 completed_id = build_state.current_project
-                build_state.completed.append(completed_id)
-                completed_inserts.append((planet.id, completed_id))
+                proj_type = proj.get("type", "building")
 
-                effects = proj.get("effects", {})
-                if "max_pop" in effects and pop is not None:
-                    pop.max += effects["max_pop"]
-                    pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
+                if proj_type == "ship":
+                    # Spawn a ship at this planet's star; do NOT add to
+                    # completed so the project can be queued again.
+                    star_db_id = _star_db_id_for_planet(cm, entity_id)
+                    if star_db_id is not None:
+                        ship_spawns.append((
+                            owner.empire_id, proj["ship_class"],
+                            star_db_id, entity_id, owner,
+                        ))
+                else:
+                    build_state.completed.append(completed_id)
+                    completed_inserts.append((planet.id, completed_id))
+
+                    effects = proj.get("effects", {})
+                    if "max_pop" in effects and pop is not None:
+                        pop.max += effects["max_pop"]
+                        pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
 
                 # Carry over progress overflow to the next queued item.
                 overflow = build_state.progress - proj["cost"]
@@ -452,4 +475,16 @@ def production_tick(game, new_turn: int):
             save_planet_build_queue(conn, planet_id, queue)
         for planet_id, current, mx, growth in pop_updates:
             update_planet_population(conn, planet_id, current, mx, growth)
+
+        # Spawn new ships: insert DB row, then attach ECS entity. The
+        # planet's owning empire is captured at spawn time so ownership
+        # can't shift mid-tick.
+        for owner_empire_id, ship_class, star_db_id, planet_entity, _owner in ship_spawns:
+            ship_id = insert_ship(conn, owner_empire_id, ship_class, star_db_id)
+            ship_entity = game.entity_mgr.create_entity()
+            cm.add_component(ship_entity, Ship(id=ship_id, ship_class=ship_class))
+            cm.add_component(ship_entity, ShipOwner(empire_id=owner_empire_id))
+            orbit = cm.get_component(planet_entity, Orbiting)
+            if orbit is not None:
+                cm.add_component(ship_entity, ShipAt(star_entity=orbit.star_entity))
         conn.commit()

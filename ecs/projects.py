@@ -8,11 +8,17 @@ planet when complete. Recognized effect keys:
 - "max_pop":      int   — applied ONCE at completion, bumping Population.max
 - "growth_rate":  float — added to the base logistic growth rate
 
-The build system uses each planet's BC output as its "industry" per turn:
-while a project is active, that BC accumulates toward the project's cost
-instead of flowing to the empire. Research always flows to the empire.
+Projects also carry a ``type`` field:
+
+- "building" (default): on completion, the project id is appended to
+  BuildState.completed and its flat effects start applying every turn.
+- "ship": on completion, a Ship entity of class ``ship_class`` is spawned
+  at the building planet's star; the project does NOT enter completed,
+  so the player can rebuild it any number of times.
 """
 from __future__ import annotations
+
+from ecs.ships import SHIPS, SHIP_ORDER
 
 
 PROJECTS: dict[str, dict] = {
@@ -64,8 +70,24 @@ PROJECTS: dict[str, dict] = {
     },
 }
 
+# Inject ship projects from the SHIPS catalog so SystemView gets them
+# automatically. Each maps to a build project of type "ship".
+for _ship_id in SHIP_ORDER:
+    _spec = SHIPS[_ship_id]
+    PROJECTS[f"ship_{_ship_id}"] = {
+        "id": f"ship_{_ship_id}",
+        "name": _spec["name"],
+        "cost": _spec["cost"],
+        "description": f"Hull {_spec['hull']}  Attack {_spec['attack']}  Speed {_spec['speed']}",
+        "type": "ship",
+        "ship_class": _ship_id,
+    }
+
+
 # Display order in pickers.
-PROJECT_ORDER = ["factory", "granary", "research_lab", "hydroponics", "marketplace", "capital"]
+BUILDING_ORDER = ["factory", "granary", "research_lab", "hydroponics", "marketplace", "capital"]
+SHIP_PROJECT_ORDER = [f"ship_{s}" for s in SHIP_ORDER]
+PROJECT_ORDER = BUILDING_ORDER + SHIP_PROJECT_ORDER
 
 
 def project_is_available(project_id: str, unlocked_techs: set[str] | list) -> bool:

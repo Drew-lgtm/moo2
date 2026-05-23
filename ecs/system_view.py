@@ -2,7 +2,7 @@ import pygame
 
 from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState
 from ecs.palette import planet_color
-from ecs.projects import PROJECTS, PROJECT_ORDER, project_is_available
+from ecs.projects import PROJECTS, BUILDING_ORDER, SHIP_PROJECT_ORDER, project_is_available
 from ecs.techs import TECHS
 from ecs.db import get_connection, update_planet_build, update_planet_workers, save_planet_build_queue
 
@@ -85,15 +85,22 @@ class SystemView:
         return set()
 
     def _layout_project_buttons(self):
+        """Two rows: ships on top, buildings beneath, both centered."""
         btn_w, btn_h = self.PROJECT_BTN_SIZE
         gap = self.PROJECT_BTN_GAP
-        total_w = len(PROJECT_ORDER) * btn_w + (len(PROJECT_ORDER) - 1) * gap
-        start_x = (self.screen.get_width() - total_w) // 2
-        y = self.screen.get_height() - btn_h - 24
         self._project_button_rects = []
-        for i, project_id in enumerate(PROJECT_ORDER):
-            rect = pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)
-            self._project_button_rects.append((project_id, rect))
+        sw = self.screen.get_width()
+
+        def _row(ids, y):
+            total_w = len(ids) * btn_w + (len(ids) - 1) * gap
+            start_x = (sw - total_w) // 2
+            for i, pid in enumerate(ids):
+                self._project_button_rects.append((pid, pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)))
+
+        buildings_y = self.screen.get_height() - btn_h - 24
+        ships_y = buildings_y - btn_h - 12
+        _row(SHIP_PROJECT_ORDER, ships_y)
+        _row(BUILDING_ORDER, buildings_y)
 
     def _layout_worker_widgets(self):
         """Three F/W/S clusters sitting above the project picker row."""
@@ -106,7 +113,9 @@ class SystemView:
         spacing = 50
         total_w = len(self.WORKER_ROLES) * cluster_w + (len(self.WORKER_ROLES) - 1) * spacing
         start_x = (sw - total_w) // 2
-        y = self.screen.get_height() - self.PROJECT_BTN_SIZE[1] - 24 - btn_h - 24
+        # Above the two project-button rows.
+        proj_h = self.PROJECT_BTN_SIZE[1]
+        y = self.screen.get_height() - proj_h - 24 - proj_h - 12 - btn_h - 24
         self._worker_widgets = []
         for i, (role, _label) in enumerate(self.WORKER_ROLES):
             cluster_x = start_x + i * (cluster_w + spacing)
@@ -208,15 +217,28 @@ class SystemView:
             return
         if project_id in build_state.completed:
             return
-        if build_state.current_project == project_id:
-            return
         # Tech-locked projects can't be queued.
         if not project_is_available(project_id, self._player_unlocked_techs()):
             return
 
+        is_ship = PROJECTS.get(project_id, {}).get("type") == "ship"
+
+        # Buildings: clicking the active one is a no-op (can't cancel).
+        # Ships can be queued repeatedly even while one is building.
+        if not is_ship and build_state.current_project == project_id:
+            return
+
         queue_changed = False
         current_changed = False
-        if project_id in build_state.queue:
+        # Ships always append (duplicates OK) so the player can stockpile.
+        if is_ship:
+            if build_state.current_project is None:
+                build_state.current_project = project_id
+                current_changed = True
+            else:
+                build_state.queue.append(project_id)
+                queue_changed = True
+        elif project_id in build_state.queue:
             build_state.queue.remove(project_id)
             queue_changed = True
         elif build_state.current_project is None:

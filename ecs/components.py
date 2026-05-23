@@ -11,6 +11,16 @@ class StarVisual:
     size: int
     star_class: str
 
+
+@dataclass
+class StarRef:
+    """Attached to a star entity; carries the matching ``stars.id`` row.
+
+    Lets game logic that has an Orbiting.star_entity look up the star's
+    DB id (e.g. for `ships.current_star_id`).
+    """
+    db_id: int
+
 @dataclass
 class Name:
     value: str
@@ -88,3 +98,32 @@ class TechState:
     current_target: str | None = None
     progress: int = 0
     unlocked: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Ship:
+    """One ship of a given class. Persisted in the ``ships`` table."""
+    id: int
+    ship_class: str
+
+
+@dataclass
+class ShipOwner:
+    empire_id: int
+
+
+@dataclass
+class ShipAt:
+    """Ship is currently parked at a star (the orbiting star entity)."""
+    star_entity: int
+
+
+@dataclass
+class ShipInTransit:
+    """Ship is moving between stars; ``turns_remaining`` decrements each
+    turn until arrival, at which point ShipAt(dest_star_entity) replaces
+    this component.
+    """
+    from_star_entity: int
+    to_star_entity: int
+    turns_remaining: int

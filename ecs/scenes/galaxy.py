@@ -1,7 +1,7 @@
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Position, Name, StarVisual
+from ecs.components import Position, Name, StarVisual, Ship, ShipOwner, ShipAt, Empire
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
 from assets.loader import load_image
@@ -67,8 +67,45 @@ class GalaxyScene(Scene):
                 text_rect.clamp_ip(screen.get_rect())
                 screen.blit(text_surface, text_rect)
 
+        self._draw_fleet_badges(screen)
         self.game.ui_bar.draw(screen)
         self._draw_hud(screen)
+
+    def _draw_fleet_badges(self, screen):
+        """Render per-empire ship counts under each star.
+
+        For every star with parked ships, draw a compact strip of
+        [color bar][count] tokens, one per owning empire.
+        """
+        cm = self.game.component_mgr
+        # star_entity -> {empire_id: count}
+        per_star: dict[int, dict[int, int]] = {}
+        for entity_id, at in cm.get_all(ShipAt):
+            owner = cm.get_component(entity_id, ShipOwner)
+            if owner is None:
+                continue
+            per_star.setdefault(at.star_entity, {})
+            per_star[at.star_entity][owner.empire_id] = per_star[at.star_entity].get(owner.empire_id, 0) + 1
+
+        if not per_star:
+            return
+
+        empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
+        font = self.game.font
+        for star_entity, by_empire in per_star.items():
+            pos = cm.get_component(star_entity, Position)
+            visual = cm.get_component(star_entity, StarVisual)
+            if pos is None or visual is None:
+                continue
+            x = pos.x - 30
+            y = pos.y + 38  # below the name label
+            for empire_id, count in sorted(by_empire.items()):
+                color_name = empire_colors_by_id.get(empire_id, "blue")
+                rgb = empire_color(color_name)
+                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 12))
+                text = font.render(str(count), True, (240, 240, 240))
+                screen.blit(text, (x + 9, y - 2))
+                x += 9 + text.get_width() + 6
 
     def _draw_hud(self, screen):
         if self.game.galaxy is None:

@@ -81,6 +81,18 @@ def init_db():
             FOREIGN KEY(planet_id) REFERENCES planets(id)
         );
 
+        CREATE TABLE IF NOT EXISTS ships (
+            id INTEGER PRIMARY KEY,
+            owner_empire_id INTEGER,
+            ship_class TEXT,
+            current_star_id INTEGER,
+            dest_star_id INTEGER,
+            turns_remaining INTEGER DEFAULT 0,
+            FOREIGN KEY(owner_empire_id) REFERENCES empires(id),
+            FOREIGN KEY(current_star_id) REFERENCES stars(id),
+            FOREIGN KEY(dest_star_id) REFERENCES stars(id)
+        );
+
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -249,6 +261,27 @@ def get_empire_techs(conn, empire_id):
             (empire_id,),
         )
     ]
+
+
+def insert_ship(conn, owner_empire_id, ship_class, current_star_id) -> int:
+    cursor = conn.execute(
+        "INSERT INTO ships (owner_empire_id, ship_class, current_star_id) VALUES (?, ?, ?)",
+        (owner_empire_id, ship_class, current_star_id),
+    )
+    result = cursor.lastrowid
+    assert result is not None
+    return result
+
+
+def get_ships(conn):
+    return conn.execute("SELECT * FROM ships").fetchall()
+
+
+def update_ship_transit(conn, ship_id, current_star_id, dest_star_id, turns_remaining):
+    conn.execute(
+        "UPDATE ships SET current_star_id = ?, dest_star_id = ?, turns_remaining = ? WHERE id = ?",
+        (current_star_id, dest_star_id, turns_remaining, ship_id),
+    )
 
 
 def get_stars(conn=None):
