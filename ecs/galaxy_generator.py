@@ -190,6 +190,7 @@ class GalaxyGenerator:
                 self.component_mgr.add_component(
                     empire_entity,
                     Empire(
+                        emp["id"],
                         emp["name"],
                         emp["race_type"],
                         emp["color"],

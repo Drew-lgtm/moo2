@@ -31,6 +31,7 @@ class Orbiting:
 
 @dataclass
 class Empire:
+    id: int
     name: str
     race_type: str
     color: str

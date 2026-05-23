@@ -15,10 +15,6 @@ class GalaxyScene(Scene):
 
     def on_enter(self):
         self._preload_star_surfaces()
-        self.game.ui_bar.set_callback("turn", self.game.advance_turn)
-
-    def on_exit(self):
-        self.game.ui_bar.set_callback("turn", None)
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()

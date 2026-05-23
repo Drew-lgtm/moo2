@@ -62,6 +62,7 @@ class Game:
             num_stars=self.num_stars,
         )
         self.galaxy.generate()
+        self._bind_game_ui()
 
     def load_game(self):
         self._reset_world()
@@ -70,6 +71,26 @@ class Game:
             self.screen_width, self.screen_height,
         )
         self.galaxy.load_from_db()
+        self._bind_game_ui()
+
+    def _bind_game_ui(self):
+        """Wire the bottom-bar buttons to scene transitions and turn advance.
+
+        Done once per loaded game so panel scenes can share the bar without
+        each having to re-bind on entry.
+        """
+        panel_targets = {
+            "colonies": "colonies",
+            "planets": "planets",
+            "leaders": "leaders",
+            "races": "races",
+            "info": "info",
+        }
+        for button_name, scene_name in panel_targets.items():
+            self.ui_bar.set_callback(
+                button_name, lambda s=scene_name: self.scenes.replace(s)
+            )
+        self.ui_bar.set_callback("turn", self.advance_turn)
 
     def advance_turn(self):
         if self.galaxy is None:
