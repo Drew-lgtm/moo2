@@ -324,9 +324,12 @@ def get_meta(conn, key, default=None):
 
 
 def clear_galaxy():
+    # init_db is idempotent and ensures every table exists before we try
+    # to wipe it — important on first-ever new game when galaxy.db hasn't
+    # been created yet.
+    init_db()
     with get_connection() as conn:
-        conn.execute("DELETE FROM planets")
-        conn.execute("DELETE FROM empires")
-        conn.execute("DELETE FROM stars")
-        conn.execute("DELETE FROM meta")
+        for table in ("planet_build_queue", "planet_buildings", "ships",
+                      "empire_techs", "planets", "empires", "stars", "meta"):
+            conn.execute(f"DELETE FROM {table}")
         conn.commit()

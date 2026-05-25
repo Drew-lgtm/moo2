@@ -28,16 +28,16 @@ SELECTED_RING = (255, 230, 120)
 
 
 class EmpireSetupScene(Scene):
-    PORTRAIT_SIZE = (64, 64)
-    SWATCH_SIZE = (48, 48)
+    PORTRAIT_SIZE = (52, 52)
+    SWATCH_SIZE = (40, 40)
     RACE_COLS = 6
     NAME_MAX = 24
 
     NUM_EMPIRES_MIN = 2
     NUM_EMPIRES_MAX = 8
     NUM_EMPIRES_DEFAULT = 4
-    PICKER_BTN = (32, 32)
-    DIFFICULTY_BTN_SIZE = (110, 32)
+    PICKER_BTN = (28, 28)
+    DIFFICULTY_BTN_SIZE = (100, 28)
     DIFFICULTY_BTN_GAP = 8
 
     def __init__(self, game):
@@ -88,52 +88,59 @@ class EmpireSetupScene(Scene):
         pygame.key.set_repeat(0)
 
     def _compute_layout(self):
+        """Pack everything into the top half of the screen so Start/Back
+        stay visible even on shorter Windows desktops with title-bar +
+        taskbar eating into the visible area."""
         sw, sh = self.game.screen_width, self.game.screen_height
         x = 40
-        y = 64
-        self._name_label_pos = (x, y)
-        y += 24
-        self._name_rect = pygame.Rect(x, y, 360, 32)
-        y += 56
+        y = 56
 
+        # Name field.
+        self._name_label_pos = (x, y)
+        y += 20
+        self._name_rect = pygame.Rect(x, y, 360, 28)
+        y += 28 + 16
+
+        # Color row.
         self._color_label_pos = (x, y)
-        y += 24
+        y += 20
         self._color_rects.clear()
         cx = x
         for color_name in self.colors:
             rect = pygame.Rect(cx, y, *self.SWATCH_SIZE)
             self._color_rects.append((color_name, rect))
-            cx += self.SWATCH_SIZE[0] + 12
-        y += self.SWATCH_SIZE[1] + 24
+            cx += self.SWATCH_SIZE[0] + 10
+        y += self.SWATCH_SIZE[1] + 16
 
-        # Empire count picker: [-] [count] [+]
+        # Empire count picker: [-] N [+]
         self._empires_label_pos = (x, y)
-        y += 24
+        y += 20
         btn_w, btn_h = self.PICKER_BTN
-        gap = 8
-        count_w = 56
+        gap = 6
+        count_w = 48
         self._minus_rect = pygame.Rect(x, y, btn_w, btn_h)
         self._count_box_rect = pygame.Rect(x + btn_w + gap, y, count_w, btn_h)
         self._plus_rect = pygame.Rect(x + btn_w + gap + count_w + gap, y, btn_w, btn_h)
         self._count_text_pos = self._count_box_rect
-        y += btn_h + 20
+        y += btn_h + 14
 
-        # Difficulty picker: row of 4 toggle buttons.
+        # Difficulty picker row.
         self._difficulty_label_pos = (x, y)
-        y += 24
+        y += 20
         diff_w, diff_h = self.DIFFICULTY_BTN_SIZE
         self._difficulty_rects = []
         cx = x
         for diff in DIFFICULTIES:
             self._difficulty_rects.append((diff, pygame.Rect(cx, y, diff_w, diff_h)))
             cx += diff_w + self.DIFFICULTY_BTN_GAP
-        y += diff_h + 20
+        y += diff_h + 16
 
+        # Race grid.
         self._race_label_pos = (x, y)
-        y += 24
+        y += 20
         self._race_rects.clear()
-        cell_w = self.PORTRAIT_SIZE[0] + 16
-        cell_h = self.PORTRAIT_SIZE[1] + 24
+        cell_w = self.PORTRAIT_SIZE[0] + 14
+        cell_h = self.PORTRAIT_SIZE[1] + 22
         for i, race in enumerate(self.races):
             col, row = i % self.RACE_COLS, i // self.RACE_COLS
             rx = x + col * cell_w
@@ -141,11 +148,17 @@ class EmpireSetupScene(Scene):
             path = find_race_portrait(race)
             surface = load_image(path, size=self.PORTRAIT_SIZE) if path else None
             self._race_rects.append((race, pygame.Rect(rx, ry, *self.PORTRAIT_SIZE), surface))
+        rows = max(1, (len(self.races) + self.RACE_COLS - 1) // self.RACE_COLS)
+        race_bottom = y + rows * cell_h
 
-        btn_w, btn_h = 140, 44
-        margin = 40
-        self._start_rect = pygame.Rect(sw - margin - btn_w, sh - margin - btn_h, btn_w, btn_h)
-        self._back_rect = pygame.Rect(margin, sh - margin - btn_h, btn_w, btn_h)
+        # Start / Back buttons live just below the race grid (not anchored
+        # to screen bottom) so they're always visible.
+        btn_w, btn_h = 140, 40
+        buttons_y = race_bottom + 24
+        # Don't push them past the bottom margin if somehow there's content.
+        buttons_y = min(buttons_y, sh - btn_h - 20)
+        self._start_rect = pygame.Rect(sw - 40 - btn_w, buttons_y, btn_w, btn_h)
+        self._back_rect = pygame.Rect(40, buttons_y, btn_w, btn_h)
 
     def update(self, dt):
         self._caret_timer += dt
