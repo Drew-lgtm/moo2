@@ -15,10 +15,11 @@ across difficulties; only the cheating bonus changes.
 """
 from __future__ import annotations
 
-from ecs.components import Empire, Owner, Planet, Population, BuildState, TechState
+from ecs.components import Empire, Owner, Planet, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, StarRef
 from ecs.economy import FARMER_FOOD
 from ecs.projects import PROJECTS, project_is_available
 from ecs.techs import TECHS, is_available
+from ecs.fleet import start_fleet_movement
 from ecs.db import (
     get_connection,
     update_planet_workers,
@@ -55,6 +56,9 @@ def ai_tick(game, new_turn: int):
 
         if tech_state is not None:
             _ai_pick_research(tech_state, personality["research_priority"], pending_writes)
+
+        if personality.get("aggressive"):
+            _ai_dispatch_ships(cm, empire)
 
     if not pending_writes:
         return
@@ -120,6 +124,43 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set, pending_wri
         build_state.current_project = proj_id
         pending_writes.append(("build", (planet.id, proj_id, build_state.progress)))
         return
+
+
+def _ai_dispatch_ships(cm, empire):
+    """Aggressive AI: send any parked ships at the player's homeworld.
+
+    Picks every parked ship not already at the target and dispatches.
+    Each ship handles its own transit time so faster hulls arrive first.
+    """
+    # Locate the player empire + their home star entity.
+    player = None
+    for _eid, e in cm.get_all(Empire):
+        if e.is_player:
+            player = e
+            break
+    if player is None:
+        return
+    target_star = None
+    for star_entity, ref in cm.get_all(StarRef):
+        if ref.db_id == player.home_star_id:
+            target_star = star_entity
+            break
+    if target_star is None:
+        return
+
+    # Group this AI's parked ships by their current star.
+    ships_by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if owner is None or owner.empire_id != empire.id:
+            continue
+        if at.star_entity == target_star:
+            continue  # already at target — nothing to do
+        ships_by_star.setdefault(at.star_entity, []).append(ship_entity)
+
+    for src_star, ships in ships_by_star.items():
+        if ships:
+            start_fleet_movement(cm, ships, src_star, target_star)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):

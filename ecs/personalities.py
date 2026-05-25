@@ -18,29 +18,43 @@ PERSONALITIES: dict[str, dict] = {
         "name": "Balanced",
         "description": "Even mix of growth, science, and economy.",
         "worker_pct": 75,
-        "build_priority": ["factory", "granary", "research_lab", "marketplace", "hydroponics", "capital"],
+        "build_priority": [
+            "factory", "granary", "research_lab", "marketplace", "hydroponics",
+            "capital", "ship_frigate", "ship_cruiser",
+        ],
         "research_priority": ["agriculture", "trade", "computer_science", "industrial_engineering", "governance"],
+        "aggressive": False,
     },
     "economic": {
         "name": "Economic",
-        "description": "Markets and growth first.",
+        "description": "Markets and growth first; no fleet building.",
         "worker_pct": 70,
         "build_priority": ["granary", "marketplace", "factory", "hydroponics", "research_lab", "capital"],
         "research_priority": ["trade", "agriculture", "computer_science", "industrial_engineering", "governance"],
+        "aggressive": False,
     },
     "scientific": {
         "name": "Scientific",
-        "description": "Researches aggressively.",
-        "worker_pct": 40,   # 60% scientists
-        "build_priority": ["research_lab", "factory", "granary", "marketplace", "hydroponics", "capital"],
+        "description": "Researches aggressively; light defensive fleet.",
+        "worker_pct": 40,
+        "build_priority": [
+            "research_lab", "factory", "granary", "marketplace", "hydroponics",
+            "capital", "ship_frigate",
+        ],
         "research_priority": ["computer_science", "agriculture", "industrial_engineering", "trade", "governance"],
+        "aggressive": False,
     },
     "militaristic": {
         "name": "Militaristic",
-        "description": "Heavy industry, late science.",
+        "description": "Heavy fleet, attacks the player on sight.",
         "worker_pct": 90,
-        "build_priority": ["factory", "research_lab", "marketplace", "hydroponics", "granary", "capital"],
+        "build_priority": [
+            "factory", "ship_frigate", "research_lab", "ship_cruiser",
+            "marketplace", "ship_battleship", "hydroponics", "ship_dreadnought",
+            "granary", "capital",
+        ],
         "research_priority": ["industrial_engineering", "trade", "governance", "computer_science", "agriculture"],
+        "aggressive": True,
     },
 }
 
