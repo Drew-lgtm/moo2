@@ -18,10 +18,17 @@ from ecs.ships import SHIPS
 from ecs.db import get_connection, update_ship_transit
 
 
-# Tunable: 50 px = 1 parsec. With our 1200x800 galaxy stars are roughly
-# 1-4 parsecs apart, so a Frigate (speed 3) covers most of the map in
-# 1-2 turns and a Dreadnought (speed 1) takes 1-4 turns.
-PIXELS_PER_PARSEC = 50.0
+# Galaxy scale: 25 px per parsec puts the 1200x744 play area at ~70
+# parsecs across the diagonal. Combined with the current ship-class
+# base speeds (Frigate 3, Carrier/Cruiser 2, Battleship/Dreadnought 1),
+# nearest neighbours are 2-5 parsec hops (1-2 turns even for a Drednought)
+# while a cross-galaxy trip is ~20 turns for a Frigate and 50-70 turns
+# for a Dreadnought — early-game expansion has real friction. The
+# tighter scale exists so the future engine-tech upgrade has somewhere
+# to shrink travel toward MOO2-style 1-2 turn end-game jumps; bumping
+# this constant is the entire knob for "shrink the galaxy". Don't
+# rebalance ship speeds for now — those move via the tech tree.
+PIXELS_PER_PARSEC = 25.0
 
 
 def _distance_parsecs(pos_a, pos_b) -> float:
