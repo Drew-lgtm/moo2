@@ -1,7 +1,10 @@
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Position, Name, StarVisual, Ship, ShipOwner, ShipAt, ShipInTransit, Empire
+from ecs.components import (
+    Position, Name, StarVisual, Ship, ShipOwner, ShipAt, ShipInTransit,
+    Empire, Owner, Orbiting,
+)
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
 from ecs.fleet import start_fleet_movement
@@ -23,11 +26,15 @@ class GalaxyScene(Scene):
         # action is "minus" or "plus".
         self._fleet_picker_hits: list[tuple[str, str, pygame.Rect]] = []
         self._picker_font_bold: pygame.font.Font | None = None
+        # Bold variant of the game font for owned-star labels.
+        self._name_font_bold: pygame.font.Font | None = None
 
     def on_enter(self):
         self._preload_star_surfaces()
         if self._picker_font_bold is None:
             self._picker_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
+        if self._name_font_bold is None:
+            self._name_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()
@@ -152,9 +159,79 @@ class GalaxyScene(Scene):
                 return entity_id
         return None
 
+    def _build_star_ownership(self) -> dict[int, list[tuple[tuple[int, int, int], int]]]:
+        """For each star, return a list of (empire_color_rgb, count) for
+        empires that own at least one planet at that star. Empty planets
+        (no Owner component) don't contribute.
+        """
+        cm = self.game.component_mgr
+        empire_color_by_id = {emp.id: emp.color for _e, emp in cm.get_all(Empire)}
+        counts: dict[int, dict[int, int]] = {}
+        for planet_entity, owner in cm.get_all(Owner):
+            orbit = cm.get_component(planet_entity, Orbiting)
+            if orbit is None:
+                continue
+            star_bucket = counts.setdefault(orbit.star_entity, {})
+            star_bucket[owner.empire_id] = star_bucket.get(owner.empire_id, 0) + 1
+
+        result: dict[int, list[tuple[tuple[int, int, int], int]]] = {}
+        for star_entity, by_empire in counts.items():
+            ratios = [
+                (empire_color(empire_color_by_id.get(eid, "blue")), c)
+                for eid, c in by_empire.items()
+            ]
+            ratios.sort(key=lambda r: -r[1])
+            result[star_entity] = ratios
+        return result
+
+    def _draw_star_label(self, screen, name_str, star_class, position, ratios):
+        """Bottom label under a star. White + non-bold for unowned stars;
+        bold + per-letter empire colors when one or more empires hold
+        planets here. The "(Class)" suffix stays white."""
+        font_bold = self._name_font_bold or self.game.font
+        font_norm = self.game.font
+        suffix = f" ({star_class})"
+
+        if not ratios:
+            text = font_norm.render(f"{name_str}{suffix}", True, (255, 255, 255))
+            rect = text.get_rect(center=(position.x, position.y + 24))
+            rect.clamp_ip(screen.get_rect())
+            screen.blit(text, rect)
+            return
+
+        # Per-letter color: each letter falls into one empire's bucket
+        # based on its midpoint position vs cumulative ownership ratios.
+        total = sum(c for _rgb, c in ratios)
+        n = max(1, len(name_str))
+        letter_surfaces: list[pygame.Surface] = []
+        for i, ch in enumerate(name_str):
+            pos_frac = (i + 0.5) / n
+            cum = 0.0
+            color = ratios[-1][0]
+            for rgb, count in ratios:
+                cum += count / total
+                if pos_frac <= cum:
+                    color = rgb
+                    break
+            letter_surfaces.append(font_bold.render(ch, True, color))
+
+        suffix_surface = font_norm.render(suffix, True, (220, 220, 220))
+        total_w = sum(s.get_width() for s in letter_surfaces) + suffix_surface.get_width()
+        x = position.x - total_w // 2
+        y = position.y + 24
+        # Clamp horizontally so labels near the edge don't run off-screen.
+        x = max(0, min(x, screen.get_width() - total_w))
+        for surf in letter_surfaces:
+            screen.blit(surf, (x, y))
+            x += surf.get_width()
+        screen.blit(suffix_surface, (x, y))
+
     def draw(self, screen):
         cm = self.game.component_mgr
         font = self.game.font
+        # Build owner ratios per star once per frame (O(planets) total).
+        star_ownership = self._build_star_ownership()
+
         for entity_id, position in cm.get_all(Position):
             visual = cm.get_component(entity_id, StarVisual)
             surface = self._star_surfaces.get(entity_id)
@@ -163,11 +240,10 @@ class GalaxyScene(Scene):
 
             name = cm.get_component(entity_id, Name)
             if name and visual:
-                label = f"{name.value} ({visual.star_class})"
-                text_surface = font.render(label, True, (255, 255, 255))
-                text_rect = text_surface.get_rect(center=(position.x, position.y + 24))
-                text_rect.clamp_ip(screen.get_rect())
-                screen.blit(text_surface, text_rect)
+                self._draw_star_label(
+                    screen, name.value, visual.star_class, position,
+                    star_ownership.get(entity_id, []),
+                )
 
         self._draw_in_transit_ships(screen)
         self._draw_selection_ring(screen)
