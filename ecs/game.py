@@ -37,7 +37,10 @@ class Game:
         )
         pygame.display.set_caption("Master Of Galaxy")
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("Arial", 14)
+        # Bold weight everywhere so 1px strokes survive non-integer
+        # display scaling under pygame.SCALED. See galaxy labels for the
+        # same fix.
+        self.font = pygame.font.SysFont("Arial", 14, bold=True)
 
         # World state — populated by start_new_game / load_game.
         self.entity_mgr = EntityManager()
@@ -137,6 +140,31 @@ class Game:
     def quit(self):
         self.running = False
 
+    # Global keyboard shortcuts (only fire when an in-game scene is
+    # active, never on the main menu / empire setup / pause).
+    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "leaders", "races", "info", "system"}
+    _SHORTCUT_SCENE_KEYS = {
+        pygame.K_c: "colonies",
+        pygame.K_p: "planets",
+        pygame.K_l: "leaders",
+        pygame.K_r: "races",
+        pygame.K_i: "info",
+        pygame.K_g: "galaxy",
+    }
+
+    def _handle_shortcut(self, event) -> bool:
+        if event.type != pygame.KEYDOWN:
+            return False
+        if self.scenes.active_name not in self._SHORTCUT_SCENES:
+            return False
+        if event.key in self._SHORTCUT_SCENE_KEYS:
+            self.scenes.replace(self._SHORTCUT_SCENE_KEYS[event.key])
+            return True
+        if event.key == pygame.K_t:
+            self.advance_turn()
+            return True
+        return False
+
     def run(self, initial_scene):
         self.scenes.replace(initial_scene)
         while self.running:
@@ -149,6 +177,8 @@ class Game:
                     # F11 toggles between the SCALED window and fullscreen at
                     # the same logical resolution.
                     pygame.display.toggle_fullscreen()
+                elif self._handle_shortcut(event):
+                    pass  # consumed by the global shortcut handler
                 else:
                     self.scenes.active.handle_event(event)
 

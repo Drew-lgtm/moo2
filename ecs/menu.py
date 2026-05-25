@@ -6,7 +6,7 @@ class Menu:
         self.options = options
         self.selected_index = 0
         self.title = title
-        self.font = pygame.font.SysFont("Arial", 24)
+        self.font = pygame.font.SysFont("Arial", 24, bold=True)
 
 
     def draw(self):

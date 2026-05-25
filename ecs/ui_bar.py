@@ -30,7 +30,7 @@ class BottomUIBar:
         "leaders":  "Leaders",
         "races":    "Races",
         "info":     "Info",
-        "turn":     "End Turn",
+        "turn":     "Turn",
     }
 
     def __init__(self, screen_width, screen_height):

@@ -121,6 +121,17 @@ demand and are gitignored.
 | Scroll a panel | Mouse wheel, PgUp / PgDn / Home / End, ↑ / ↓ |
 | Cancel a panel | Esc |
 | Toggle fullscreen | F11 |
+| **Open Colonies panel** | **C** |
+| **Open Planets panel** | **P** |
+| **Open Leaders panel** | **L** |
+| **Open Races panel** | **R** |
+| **Open Info panel** | **I** |
+| **Return to galaxy** | **G** |
+| **Advance turn** | **T** |
+
+The letter shortcuts work in the galaxy view, any panel, and the
+system view. They're suppressed while in the main menu, empire setup,
+and pause menu so they don't fight typing.
 
 The game starts in fullscreen at a logical resolution of 1200×800;
 `pygame.SCALED` stretches the content to fit whatever physical display

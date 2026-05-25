@@ -44,7 +44,7 @@ class EmpireSetupScene(Scene):
         super().__init__(game)
         self.title_font = pygame.font.SysFont("Arial", 28, bold=True)
         self.label_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14)
+        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
         self.button_font = pygame.font.SysFont("Arial", 18, bold=True)
 
         self.colors: list[str] = list(EMPIRE_COLOR_RGB.keys())

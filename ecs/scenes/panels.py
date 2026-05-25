@@ -49,7 +49,7 @@ class PanelScene(Scene):
     def __init__(self, game):
         super().__init__(game)
         self.title_font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14)
+        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
         self.scroll_offset = 0
         self._content_height = 0
         self._body_rect_cache: pygame.Rect | None = None
