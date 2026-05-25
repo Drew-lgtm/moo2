@@ -6,6 +6,17 @@
 **Architecture:** Hybrid ECS + Database
 **Inspiration:** Master of Orion 2 (MOO2)
 
+## Design Direction
+
+The north star is **MOO2 fidelity** — match the original's mechanics
+(races, buildings, ships, tech, diplomacy, combat resolution) as
+faithfully as practical — paired with **modern UX improvements** that
+the original lacked: keyboard shortcuts, scrollable panels with mouse
+wheel, fullscreen + auto-scaling, tooltips, undo on misclicks, etc.
+When deciding between cleaner-than-MOO2 and closer-to-MOO2, default
+to closer-to-MOO2 unless the deviation makes the game noticeably
+worse for a modern audience.
+
 ---
 
 ## Quick Start
@@ -183,31 +194,94 @@ moo2/
 
 ---
 
-## Next Steps
+## Next Steps — MOO2 feature gaps
 
-### Combat polish
-- On-screen combat notification (toast or panel section) — `game.last_combats` is recorded but never surfaced.
-- Tactical combat phase (per-ship actions, ranged vs short, retreat option).
-- Planet bombardment / blockade so undefended AI fleets at the player's home become a real threat instead of camping.
+Listed in roughly MOO2-faithful priority order. Items in italics are
+modern improvements layered on top of the original.
 
-### Strategic layer
-- Planet capture: when a hostile fleet sits at a star with no defenders, take the planets after N turns.
-- Diplomacy: trade agreements, alliances, declarations of war.
-- AI strategic diversity: per-empire jitter so two militaristic AIs don't act identically.
+### Diplomacy & strategic interaction (big missing piece)
+- Treaty system: non-aggression, alliance, peace treaty, trade pact.
+- Declarations of war (manual + AI-triggered).
+- Per-empire diplomatic state (relations score, treaties).
+- *Diplomacy panel* under a new bottom-bar button (or 'D' shortcut).
 
-### Map polish
-- Zoom + pan on the galaxy view (the map is currently fixed at 1200×800).
-- Hyperlanes (warp lanes between stars) to constrain movement.
-- Fog of war / explored vs unexplored stars.
+### Combat depth
+- Tactical combat phase per engagement: per-ship initiative, beam /
+  missile / torpedo distinction, retreat option, ship damage carry.
+- On-screen notification when combat resolves — `game.last_combats`
+  is recorded but never surfaced.
+- *Battle log panel* listing recent engagements, who won, what was lost.
 
-### Economy & gameplay
-- Trade Goods as a perpetual project: convert planet industry to BC at a fixed rate.
-- Ship maintenance cost in BC so fleets aren't free.
-- Per-empire HUD details — info panel could list other empires' BC / research / fleet so the player can scout.
+### Planet capture & bombardment
+- When a hostile fleet sits at a star with no defenders, capture or
+  bombard planets after N turns.
+- Marine / Troop ship class for ground invasion (MOO2's transport).
+- *Capture prompt* asking the player whether to bombard or assault.
+
+### Engine tech tree (already half-designed in fleet.py)
+- `Nuclear Drives` (+1 speed), `Fusion Drives` (+2), `Ion Drives` (+3),
+  `Anti-Matter Drives` (+4), `Hyper Drives` (+6), `Interphased Drives` (+8).
+- Per-Empire speed bonus applied in `turns_for(class, src, dst, bonus)`.
+- Late-game cross-galaxy jumps drop from ~20 turns to 1-2 (the whole
+  reason `PIXELS_PER_PARSEC=25`).
+
+### Races with bonuses
+- Replace the cosmetic race list with MOO2 race templates: Klackons
+  (+1 industry/farmer), Psilons (+50% research, larger ships), Bulrathi
+  (+10 ground combat), Sakkra (+1 pop growth), Silicoids (no food
+  needed), Meklar (cybernetic, +1 industry/factory), Alkari (+ ship
+  defense), Mrrshan (+ ship attack), Trilarian (water bonus), Darlok
+  (espionage). Effects feed into existing economy/combat ticks.
+- *Custom race builder* (MOO2's killer feature) as a stretch goal.
+
+### Specific MOO2 buildings (extend ecs/projects.py)
+- Capitol, Marine Barracks, Star Base / Battle Station / Star Fortress,
+  Spaceport, Stock Exchange, Pleasure Dome, Cloning Center, Soil
+  Enrichment / Weather Controller (food line), Tactical / Robo-Miner
+  / Deep-Core Mine (industry line), Research Lab / Supercomputer /
+  Galactic Cybernet (research line), Plus Astro University, Holo
+  Simulator, Galactic Reserve, etc. Each gated by a specific tech.
+
+### Tech tree expansion
+- Field-based research like MOO2: Construction / Power / Chemistry /
+  Sociology / Computers / Biology / Physics / Force Fields. Each
+  field has tiers; finishing a tier unlocks one of several picks
+  (MOO2's branching-choice system).
+- *Tech browser* showing the full tree with current state.
+
+### Pollution, morale, food storage
+- Industry generates pollution; pollution lowers food output and pop
+  growth. Pollution Control buildings (MOO2 had Atmospheric Renewer).
+- Per-planet morale, modified by buildings and events.
+- Food storage so a year of food deficit doesn't immediately starve
+  pop; gives the player time to react.
+
+### Map polish (the "modern improvements" half)
+- *Zoom + pan on the galaxy view* (currently fixed scale).
+- *Fog of war* / explored vs unexplored stars; scout ships reveal stars.
+- *Hyperlanes / Star Lanes* as an optional galaxy generation mode.
+
+### AI depth
+- Per-empire strategic personality variation (jitter so duplicates
+  diverge).
+- Diplomatic AI that actually offers / accepts treaties based on
+  relations + power balance.
+- Strategic threat awareness: AI defends colonies when scouted.
+
+### Quality of life
+- *Tooltips* on every UI element.
+- *Auto-explore* button for scout ships.
+- *Notification log* surfacing combat, completed buildings, tech
+  unlocks, AI declarations.
+- *Quicksave / quickload* via F5 / F9.
+- *Empire summary screen* at end-of-game.
 
 ### Polish
-- Replace 0-byte placeholder assets in `assets/races/` (8 missing) and `assets/ships/` (all 5 missing). The loader currently shows diagonal-slash placeholders for these.
-- Surface AI personality on the Info panel so the player can see who's building what.
+- Replace 0-byte placeholder PNGs in `assets/races/` (8 missing) and
+  `assets/ships/` (all 5). The loader currently shows diagonal-slash
+  placeholders for these.
+- *Surface AI personality* on the Info panel so the player can see
+  who's building what kind of empire.
 
 ---
 
