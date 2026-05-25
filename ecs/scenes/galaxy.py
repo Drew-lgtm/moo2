@@ -184,16 +184,35 @@ class GalaxyScene(Scene):
             result[star_entity] = ratios
         return result
 
+    @staticmethod
+    def _render_outlined(font, text: str, fg, outline=(0, 0, 0)):
+        """Return a Surface with `text` drawn in fg color and a 1px dark
+        outline around every glyph. The outline gives the label
+        contrast on both light and dark backdrops."""
+        base = font.render(text, True, fg)
+        outline_surf = font.render(text, True, outline)
+        w, h = base.get_size()
+        surf = pygame.Surface((w + 2, h + 2), pygame.SRCALPHA)
+        # 8-way 1px outline.
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                surf.blit(outline_surf, (1 + dx, 1 + dy))
+        surf.blit(base, (1, 1))
+        return surf
+
     def _draw_star_label(self, screen, name_str, star_class, position, ratios):
         """Bottom label under a star. White + non-bold for unowned stars;
         bold + per-letter empire colors when one or more empires hold
-        planets here. The "(Class)" suffix stays white."""
+        planets here. The "(Class)" suffix stays white. Both passes get
+        a 1px black outline so the label reads on every background."""
         font_bold = self._name_font_bold or self.game.font
         font_norm = self.game.font
         suffix = f" ({star_class})"
 
         if not ratios:
-            text = font_norm.render(f"{name_str}{suffix}", True, (255, 255, 255))
+            text = self._render_outlined(font_norm, f"{name_str}{suffix}", (255, 255, 255))
             rect = text.get_rect(center=(position.x, position.y + 24))
             rect.clamp_ip(screen.get_rect())
             screen.blit(text, rect)
@@ -213,9 +232,9 @@ class GalaxyScene(Scene):
                 if pos_frac <= cum:
                     color = rgb
                     break
-            letter_surfaces.append(font_bold.render(ch, True, color))
+            letter_surfaces.append(self._render_outlined(font_bold, ch, color))
 
-        suffix_surface = font_norm.render(suffix, True, (220, 220, 220))
+        suffix_surface = self._render_outlined(font_norm, suffix, (220, 220, 220))
         total_w = sum(s.get_width() for s in letter_surfaces) + suffix_surface.get_width()
         x = position.x - total_w // 2
         y = position.y + 24
@@ -373,9 +392,9 @@ class GalaxyScene(Scene):
                 color_name = empire_colors_by_id.get(empire_id, "blue")
                 rgb = empire_color(color_name)
                 pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 12))
-                text = font.render(str(count), True, (240, 240, 240))
+                text = self._render_outlined(font, str(count), (240, 240, 240))
                 screen.blit(text, (x + 9, y - 2))
-                x += 9 + text.get_width() + 6
+                x += 9 + text.get_width() + 4
 
     def _draw_hud(self, screen):
         if self.game.galaxy is None:
@@ -402,14 +421,14 @@ class GalaxyScene(Scene):
             ]
             for i, text in enumerate(items):
                 if i > 0:
-                    sep = font.render("   ·   ", True, (140, 140, 160))
+                    sep = self._render_outlined(font, "  ·  ", (140, 140, 160))
                     screen.blit(sep, (x, y))
                     x += sep.get_width()
-                surf = font.render(text, True, (255, 255, 255))
+                surf = self._render_outlined(font, text, (255, 255, 255))
                 screen.blit(surf, (x, y))
                 x += surf.get_width()
         else:
             screen.blit(
-                font.render(f"Turn {self.game.galaxy.turn}", True, (255, 255, 255)),
+                self._render_outlined(font, f"Turn {self.game.galaxy.turn}", (255, 255, 255)),
                 (x, y),
             )
