@@ -122,6 +122,8 @@ def _migrate_empires(conn):
 
 def _migrate_planets(conn):
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(planets)")}
+    if "owner_empire_id" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN owner_empire_id INTEGER")
     if "population" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN population INTEGER DEFAULT 0")
     if "max_population" not in existing:
