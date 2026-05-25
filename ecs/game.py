@@ -62,7 +62,11 @@ class Game:
 
     def _load_background(self):
         bg = load_random_background()
-        return pygame.transform.scale(bg, (self.screen_width, self.screen_height))
+        # smoothscale gives the nebula clean edges when stretched/shrunk.
+        try:
+            return pygame.transform.smoothscale(bg, (self.screen_width, self.screen_height))
+        except (pygame.error, ValueError):
+            return pygame.transform.scale(bg, (self.screen_width, self.screen_height))
 
     def _reset_world(self):
         self.entity_mgr = EntityManager()

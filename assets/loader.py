@@ -34,7 +34,13 @@ def load_image(path, size=(32, 32)):
         if not os.path.exists(full_path) or os.path.getsize(full_path) <= 0:
             raise FileNotFoundError(f"empty or missing asset: {path}")
         image = pygame.image.load(full_path).convert_alpha()
-        _image_cache[key] = pygame.transform.scale(image, size)
+        # smoothscale does bilinear interpolation — much nicer when shrinking
+        # a large PNG to a 20-40px star than the nearest-neighbour scale().
+        # Falls back to scale() if smoothscale rejects the source format.
+        try:
+            _image_cache[key] = pygame.transform.smoothscale(image, size)
+        except (pygame.error, ValueError):
+            _image_cache[key] = pygame.transform.scale(image, size)
     except (pygame.error, FileNotFoundError, OSError):
         _image_cache[key] = _placeholder_surface(size)
     return _image_cache[key]
