@@ -37,11 +37,11 @@ def turns_for(ship_class: str, from_pos, to_pos) -> int:
 
 
 def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star_entity):
-    """Move the given ship entities from one star to another.
+    """Move the given ship entities from one star to another as a fleet.
 
-    Same source star is assumed; each ship's individual speed determines
-    its own arrival turn (slower ships take longer than faster ones on
-    the same route). Persists the new transit state.
+    The whole fleet travels at the slowest member's speed, so a mixed
+    Frigate + Dreadnought fleet arrives together rather than getting
+    spread across multiple turns. Persists the new transit state.
     """
     if not ship_entities or from_star_entity == to_star_entity:
         return
@@ -52,23 +52,34 @@ def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star
     if from_pos is None or to_pos is None or from_ref is None or to_ref is None:
         return
 
+    # Pass 1: find the slowest ship's turn count for this leg.
+    fleet_turns = 0
+    for ship_entity in ship_entities:
+        ship = component_mgr.get_component(ship_entity, Ship)
+        if ship is None:
+            continue
+        fleet_turns = max(fleet_turns, turns_for(ship.ship_class, from_pos, to_pos))
+    if fleet_turns < 1:
+        fleet_turns = 1
+
+    # Pass 2: stamp the same turns_remaining onto every ship so they
+    # arrive together.
     with get_connection() as conn:
         for ship_entity in ship_entities:
             ship = component_mgr.get_component(ship_entity, Ship)
             if ship is None:
                 continue
             component_mgr.remove_component(ship_entity, ShipAt)
-            turns = turns_for(ship.ship_class, from_pos, to_pos)
             component_mgr.add_component(
                 ship_entity,
                 ShipInTransit(
                     from_star_entity=from_star_entity,
                     to_star_entity=to_star_entity,
-                    turns_remaining=turns,
-                    total_turns=turns,
+                    turns_remaining=fleet_turns,
+                    total_turns=fleet_turns,
                 ),
             )
-            update_ship_transit(conn, ship.id, from_ref.db_id, to_ref.db_id, turns)
+            update_ship_transit(conn, ship.id, from_ref.db_id, to_ref.db_id, fleet_turns)
         conn.commit()
 
 
