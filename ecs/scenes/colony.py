@@ -1,0 +1,388 @@
+"""Colony screen — one planet's details, workers, and build queue.
+
+Reached from SystemView by clicking a planet. Modelled after MOO2's
+planet-info screen: pop + worker assignment at the top, completed
+buildings + active build + queue in the middle, project picker at the
+bottom (buildings row + ships row, tech-gated).
+
+Esc returns to SystemView for the same star.
+"""
+from __future__ import annotations
+
+import pygame
+
+from ecs.scene import Scene
+from ecs.components import (
+    Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState,
+    Name, StarVisual,
+)
+from ecs.palette import planet_color, empire_color
+from ecs.projects import PROJECTS, BUILDING_ORDER, SHIP_PROJECT_ORDER, project_is_available
+from ecs.techs import TECHS
+from ecs.db import (
+    get_connection, update_planet_build, update_planet_workers,
+    save_planet_build_queue,
+)
+
+
+BG_COLOR = (10, 12, 24, 230)
+TITLE_COLOR = (255, 230, 120)
+HEADER_COLOR = (200, 200, 220)
+TEXT_COLOR = (240, 240, 240)
+HINT_COLOR = (180, 180, 180)
+SELECTED_RING = (255, 230, 120)
+
+
+class ColonyScene(Scene):
+    PROJECT_BTN_SIZE = (170, 56)
+    PROJECT_BTN_GAP = 12
+    WORKER_BTN_SIZE = (32, 32)
+    WORKER_ROLES = [("farmers", "Farmers"), ("workers", "Workers"), ("scientists", "Scientists")]
+
+    def __init__(self, game):
+        super().__init__(game)
+        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
+        self.header_font = pygame.font.SysFont("Arial", 16, bold=True)
+        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.glyph_font = pygame.font.SysFont("Arial", 18, bold=True)
+
+        # Hit rects rebuilt on layout.
+        self._worker_widgets: list[tuple] = []  # (role, minus, plus)
+        self._project_button_rects: list[tuple[str, pygame.Rect]] = []
+        self._close_rect = pygame.Rect(0, 0, 0, 0)
+        self._planet_entity: int | None = None
+
+    # ------------------------------------------------------------------ lifecycle
+
+    def on_enter(self):
+        self._planet_entity = getattr(self.game, "selected_planet", None)
+        # If we lost track of which planet, bail back.
+        if self._planet_entity is None:
+            self._return_to_system()
+            return
+        self._layout()
+
+    def on_exit(self):
+        self._planet_entity = None
+
+    def _return_to_system(self):
+        self.game.scenes.replace("system")
+
+    def _return_to_galaxy(self):
+        self.game.scenes.replace("galaxy")
+
+    # ------------------------------------------------------------------ layout
+
+    def _layout(self):
+        sw, sh = self.game.screen_width, self.game.screen_height
+        self._close_rect = pygame.Rect(sw - 100, 16, 80, 32)
+
+        # Worker pickers across the upper third.
+        self._worker_widgets.clear()
+        btn_w, btn_h = self.WORKER_BTN_SIZE
+        cluster_w = 200
+        total_w = len(self.WORKER_ROLES) * cluster_w
+        start_x = (sw - total_w) // 2
+        y = 140
+        for i, (role, _label) in enumerate(self.WORKER_ROLES):
+            cluster_x = start_x + i * cluster_w
+            minus_rect = pygame.Rect(cluster_x + 40, y, btn_w, btn_h)
+            plus_rect = pygame.Rect(cluster_x + cluster_w - 40 - btn_w, y, btn_w, btn_h)
+            self._worker_widgets.append((role, minus_rect, plus_rect))
+
+        # Project picker — ships on top row, buildings beneath, at bottom.
+        self._project_button_rects.clear()
+        pb_w, pb_h = self.PROJECT_BTN_SIZE
+        gap = self.PROJECT_BTN_GAP
+
+        def _row(ids, y_):
+            row_w = len(ids) * pb_w + (len(ids) - 1) * gap
+            sx = (sw - row_w) // 2
+            for k, pid in enumerate(ids):
+                self._project_button_rects.append(
+                    (pid, pygame.Rect(sx + k * (pb_w + gap), y_, pb_w, pb_h))
+                )
+
+        buildings_y = sh - pb_h - 24
+        ships_y = buildings_y - pb_h - 8
+        _row(SHIP_PROJECT_ORDER, ships_y)
+        _row(BUILDING_ORDER, buildings_y)
+
+    # ------------------------------------------------------------------ helpers
+
+    def _planet_components(self):
+        cm = self.game.component_mgr
+        if self._planet_entity is None:
+            return None, None, None, None
+        planet = cm.get_component(self._planet_entity, Planet)
+        pop = cm.get_component(self._planet_entity, Population)
+        build_state = cm.get_component(self._planet_entity, BuildState)
+        owner = cm.get_component(self._planet_entity, Owner)
+        return planet, pop, build_state, owner
+
+    def _star_name(self) -> str:
+        if self._planet_entity is None:
+            return ""
+        orbit = self.game.component_mgr.get_component(self._planet_entity, Orbiting)
+        if orbit is None:
+            return ""
+        name = self.game.component_mgr.get_component(orbit.star_entity, Name)
+        return name.value if name else ""
+
+    def _player_empire_id(self):
+        for _eid, empire in self.game.component_mgr.get_all(Empire):
+            if empire.is_player:
+                return empire.id
+        return None
+
+    def _player_owns_this(self, owner) -> bool:
+        return owner is not None and owner.empire_id == self._player_empire_id()
+
+    def _player_unlocked_techs(self) -> set[str]:
+        player_id = self._player_empire_id()
+        if player_id is None:
+            return set()
+        for _eid, tech in self.game.component_mgr.get_all(TechState):
+            if tech.empire_id == player_id:
+                return set(tech.unlocked)
+        return set()
+
+    # ------------------------------------------------------------------ input
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self._return_to_system()
+            return
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return
+
+        if self._close_rect.collidepoint(event.pos):
+            self._return_to_galaxy()
+            return
+
+        # Worker +/- buttons
+        for role, minus_rect, plus_rect in self._worker_widgets:
+            if minus_rect.collidepoint(event.pos):
+                self._try_shift_worker(role, -1)
+                return
+            if plus_rect.collidepoint(event.pos):
+                self._try_shift_worker(role, +1)
+                return
+
+        # Project buttons
+        for project_id, rect in self._project_button_rects:
+            if rect.collidepoint(event.pos):
+                self._try_set_project(project_id)
+                return
+
+    def _try_shift_worker(self, role: str, delta: int):
+        _planet, pop, _bs, owner = self._planet_components()
+        if pop is None or not self._player_owns_this(owner):
+            return
+
+        other_order = [r for r in ("workers", "scientists", "farmers") if r != role]
+        if delta > 0:
+            for src in other_order:
+                if getattr(pop, src) > 0:
+                    setattr(pop, src, getattr(pop, src) - 1)
+                    setattr(pop, role, getattr(pop, role) + 1)
+                    break
+            else:
+                return
+        else:
+            if getattr(pop, role) <= 0:
+                return
+            setattr(pop, role, getattr(pop, role) - 1)
+            setattr(pop, other_order[0], getattr(pop, other_order[0]) + 1)
+
+        planet, _, _, _ = self._planet_components()
+        if planet is not None:
+            with get_connection() as conn:
+                update_planet_workers(conn, planet.id, pop.farmers, pop.workers, pop.scientists)
+                conn.commit()
+
+    def _try_set_project(self, project_id: str):
+        planet, _pop, build_state, owner = self._planet_components()
+        if planet is None or build_state is None or not self._player_owns_this(owner):
+            return
+        if project_id in build_state.completed:
+            return
+        if not project_is_available(project_id, self._player_unlocked_techs()):
+            return
+
+        is_ship = PROJECTS.get(project_id, {}).get("type") == "ship"
+        if not is_ship and build_state.current_project == project_id:
+            return
+
+        queue_changed = False
+        current_changed = False
+        if is_ship:
+            if build_state.current_project is None:
+                build_state.current_project = project_id
+                current_changed = True
+            else:
+                build_state.queue.append(project_id)
+                queue_changed = True
+        elif project_id in build_state.queue:
+            build_state.queue.remove(project_id)
+            queue_changed = True
+        elif build_state.current_project is None:
+            build_state.current_project = project_id
+            current_changed = True
+        else:
+            build_state.queue.append(project_id)
+            queue_changed = True
+
+        with get_connection() as conn:
+            if current_changed:
+                update_planet_build(conn, planet.id, build_state.current_project, build_state.progress)
+            if queue_changed:
+                save_planet_build_queue(conn, planet.id, list(build_state.queue))
+            conn.commit()
+
+    # ------------------------------------------------------------------ draw
+
+    def draw(self, screen):
+        sw, sh = self.game.screen_width, self.game.screen_height
+
+        # Overlay
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill(BG_COLOR)
+        screen.blit(overlay, (0, 0))
+
+        planet, pop, build_state, owner = self._planet_components()
+        if planet is None:
+            return
+
+        self._draw_header(screen, planet, owner)
+        self._draw_pop_block(screen, pop, owner)
+        self._draw_worker_widgets(screen, pop, owner)
+        self._draw_build_summary(screen, build_state)
+        self._draw_project_picker(screen, planet, pop, build_state, owner)
+        self._draw_close_button(screen)
+
+    def _draw_close_button(self, screen):
+        pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
+        pygame.draw.rect(screen, (240, 240, 240), self._close_rect, 1)
+        label = self.body_font.render("Close", True, (240, 240, 240))
+        screen.blit(label, label.get_rect(center=self._close_rect.center))
+
+    def _draw_header(self, screen, planet, owner):
+        cm = self.game.component_mgr
+        star_name = self._star_name()
+        title = f"{star_name} - {planet.planet_type} {planet.size}"
+        title_surf = self.title_font.render(title, True, TITLE_COLOR)
+        screen.blit(title_surf, (24, 16))
+
+        # Type dot
+        pygame.draw.circle(screen, planet_color(planet.planet_type), (24 + 8, 60), 8)
+        # Owner color bar
+        if owner is not None:
+            emp = next((e for _eid, e in cm.get_all(Empire) if e.id == owner.empire_id), None)
+            if emp is not None:
+                pygame.draw.rect(screen, empire_color(emp.color), pygame.Rect(48, 50, 8, 20))
+                emp_label = self.header_font.render(emp.name, True, TEXT_COLOR)
+                screen.blit(emp_label, (64, 52))
+        else:
+            screen.blit(self.header_font.render("Uncolonized", True, HINT_COLOR), (48, 52))
+
+    def _draw_pop_block(self, screen, pop, owner):
+        if pop is None:
+            screen.blit(self.header_font.render("No population", True, HINT_COLOR), (24, 100))
+            return
+        line = f"Population: {pop.current}/{pop.max}    F:{pop.farmers}  W:{pop.workers}  S:{pop.scientists}"
+        screen.blit(self.header_font.render(line, True, TEXT_COLOR), (24, 100))
+
+    def _draw_worker_widgets(self, screen, pop, owner):
+        editable = pop is not None and self._player_owns_this(owner)
+        for role, minus_rect, plus_rect in self._worker_widgets:
+            # Label above the cluster
+            short = {"farmers": "Farmers", "workers": "Workers", "scientists": "Scientists"}[role]
+            label_surf = self.body_font.render(short, True, TEXT_COLOR)
+            mid_x = (minus_rect.left + plus_rect.right) // 2
+            screen.blit(label_surf, label_surf.get_rect(midtop=(mid_x, minus_rect.top - 22)))
+
+            count = getattr(pop, role) if pop is not None else 0
+            value_surf = self.title_font.render(str(count), True, TEXT_COLOR)
+            screen.blit(value_surf, value_surf.get_rect(center=(mid_x, minus_rect.centery)))
+
+            for btn_rect, glyph in ((minus_rect, "−"), (plus_rect, "+")):
+                bg = (60, 64, 96) if editable else (40, 44, 60)
+                border = (180, 180, 220) if editable else (90, 90, 110)
+                fg = TEXT_COLOR if editable else (130, 130, 150)
+                pygame.draw.rect(screen, bg, btn_rect)
+                pygame.draw.rect(screen, border, btn_rect, 1)
+                gs = self.glyph_font.render(glyph, True, fg)
+                screen.blit(gs, gs.get_rect(center=btn_rect.center))
+
+    def _draw_build_summary(self, screen, build_state):
+        x, y = 24, 220
+        if build_state is None:
+            screen.blit(self.body_font.render("No build state.", True, HINT_COLOR), (x, y))
+            return
+        # Completed
+        if build_state.completed:
+            names = [PROJECTS[pid]["name"] for pid in build_state.completed if pid in PROJECTS]
+            completed_str = "Buildings: " + ", ".join(names)
+        else:
+            completed_str = "Buildings: (none)"
+        screen.blit(self.body_font.render(completed_str, True, TEXT_COLOR), (x, y))
+
+        # Active project
+        if build_state.current_project:
+            proj = PROJECTS.get(build_state.current_project, {})
+            active = f"Building: {proj.get('name', build_state.current_project)} {build_state.progress}/{proj.get('cost', '?')}"
+            screen.blit(self.body_font.render(active, True, (220, 200, 120)), (x, y + 22))
+        else:
+            screen.blit(self.body_font.render("Building: (idle)", True, HINT_COLOR), (x, y + 22))
+
+        # Queue
+        if build_state.queue:
+            queue_names = [PROJECTS[pid]["name"] for pid in build_state.queue if pid in PROJECTS]
+            queue_str = "Queue: " + " > ".join(queue_names)
+            screen.blit(self.body_font.render(queue_str, True, (120, 180, 255)), (x, y + 44))
+
+    def _draw_project_picker(self, screen, planet, pop, build_state, owner):
+        editable = self._player_owns_this(owner) and build_state is not None
+        unlocked = self._player_unlocked_techs() if editable else set()
+
+        for project_id, rect in self._project_button_rects:
+            proj = PROJECTS[project_id]
+            already_built = build_state is not None and project_id in build_state.completed
+            currently_building = build_state is not None and build_state.current_project == project_id
+            queued = build_state is not None and project_id in build_state.queue
+            tech_locked = not project_is_available(project_id, unlocked)
+            available = editable and not already_built and not tech_locked
+
+            bg = (60, 64, 96) if available else (40, 44, 60)
+            if currently_building:
+                border = SELECTED_RING
+            elif queued:
+                border = (120, 180, 255)
+            elif available:
+                border = (180, 180, 220)
+            else:
+                border = (90, 90, 110)
+            pygame.draw.rect(screen, bg, rect)
+            pygame.draw.rect(screen, border, rect, 2 if (currently_building or queued) else 1)
+
+            name_color = TEXT_COLOR if available else (130, 130, 150)
+            name = self.body_font.render(proj["name"], True, name_color)
+            screen.blit(name, (rect.x + 10, rect.y + 6))
+
+            if already_built:
+                cost_text = "BUILT"
+            elif currently_building:
+                cost_text = "BUILDING"
+            elif queued:
+                cost_text = "QUEUED"
+            elif tech_locked:
+                required = proj.get("required_tech")
+                cost_text = f"Locked: {TECHS.get(required, {}).get('name', required or '?')}"
+            else:
+                cost_text = f"Cost {proj['cost']}"
+            cost = self.body_font.render(cost_text, True, (180, 220, 255) if available else (130, 130, 150))
+            screen.blit(cost, (rect.x + 10, rect.y + 24))
+
+            desc = self.body_font.render(proj.get("description", ""), True, HINT_COLOR if not available else (200, 200, 220))
+            screen.blit(desc, (rect.x + 10, rect.y + 40))

@@ -20,13 +20,22 @@ class SystemViewScene(Scene):
         )
 
     def on_exit(self):
+        # Drop the SystemView widget but keep game.selected_star — we
+        # might be bouncing through ColonyScene and back, and clearing
+        # it here would make on_enter redirect to galaxy.
         self.view = None
-        self.game.selected_star = None
 
     def handle_event(self, event):
         if self.view is None:
             return
         self.view.handle_event(event)
+        # Planet click → open that planet's Colony scene. selected_planet
+        # carries the entity id so ColonyScene.on_enter can pick it up.
+        if self.view.pending_planet_click is not None:
+            self.game.selected_planet = self.view.pending_planet_click
+            self.view.pending_planet_click = None
+            self.game.scenes.replace("colony")
+            return
         if not self.view.is_open:
             self.game.scenes.replace("galaxy")
 

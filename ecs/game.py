@@ -142,7 +142,7 @@ class Game:
 
     # Global keyboard shortcuts (only fire when an in-game scene is
     # active, never on the main menu / empire setup / pause).
-    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "leaders", "races", "info", "system"}
+    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "leaders", "races", "info", "system", "colony"}
     _SHORTCUT_SCENE_KEYS = {
         pygame.K_c: "colonies",
         pygame.K_p: "planets",
