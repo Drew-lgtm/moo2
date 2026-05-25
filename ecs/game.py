@@ -28,7 +28,14 @@ class Game:
         self.screen_height = screen_height
         self.num_stars = num_stars
 
-        self.screen = pygame.display.set_mode((screen_width, screen_height))
+        # SCALED tells pygame to pick a window size that fits the user's
+        # desktop (after taskbar / title bar) while keeping the logical
+        # resolution at (screen_width, screen_height) — so all of our
+        # pixel math stays the same and content auto-scales to fit.
+        self.screen = pygame.display.set_mode(
+            (screen_width, screen_height),
+            pygame.SCALED,
+        )
         pygame.display.set_caption("Master Of Galaxy")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 14)
@@ -135,6 +142,10 @@ class Game:
             for event in events:
                 if event.type == pygame.QUIT:
                     self.running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                    # F11 toggles between the SCALED window and fullscreen at
+                    # the same logical resolution.
+                    pygame.display.toggle_fullscreen()
                 else:
                     self.scenes.active.handle_event(event)
 
