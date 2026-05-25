@@ -59,8 +59,8 @@ class PanelScene(Scene):
 
     @property
     def _panel_rect(self) -> pygame.Rect:
-        bar_height = self.game.screen_height // 6
-        return pygame.Rect(0, 0, self.game.screen_width, self.game.screen_height - bar_height)
+        # Panels fill everything above the bottom UI bar.
+        return pygame.Rect(0, 0, self.game.screen_width, self.game.play_area_height)
 
     def _max_scroll(self) -> int:
         if self._body_rect_cache is None:
