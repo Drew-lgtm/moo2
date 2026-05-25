@@ -7,7 +7,7 @@ from ecs.components import (
 )
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
-from ecs.fleet import start_fleet_movement, turns_for
+from ecs.fleet import start_fleet_movement, turns_for, empire_speed_bonus
 from assets.loader import load_image
 
 
@@ -339,11 +339,16 @@ class GalaxyScene(Scene):
 
     def _slowest_eta(self, src_pos, dst_pos) -> int | None:
         """Max turns_for across selected ship classes (with count > 0)."""
+        player = self.game.player_empire()
+        bonus = (
+            empire_speed_bonus(self.game.component_mgr, player.id)
+            if player is not None else 0
+        )
         worst = 0
         for class_id, count in self.selected_counts.items():
             if count <= 0:
                 continue
-            t = turns_for(class_id, src_pos, dst_pos)
+            t = turns_for(class_id, src_pos, dst_pos, bonus)
             if t > worst:
                 worst = t
         return worst if worst > 0 else None

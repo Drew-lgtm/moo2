@@ -106,6 +106,7 @@ class Game:
         panel_targets = {
             "colonies": "colonies",
             "planets": "planets",
+            "research": "research",
             "leaders": "leaders",
             "races": "races",
             "info": "info",
@@ -142,12 +143,12 @@ class Game:
 
     # Global keyboard shortcuts (only fire when an in-game scene is
     # active, never on the main menu / empire setup / pause).
-    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "leaders", "races", "info", "system", "colony"}
+    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "research", "leaders", "races", "info", "system", "colony"}
     _SHORTCUT_SCENE_KEYS = {
         pygame.K_c: "colonies",
         pygame.K_p: "planets",
+        pygame.K_r: "research",
         pygame.K_l: "leaders",
-        pygame.K_r: "races",
         pygame.K_i: "info",
         pygame.K_g: "galaxy",
     }

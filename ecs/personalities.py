@@ -20,17 +20,31 @@ PERSONALITIES: dict[str, dict] = {
         "worker_pct": 75,
         "build_priority": [
             "factory", "granary", "research_lab", "marketplace", "hydroponics",
-            "capital", "ship_frigate", "ship_cruiser",
+            "capital", "supercomputer", "stock_exchange", "atmospheric_renewer",
+            "ship_frigate", "ship_cruiser",
         ],
-        "research_priority": ["agriculture", "trade", "computer_science", "industrial_engineering", "governance"],
+        "research_priority": [
+            "agriculture", "trade", "computer_science", "industrial_engineering",
+            "governance", "advanced_construction", "advanced_computers",
+            "nuclear_drives", "soil_enrichment", "financial_planning",
+            "fusion_drives", "automated_factories", "galactic_networks", "cloning",
+        ],
         "aggressive": False,
     },
     "economic": {
         "name": "Economic",
         "description": "Markets and growth first; no fleet building.",
         "worker_pct": 70,
-        "build_priority": ["granary", "marketplace", "factory", "hydroponics", "research_lab", "capital"],
-        "research_priority": ["trade", "agriculture", "computer_science", "industrial_engineering", "governance"],
+        "build_priority": [
+            "granary", "marketplace", "factory", "hydroponics", "stock_exchange",
+            "research_lab", "capital", "atmospheric_renewer", "soil_enrichment_b",
+            "cloning_center", "automated_factory",
+        ],
+        "research_priority": [
+            "trade", "agriculture", "governance", "industrial_engineering",
+            "financial_planning", "soil_enrichment", "advanced_construction",
+            "cloning", "computer_science", "automated_factories",
+        ],
         "aggressive": False,
     },
     "scientific": {
@@ -38,10 +52,15 @@ PERSONALITIES: dict[str, dict] = {
         "description": "Researches aggressively; light defensive fleet.",
         "worker_pct": 40,
         "build_priority": [
-            "research_lab", "factory", "granary", "marketplace", "hydroponics",
-            "capital", "ship_frigate",
+            "research_lab", "supercomputer", "factory", "granary", "marketplace",
+            "galactic_cybernet", "hydroponics", "capital", "ship_frigate",
         ],
-        "research_priority": ["computer_science", "agriculture", "industrial_engineering", "trade", "governance"],
+        "research_priority": [
+            "computer_science", "advanced_computers", "agriculture",
+            "industrial_engineering", "galactic_networks", "trade",
+            "advanced_construction", "soil_enrichment", "governance",
+            "nuclear_drives", "fusion_drives",
+        ],
         "aggressive": False,
     },
     "militaristic": {
@@ -49,11 +68,16 @@ PERSONALITIES: dict[str, dict] = {
         "description": "Heavy fleet, attacks the player on sight.",
         "worker_pct": 90,
         "build_priority": [
-            "factory", "ship_frigate", "research_lab", "ship_cruiser",
-            "marketplace", "ship_battleship", "hydroponics", "ship_dreadnought",
-            "granary", "capital",
+            "factory", "ship_frigate", "automated_factory", "research_lab",
+            "ship_cruiser", "marketplace", "ship_battleship", "hydroponics",
+            "ship_dreadnought", "granary", "capital",
         ],
-        "research_priority": ["industrial_engineering", "trade", "governance", "computer_science", "agriculture"],
+        "research_priority": [
+            "industrial_engineering", "nuclear_drives", "trade", "fusion_drives",
+            "advanced_construction", "ion_drives", "governance",
+            "automated_factories", "anti_matter_drives", "computer_science",
+            "agriculture", "hyper_drives",
+        ],
         "aggressive": True,
     },
 }

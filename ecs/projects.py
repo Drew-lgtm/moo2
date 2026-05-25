@@ -68,6 +68,62 @@ PROJECTS: dict[str, dict] = {
         "effects": {"bc": 2, "research": 2, "max_pop": 1},
         "required_tech": "governance",
     },
+    "atmospheric_renewer": {
+        "id": "atmospheric_renewer",
+        "name": "Atmospheric Renewer",
+        "cost": 180,
+        "description": "+2 max pop, faster growth",
+        "effects": {"max_pop": 2, "growth_rate": 0.1},
+        "required_tech": "advanced_construction",
+    },
+    "automated_factory": {
+        "id": "automated_factory",
+        "name": "Automated Factory",
+        "cost": 250,
+        "description": "+5 BC per turn",
+        "effects": {"bc": 5},
+        "required_tech": "automated_factories",
+    },
+    "stock_exchange": {
+        "id": "stock_exchange",
+        "name": "Stock Exchange",
+        "cost": 180,
+        "description": "+5 BC, faster growth",
+        "effects": {"bc": 5, "growth_rate": 0.1},
+        "required_tech": "financial_planning",
+    },
+    "supercomputer": {
+        "id": "supercomputer",
+        "name": "Supercomputer",
+        "cost": 200,
+        "description": "+6 Research per turn",
+        "effects": {"research": 6},
+        "required_tech": "advanced_computers",
+    },
+    "galactic_cybernet": {
+        "id": "galactic_cybernet",
+        "name": "Galactic Cybernet",
+        "cost": 350,
+        "description": "+12 Research per turn",
+        "effects": {"research": 12},
+        "required_tech": "galactic_networks",
+    },
+    "soil_enrichment_b": {
+        "id": "soil_enrichment_b",
+        "name": "Soil Enrichment",
+        "cost": 200,
+        "description": "+1 max pop, faster growth",
+        "effects": {"max_pop": 1, "growth_rate": 0.2},
+        "required_tech": "soil_enrichment",
+    },
+    "cloning_center": {
+        "id": "cloning_center",
+        "name": "Cloning Center",
+        "cost": 250,
+        "description": "+1 max pop, much faster growth",
+        "effects": {"max_pop": 1, "growth_rate": 0.3},
+        "required_tech": "cloning",
+    },
 }
 
 # Inject ship projects from the SHIPS catalog so SystemView gets them
@@ -84,8 +140,15 @@ for _ship_id in SHIP_ORDER:
     }
 
 
-# Display order in pickers.
-BUILDING_ORDER = ["factory", "granary", "research_lab", "hydroponics", "marketplace", "capital"]
+# Display order in pickers. Two rows of buildings now that the tech
+# tree adds late-game choices; the colony scene wraps if it overflows.
+BUILDING_ORDER = [
+    # Early game (free or simple tech)
+    "factory", "granary", "research_lab", "hydroponics", "marketplace", "capital",
+    # Mid / late game (gated by deeper tech)
+    "atmospheric_renewer", "automated_factory", "stock_exchange",
+    "supercomputer", "galactic_cybernet", "soil_enrichment_b", "cloning_center",
+]
 SHIP_PROJECT_ORDER = [f"ship_{s}" for s in SHIP_ORDER]
 PROJECT_ORDER = BUILDING_ORDER + SHIP_PROJECT_ORDER
 

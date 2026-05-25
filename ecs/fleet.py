@@ -12,9 +12,10 @@ from __future__ import annotations
 import math
 
 from ecs.components import (
-    Position, Ship, ShipAt, ShipInTransit, ShipOwner, StarRef,
+    Position, Ship, ShipAt, ShipInTransit, ShipOwner, StarRef, TechState,
 )
 from ecs.ships import SHIPS
+from ecs.techs import empire_speed_bonus as _empire_speed_bonus
 from ecs.db import get_connection, update_ship_transit
 
 
@@ -37,10 +38,24 @@ def _distance_parsecs(pos_a, pos_b) -> float:
     return math.hypot(dx, dy) / PIXELS_PER_PARSEC
 
 
-def turns_for(ship_class: str, from_pos, to_pos) -> int:
+def turns_for(ship_class: str, from_pos, to_pos, speed_bonus: int = 0) -> int:
+    """Turns for one ship of ``ship_class`` to cross from->to.
+
+    ``speed_bonus`` comes from the owning empire's best drive tech and
+    is added flat to the ship class's base speed before dividing.
+    """
     parsecs = _distance_parsecs(from_pos, to_pos)
-    speed = SHIPS.get(ship_class, {}).get("speed", 1)
-    return max(1, math.ceil(parsecs / max(speed, 1)))
+    base = SHIPS.get(ship_class, {}).get("speed", 1)
+    speed = max(1, base + speed_bonus)
+    return max(1, math.ceil(parsecs / speed))
+
+
+def empire_speed_bonus(component_mgr, empire_id: int) -> int:
+    """Look up the empire's best drive bonus from its TechState."""
+    for _eid, tech in component_mgr.get_all(TechState):
+        if tech.empire_id == empire_id:
+            return _empire_speed_bonus(tech.unlocked)
+    return 0
 
 
 def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star_entity):
@@ -59,13 +74,20 @@ def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star
     if from_pos is None or to_pos is None or from_ref is None or to_ref is None:
         return
 
+    # Owner's drive tech contributes a flat speed bonus to every ship
+    # in the fleet. Assume same-owner fleet — read from the first ship.
+    bonus = 0
+    first_owner = component_mgr.get_component(ship_entities[0], ShipOwner)
+    if first_owner is not None:
+        bonus = empire_speed_bonus(component_mgr, first_owner.empire_id)
+
     # Pass 1: find the slowest ship's turn count for this leg.
     fleet_turns = 0
     for ship_entity in ship_entities:
         ship = component_mgr.get_component(ship_entity, Ship)
         if ship is None:
             continue
-        fleet_turns = max(fleet_turns, turns_for(ship.ship_class, from_pos, to_pos))
+        fleet_turns = max(fleet_turns, turns_for(ship.ship_class, from_pos, to_pos, bonus))
     if fleet_turns < 1:
         fleet_turns = 1
 

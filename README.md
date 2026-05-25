@@ -134,8 +134,8 @@ demand and are gitignored.
 | Toggle fullscreen | F11 |
 | **Open Colonies panel** | **C** |
 | **Open Planets panel** | **P** |
+| **Open Research screen** | **R** |
 | **Open Leaders panel** | **L** |
-| **Open Races panel** | **R** |
 | **Open Info panel** | **I** |
 | **Return to galaxy** | **G** |
 | **Advance turn** | **T** |

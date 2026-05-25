@@ -7,6 +7,7 @@ from ecs.scenes import (
     GalaxyScene,
     SystemViewScene,
     ColonyScene,
+    ResearchScene,
     PauseScene,
     EmpireSetupScene,
     ColoniesScene,
@@ -27,6 +28,7 @@ def main():
     game.scenes.register("galaxy", GalaxyScene(game))
     game.scenes.register("system", SystemViewScene(game))
     game.scenes.register("colony", ColonyScene(game))
+    game.scenes.register("research", ResearchScene(game))
     game.scenes.register("pause", PauseScene(game))
     game.scenes.register("colonies", ColoniesScene(game))
     game.scenes.register("planets", PlanetsScene(game))
