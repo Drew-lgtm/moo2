@@ -36,10 +36,14 @@ class GalaxyScene(Scene):
         self._preload_star_surfaces()
         if self._picker_font_bold is None:
             self._picker_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
+        # Star labels: 18pt bold for everything. Bold strokes survive the
+        # non-integer scaling that pygame.SCALED does on most laptop
+        # screens, where 1px strokes in regular weight get rounded away
+        # (e.g. the left leg of 'n' or the curve of '(' would vanish).
         if self._label_font is None:
-            self._label_font = pygame.font.SysFont("Arial", 16)
+            self._label_font = pygame.font.SysFont("Arial", 18, bold=True)
         if self._label_font_bold is None:
-            self._label_font_bold = pygame.font.SysFont("Arial", 16, bold=True)
+            self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()
@@ -396,7 +400,7 @@ class GalaxyScene(Scene):
             for empire_id, count in sorted(by_empire.items()):
                 color_name = empire_colors_by_id.get(empire_id, "blue")
                 rgb = empire_color(color_name)
-                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 14))
+                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 16))
                 text = self._render_outlined(font, str(count), (240, 240, 240))
                 screen.blit(text, (x + 9, y - 2))
                 x += 9 + text.get_width() + 4
