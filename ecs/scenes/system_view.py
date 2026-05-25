@@ -14,7 +14,10 @@ class SystemViewScene(Scene):
         if star_id is None:
             self.game.scenes.replace("galaxy")
             return
-        self.view = SystemView(self.game.screen, self.game.component_mgr, star_id)
+        self.view = SystemView(
+            self.game.screen, self.game.component_mgr, star_id,
+            logical_size=(self.game.screen_width, self.game.screen_height),
+        )
 
     def on_exit(self):
         self.view = None

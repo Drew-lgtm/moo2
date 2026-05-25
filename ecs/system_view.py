@@ -28,17 +28,25 @@ class SystemView:
     WORKER_BTN_SIZE = (28, 28)
     WORKER_ROLES = [("farmers", "F"), ("workers", "W"), ("scientists", "S")]
 
-    def __init__(self, screen, component_mgr, star_id):
+    def __init__(self, screen, component_mgr, star_id, logical_size=None):
         self.screen = screen
         self.component_mgr = component_mgr
         self.star_id = star_id
         self.is_open = True
-        self.close_button_rect = pygame.Rect(screen.get_width() - 100, 20, 80, 30)
+        # Use the game's LOGICAL resolution for layout, not whatever the
+        # surface reports. pygame.SCALED + FULLSCREEN can hand back a
+        # surface with non-logical dimensions; relying on get_width() put
+        # the orbital centre offset and the buttons in the wrong place.
+        if logical_size is None:
+            logical_size = (screen.get_width(), screen.get_height())
+        self.logical_w, self.logical_h = logical_size
+
+        self.close_button_rect = pygame.Rect(self.logical_w - 100, 20, 80, 30)
 
         self.star_pos = component_mgr.get_component(star_id, Position)
 
         # Cache (entity_id, planet, center_pos, radius) for hit testing + draw.
-        center = (screen.get_width() // 2, screen.get_height() // 2)
+        center = (self.logical_w // 2, self.logical_h // 2)
         self.planet_layout: list[tuple[int, Planet, tuple[int, int], int]] = []
         i = 0
         for entity_id, orbit in component_mgr.get_all(Orbiting):
@@ -89,7 +97,7 @@ class SystemView:
         btn_w, btn_h = self.PROJECT_BTN_SIZE
         gap = self.PROJECT_BTN_GAP
         self._project_button_rects = []
-        sw = self.screen.get_width()
+        sw = self.logical_w
 
         def _row(ids, y):
             total_w = len(ids) * btn_w + (len(ids) - 1) * gap
@@ -97,14 +105,14 @@ class SystemView:
             for i, pid in enumerate(ids):
                 self._project_button_rects.append((pid, pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)))
 
-        buildings_y = self.screen.get_height() - btn_h - 24
+        buildings_y = self.logical_h - btn_h - 24
         ships_y = buildings_y - btn_h - 12
         _row(SHIP_PROJECT_ORDER, ships_y)
         _row(BUILDING_ORDER, buildings_y)
 
     def _layout_worker_widgets(self):
         """Three F/W/S clusters sitting above the project picker row."""
-        sw = self.screen.get_width()
+        sw = self.logical_w
         btn_w, btn_h = self.WORKER_BTN_SIZE
         label_w = 16
         value_w = 28
@@ -115,7 +123,7 @@ class SystemView:
         start_x = (sw - total_w) // 2
         # Above the two project-button rows.
         proj_h = self.PROJECT_BTN_SIZE[1]
-        y = self.screen.get_height() - proj_h - 24 - proj_h - 12 - btn_h - 24
+        y = self.logical_h - proj_h - 24 - proj_h - 12 - btn_h - 24
         self._worker_widgets = []
         for i, (role, _label) in enumerate(self.WORKER_ROLES):
             cluster_x = start_x + i * (cluster_w + spacing)
@@ -260,10 +268,10 @@ class SystemView:
     # ---- draw -------------------------------------------------------------
 
     def draw(self, font):
-        overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        overlay = pygame.Surface((self.logical_w, self.logical_h), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
 
-        center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
+        center = (self.logical_w // 2, self.logical_h // 2)
         # Star at center.
         pygame.draw.circle(overlay, (255, 230, 120), center, 12)
 
@@ -372,7 +380,7 @@ class SystemView:
                 "Click an owned planet to focus, then a project to build it.",
                 True, (180, 180, 180),
             )
-            overlay.blit(hint, (24, self.screen.get_height() - 110))
+            overlay.blit(hint, (24, self.logical_h - 110))
 
         unlocked = self._player_unlocked_techs()
         for project_id, rect in self._project_button_rects:
