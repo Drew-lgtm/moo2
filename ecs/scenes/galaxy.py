@@ -17,9 +17,17 @@ class GalaxyScene(Scene):
         self._star_surfaces: dict[int, pygame.Surface] = {}
         # Star entity holding the player's currently-selected fleet, if any.
         self.selected_fleet_star: int | None = None
+        # ship_class -> count the player has chosen to dispatch.
+        self.selected_counts: dict[str, int] = {}
+        # Per-frame fleet-picker hit rects: (action, ship_class, rect).
+        # action is "minus" or "plus".
+        self._fleet_picker_hits: list[tuple[str, str, pygame.Rect]] = []
+        self._picker_font_bold: pygame.font.Font | None = None
 
     def on_enter(self):
         self._preload_star_surfaces()
+        if self._picker_font_bold is None:
+            self._picker_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()
@@ -35,11 +43,20 @@ class GalaxyScene(Scene):
             if event.key == pygame.K_ESCAPE:
                 if self.selected_fleet_star is not None:
                     self.selected_fleet_star = None
+                    self.selected_counts = {}
                 else:
                     self.game.scenes.replace("pause")
             return
 
         if event.type == pygame.MOUSEBUTTONDOWN:
+            # Fleet-picker +/- buttons get first crack so they don't get
+            # eclipsed by star clicks behind them.
+            if event.button == 1 and self.selected_fleet_star is not None:
+                for action, class_id, rect in self._fleet_picker_hits:
+                    if rect.collidepoint(event.pos):
+                        self._adjust_count(class_id, +1 if action == "plus" else -1)
+                        return
+
             star = self._star_at(event.pos)
             if event.button == 1 and star is not None:
                 # Left-click: open System View as before.
@@ -49,44 +66,79 @@ class GalaxyScene(Scene):
                 # Right-click: select/move fleet.
                 self._handle_fleet_click(star)
 
+    def _adjust_count(self, ship_class: str, delta: int):
+        max_count = self._max_counts_for(self.selected_fleet_star).get(ship_class, 0)
+        current = self.selected_counts.get(ship_class, 0)
+        self.selected_counts[ship_class] = max(0, min(max_count, current + delta))
+
     def _handle_fleet_click(self, star_entity: int):
         """Right-click flow:
 
         - If we're not selecting a fleet yet and this star has player ships:
-          select it.
+          select it; default-fill selected_counts to MAX for every class.
         - If we're already selecting from this star: deselect (toggle).
-        - If we're selecting from another star: move those ships here.
+        - If we're selecting from another star: dispatch the chosen
+          ship counts to the new star.
         """
         player = self.game.player_empire()
         if player is None:
             return
-        ships_here = self._player_ships_at(star_entity, player.id)
         if self.selected_fleet_star is None:
-            if ships_here:
+            if self._max_counts_for(star_entity):
                 self.selected_fleet_star = star_entity
+                self.selected_counts = self._max_counts_for(star_entity).copy()
         elif self.selected_fleet_star == star_entity:
             self.selected_fleet_star = None
+            self.selected_counts = {}
         else:
-            source_ships = self._player_ships_at(self.selected_fleet_star, player.id)
-            if source_ships:
-                start_fleet_movement(
-                    self.game.component_mgr,
-                    source_ships,
-                    self.selected_fleet_star,
-                    star_entity,
-                )
+            self._dispatch_selected(star_entity)
             self.selected_fleet_star = None
+            self.selected_counts = {}
 
-    def _player_ships_at(self, star_entity: int, player_empire_id: int) -> list[int]:
-        out: list[int] = []
+    def _dispatch_selected(self, dest_star_entity: int):
+        """Send selected_counts ships from the source star to the
+        destination, picking the right ship classes."""
         cm = self.game.component_mgr
+        player = self.game.player_empire()
+        if player is None or self.selected_fleet_star is None:
+            return
+        # Group available ships at source by class.
+        by_class: dict[str, list[int]] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != self.selected_fleet_star:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            ship = cm.get_component(ship_entity, Ship)
+            if owner is None or ship is None or owner.empire_id != player.id:
+                continue
+            by_class.setdefault(ship.ship_class, []).append(ship_entity)
+
+        to_send: list[int] = []
+        for class_id, count in self.selected_counts.items():
+            available = by_class.get(class_id, [])
+            to_send.extend(available[:count])
+
+        if to_send:
+            start_fleet_movement(cm, to_send, self.selected_fleet_star, dest_star_entity)
+
+    def _max_counts_for(self, star_entity: int | None) -> dict[str, int]:
+        """How many player ships of each class are parked at this star."""
+        if star_entity is None:
+            return {}
+        cm = self.game.component_mgr
+        player = self.game.player_empire()
+        if player is None:
+            return {}
+        counts: dict[str, int] = {}
         for ship_entity, at in cm.get_all(ShipAt):
             if at.star_entity != star_entity:
                 continue
             owner = cm.get_component(ship_entity, ShipOwner)
-            if owner is not None and owner.empire_id == player_empire_id:
-                out.append(ship_entity)
-        return out
+            ship = cm.get_component(ship_entity, Ship)
+            if owner is None or ship is None or owner.empire_id != player.id:
+                continue
+            counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
+        return counts
 
     def _star_at(self, pos):
         mouse_x, mouse_y = pos
@@ -120,8 +172,69 @@ class GalaxyScene(Scene):
         self._draw_in_transit_ships(screen)
         self._draw_selection_ring(screen)
         self._draw_fleet_badges(screen)
+        self._draw_fleet_picker(screen)
         self.game.ui_bar.draw(screen)
         self._draw_hud(screen)
+
+    def _draw_fleet_picker(self, screen):
+        """Top-right panel: per-class +/- count picker for the selected fleet."""
+        self._fleet_picker_hits = []
+        if self.selected_fleet_star is None:
+            return
+        cm = self.game.component_mgr
+        max_counts = self._max_counts_for(self.selected_fleet_star)
+        if not max_counts:
+            return
+
+        star_name = cm.get_component(self.selected_fleet_star, Name)
+        title = f"Fleet at {star_name.value}" if star_name else "Fleet"
+
+        # Layout: panel at top-right.
+        row_h = 24
+        rows = len(max_counts)
+        panel_w = 260
+        panel_h = 36 + rows * row_h + 24  # title + rows + hint
+        panel_x = self.game.screen_width - panel_w - 8
+        panel_y = 56  # below the HUD line
+        panel = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        overlay = pygame.Surface(panel.size, pygame.SRCALPHA)
+        overlay.fill((10, 12, 24, 220))
+        screen.blit(overlay, panel.topleft)
+        pygame.draw.rect(screen, (180, 180, 220), panel, 1)
+
+        font = self.game.font
+        bold = self._picker_font_bold or font
+        screen.blit(bold.render(title, True, (255, 230, 120)), (panel.x + 12, panel.y + 8))
+
+        # Each row: name | [-] count [+] | / max
+        y = panel.y + 32
+        btn_w = 22
+        for class_id, max_n in sorted(max_counts.items()):
+            count = self.selected_counts.get(class_id, max_n)
+            name = class_id.replace("ship_", "").capitalize()
+            screen.blit(font.render(name, True, (240, 240, 240)), (panel.x + 12, y + 4))
+
+            minus_rect = pygame.Rect(panel.x + 110, y, btn_w, row_h - 4)
+            plus_rect = pygame.Rect(panel.x + 110 + btn_w + 36, y, btn_w, row_h - 4)
+            pygame.draw.rect(screen, (60, 60, 90), minus_rect)
+            pygame.draw.rect(screen, (60, 60, 90), plus_rect)
+            pygame.draw.rect(screen, (180, 180, 220), minus_rect, 1)
+            pygame.draw.rect(screen, (180, 180, 220), plus_rect, 1)
+            screen.blit(bold.render("−", True, (240, 240, 240)),
+                        bold.render("−", True, (240, 240, 240)).get_rect(center=minus_rect.center))
+            screen.blit(bold.render("+", True, (240, 240, 240)),
+                        bold.render("+", True, (240, 240, 240)).get_rect(center=plus_rect.center))
+
+            count_text = font.render(f"{count}/{max_n}", True, (240, 240, 240))
+            screen.blit(count_text, count_text.get_rect(center=(minus_rect.right + 18, y + (row_h - 4) // 2)))
+
+            self._fleet_picker_hits.append(("minus", class_id, minus_rect))
+            self._fleet_picker_hits.append(("plus", class_id, plus_rect))
+            y += row_h
+
+        hint = font.render("Right-click target star to send", True, (180, 180, 180))
+        screen.blit(hint, (panel.x + 12, panel.bottom - hint.get_height() - 6))
 
     def _draw_selection_ring(self, screen):
         if self.selected_fleet_star is None:
