@@ -1,7 +1,10 @@
 import pygame
 
-from ecs.components import Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState
-from ecs.palette import planet_color
+from ecs.components import (
+    Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState,
+    Ship, ShipOwner, ShipAt,
+)
+from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS, BUILDING_ORDER, SHIP_PROJECT_ORDER, project_is_available
 from ecs.techs import TECHS
 from ecs.db import get_connection, update_planet_build, update_planet_workers, save_planet_build_queue
@@ -294,10 +297,62 @@ class SystemView:
         close_text = font.render("Close", True, (255, 255, 255))
         overlay.blit(close_text, (self.close_button_rect.x + 10, self.close_button_rect.y + 5))
 
+        self._draw_fleets_in_system(overlay, font)
+
         self._draw_worker_widgets(overlay, font)
         self._draw_project_picker(overlay, font)
 
         self.screen.blit(overlay, (0, 0))
+
+    def _draw_fleets_in_system(self, overlay, font):
+        """Top-left list of empires that have ships parked at this star.
+
+        Each entry: a small empire-colored chevron + name + total ship count,
+        plus a per-class breakdown (e.g. 'Frigate x2, Cruiser x1').
+        """
+        cm = self.component_mgr
+        by_empire: dict[int, list[int]] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != self.star_id:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            if owner is None:
+                continue
+            by_empire.setdefault(owner.empire_id, []).append(ship_entity)
+        if not by_empire:
+            return
+
+        empire_info = {emp.id: (emp.name, emp.color) for _e, emp in cm.get_all(Empire)}
+
+        x, y = 24, 60
+        overlay.blit(font.render("Fleets in system:", True, (220, 220, 220)), (x, y))
+        y += 22
+        for empire_id, ships in sorted(by_empire.items()):
+            name, color_name = empire_info.get(empire_id, (f"Empire {empire_id}", "blue"))
+            rgb = empire_color(color_name)
+
+            # Chevron (right-pointing triangle).
+            chevron = [(x, y + 2), (x, y + 18), (x + 14, y + 10)]
+            pygame.draw.polygon(overlay, rgb, chevron)
+            pygame.draw.polygon(overlay, (240, 240, 240), chevron, 1)
+
+            total = len(ships)
+            header = font.render(f"{name}: {total} ship{'s' if total != 1 else ''}", True, (240, 240, 240))
+            overlay.blit(header, (x + 22, y))
+            y += 20
+
+            # Per-class breakdown.
+            by_class: dict[str, int] = {}
+            for ship_entity in ships:
+                ship = cm.get_component(ship_entity, Ship)
+                if ship is None:
+                    continue
+                by_class[ship.ship_class] = by_class.get(ship.ship_class, 0) + 1
+            pieces = [f"{cls.capitalize()} x{n}" for cls, n in sorted(by_class.items())]
+            if pieces:
+                detail = font.render("  " + ", ".join(pieces), True, (180, 200, 220))
+                overlay.blit(detail, (x + 22, y))
+                y += 22
 
     def _draw_planet_labels(self, overlay, font, entity_id, planet, pos):
         x, y = pos

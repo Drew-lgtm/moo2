@@ -7,7 +7,7 @@ from ecs.components import (
 )
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
-from ecs.fleet import start_fleet_movement
+from ecs.fleet import start_fleet_movement, turns_for
 from assets.loader import load_image
 
 
@@ -275,10 +275,78 @@ class GalaxyScene(Scene):
 
         self._draw_in_transit_ships(screen)
         self._draw_selection_ring(screen)
+        self._draw_fleet_pathing(screen)
         self._draw_fleet_badges(screen)
         self._draw_fleet_picker(screen)
         self.game.ui_bar.draw(screen)
         self._draw_hud(screen)
+
+    @staticmethod
+    def _draw_dashed_line(screen, color, start, end, dash_len=12, gap_len=8, width=2):
+        import math as _math
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        distance = _math.hypot(dx, dy)
+        if distance < 1:
+            return
+        ux, uy = dx / distance, dy / distance
+        pos = 0
+        while pos < distance:
+            seg_end = min(pos + dash_len, distance)
+            pygame.draw.line(
+                screen, color,
+                (int(start[0] + ux * pos), int(start[1] + uy * pos)),
+                (int(start[0] + ux * seg_end), int(start[1] + uy * seg_end)),
+                width,
+            )
+            pos = seg_end + gap_len
+
+    def _draw_fleet_pathing(self, screen):
+        """While a fleet is selected, draw a dashed line from the source
+        star to the hovered destination (or to the cursor if not over a
+        star). Shows the slowest selected ship's arrival time."""
+        if self.selected_fleet_star is None:
+            return
+        cm = self.game.component_mgr
+        src_pos = cm.get_component(self.selected_fleet_star, Position)
+        if src_pos is None:
+            return
+
+        mouse_pos = pygame.mouse.get_pos()
+        hovered_star = self._star_at(mouse_pos)
+
+        if hovered_star is None or hovered_star == self.selected_fleet_star:
+            end_xy = mouse_pos
+            eta = None
+        else:
+            dst_pos = cm.get_component(hovered_star, Position)
+            if dst_pos is None:
+                return
+            end_xy = (dst_pos.x, dst_pos.y)
+            eta = self._slowest_eta(src_pos, dst_pos)
+
+        self._draw_dashed_line(screen, (255, 230, 120), (src_pos.x, src_pos.y), end_xy)
+
+        if eta is not None:
+            label = self._render_outlined(
+                self._label_font or self.game.font,
+                f"{eta} turn{'s' if eta != 1 else ''}",
+                (255, 230, 120),
+            )
+            mid_x = (src_pos.x + end_xy[0]) // 2
+            mid_y = (src_pos.y + end_xy[1]) // 2 - 10
+            rect = label.get_rect(center=(mid_x, mid_y))
+            screen.blit(label, rect)
+
+    def _slowest_eta(self, src_pos, dst_pos) -> int | None:
+        """Max turns_for across selected ship classes (with count > 0)."""
+        worst = 0
+        for class_id, count in self.selected_counts.items():
+            if count <= 0:
+                continue
+            t = turns_for(class_id, src_pos, dst_pos)
+            if t > worst:
+                worst = t
+        return worst if worst > 0 else None
 
     def _draw_fleet_picker(self, screen):
         """Top-right panel: per-class +/- count picker for the selected fleet."""
