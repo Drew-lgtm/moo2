@@ -323,11 +323,18 @@ class GalaxyGenerator:
                     from_eid = star_entity_by_db_id.get(ship_row["current_star_id"])
                     to_eid = star_entity_by_db_id.get(ship_row["dest_star_id"])
                     if from_eid is not None and to_eid is not None:
+                        # Recompute total_turns from positions + class so the
+                        # animation has a baseline (DB only stores remaining).
+                        from ecs.fleet import turns_for as _turns_for
+                        from_pos = self.component_mgr.get_component(from_eid, Position)
+                        to_pos = self.component_mgr.get_component(to_eid, Position)
+                        total = _turns_for(ship_row["ship_class"], from_pos, to_pos) if from_pos and to_pos else 0
                         self.component_mgr.add_component(
                             ship_entity,
                             ShipInTransit(
                                 from_star_entity=from_eid,
                                 to_star_entity=to_eid,
                                 turns_remaining=ship_row["turns_remaining"] or 0,
+                                total_turns=total,
                             ),
                         )

@@ -134,9 +134,8 @@ class GalaxyScene(Scene):
         pygame.draw.circle(screen, (255, 230, 120), (pos.x, pos.y), visual.size // 2 + 6, 2)
 
     def _draw_in_transit_ships(self, screen):
-        """Render a small empire-colored dot at the midpoint between
-        source and destination for each ship in transit. Crude — a future
-        pass could animate position based on turns_remaining vs total."""
+        """Render a small empire-colored dot along each transit line at
+        progress = 1 - turns_remaining / total_turns."""
         cm = self.game.component_mgr
         empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
         for ship_entity, transit in cm.get_all(ShipInTransit):
@@ -145,11 +144,13 @@ class GalaxyScene(Scene):
             owner = cm.get_component(ship_entity, ShipOwner)
             if from_pos is None or to_pos is None or owner is None:
                 continue
-            mid_x = (from_pos.x + to_pos.x) // 2
-            mid_y = (from_pos.y + to_pos.y) // 2
+            total = max(1, transit.total_turns)
+            progress = max(0.0, min(1.0, 1.0 - transit.turns_remaining / total))
+            px = int(from_pos.x + (to_pos.x - from_pos.x) * progress)
+            py = int(from_pos.y + (to_pos.y - from_pos.y) * progress)
             rgb = empire_color(empire_colors_by_id.get(owner.empire_id, "blue"))
-            pygame.draw.circle(screen, rgb, (mid_x, mid_y), 4)
-            pygame.draw.circle(screen, (255, 255, 255), (mid_x, mid_y), 4, 1)
+            pygame.draw.circle(screen, rgb, (px, py), 4)
+            pygame.draw.circle(screen, (255, 255, 255), (px, py), 4, 1)
 
     def _draw_fleet_badges(self, screen):
         """Render per-empire ship counts under each star.

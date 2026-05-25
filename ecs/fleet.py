@@ -65,6 +65,7 @@ def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star
                     from_star_entity=from_star_entity,
                     to_star_entity=to_star_entity,
                     turns_remaining=turns,
+                    total_turns=turns,
                 ),
             )
             update_ship_transit(conn, ship.id, from_ref.db_id, to_ref.db_id, turns)

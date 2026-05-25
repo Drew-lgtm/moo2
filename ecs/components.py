@@ -122,8 +122,10 @@ class ShipAt:
 class ShipInTransit:
     """Ship is moving between stars; ``turns_remaining`` decrements each
     turn until arrival, at which point ShipAt(dest_star_entity) replaces
-    this component.
+    this component. ``total_turns`` is the original duration so we can
+    animate progress = 1 - turns_remaining / total_turns.
     """
     from_star_entity: int
     to_star_entity: int
     turns_remaining: int
+    total_turns: int = 0
