@@ -26,15 +26,20 @@ class GalaxyScene(Scene):
         # action is "minus" or "plus".
         self._fleet_picker_hits: list[tuple[str, str, pygame.Rect]] = []
         self._picker_font_bold: pygame.font.Font | None = None
-        # Bold variant of the game font for owned-star labels.
-        self._name_font_bold: pygame.font.Font | None = None
+        # Larger fonts used for galaxy-view labels (star names, fleet
+        # badges, HUD). Bumped a couple sizes above the 14pt game font
+        # so they read better against the busy background.
+        self._label_font: pygame.font.Font | None = None
+        self._label_font_bold: pygame.font.Font | None = None
 
     def on_enter(self):
         self._preload_star_surfaces()
         if self._picker_font_bold is None:
             self._picker_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
-        if self._name_font_bold is None:
-            self._name_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
+        if self._label_font is None:
+            self._label_font = pygame.font.SysFont("Arial", 16)
+        if self._label_font_bold is None:
+            self._label_font_bold = pygame.font.SysFont("Arial", 16, bold=True)
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()
@@ -207,8 +212,8 @@ class GalaxyScene(Scene):
         bold + per-letter empire colors when one or more empires hold
         planets here. The "(Class)" suffix stays white. Both passes get
         a 1px black outline so the label reads on every background."""
-        font_bold = self._name_font_bold or self.game.font
-        font_norm = self.game.font
+        font_bold = self._label_font_bold or self.game.font
+        font_norm = self._label_font or self.game.font
         suffix = f" ({star_class})"
 
         if not ratios:
@@ -380,18 +385,18 @@ class GalaxyScene(Scene):
             return
 
         empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
-        font = self.game.font
+        font = self._label_font or self.game.font
         for star_entity, by_empire in per_star.items():
             pos = cm.get_component(star_entity, Position)
             visual = cm.get_component(star_entity, StarVisual)
             if pos is None or visual is None:
                 continue
             x = pos.x - 30
-            y = pos.y + 38  # below the name label
+            y = pos.y + 42  # below the (now larger) name label
             for empire_id, count in sorted(by_empire.items()):
                 color_name = empire_colors_by_id.get(empire_id, "blue")
                 rgb = empire_color(color_name)
-                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 12))
+                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 14))
                 text = self._render_outlined(font, str(count), (240, 240, 240))
                 screen.blit(text, (x + 9, y - 2))
                 x += 9 + text.get_width() + 4
@@ -399,7 +404,7 @@ class GalaxyScene(Scene):
     def _draw_hud(self, screen):
         if self.game.galaxy is None:
             return
-        font = self.game.font
+        font = self._label_font or self.game.font
         player = self.game.player_empire()
         x, y = 8, 8
 
