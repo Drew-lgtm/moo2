@@ -57,11 +57,21 @@ class Game:
         # (game, new_turn). Future systems (production, research) register here.
         self.turn_callbacks: list = []
 
+    # Galaxy view reserves this many pixels on the right for the MOO2
+    # status / hover / picker panel.
+    GALAXY_RIGHT_PANEL_WIDTH = 240
+
     @property
     def play_area_height(self) -> int:
         """Vertical room above the bottom UI bar — used by star
         generation and panel scenes so nothing renders under the bar."""
         return self.screen_height - BottomUIBar.BAR_HEIGHT
+
+    @property
+    def play_area_width(self) -> int:
+        """Horizontal room left of the galaxy right panel — star
+        generation stays inside this so nothing sits behind the panel."""
+        return self.screen_width - self.GALAXY_RIGHT_PANEL_WIDTH
 
     def _load_background(self):
         bg = load_random_background()
@@ -82,7 +92,7 @@ class Game:
         self._reset_world()
         self.galaxy = GalaxyGenerator(
             self.entity_mgr, self.component_mgr,
-            self.screen_width, self.play_area_height,
+            self.play_area_width, self.play_area_height,
             num_stars=self.num_stars,
         )
         self.galaxy.generate(num_empires=num_empires, player_empire=player_empire, difficulty=difficulty)
@@ -92,7 +102,7 @@ class Game:
         self._reset_world()
         self.galaxy = GalaxyGenerator(
             self.entity_mgr, self.component_mgr,
-            self.screen_width, self.play_area_height,
+            self.play_area_width, self.play_area_height,
         )
         self.galaxy.load_from_db()
         self._bind_game_ui()

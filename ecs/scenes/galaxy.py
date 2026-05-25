@@ -157,6 +157,11 @@ class GalaxyScene(Scene):
         return counts
 
     def _star_at(self, pos):
+        # Right panel covers the strip past play_area_width; positions
+        # there shouldn't resolve to a star even if an old save placed
+        # one in that region.
+        if pos[0] >= self.game.play_area_width:
+            return None
         mouse_x, mouse_y = pos
         for entity_id, position in self.game.component_mgr.get_all(Position):
             visual = self.game.component_mgr.get_component(entity_id, StarVisual)
@@ -277,9 +282,8 @@ class GalaxyScene(Scene):
         self._draw_selection_ring(screen)
         self._draw_fleet_pathing(screen)
         self._draw_fleet_badges(screen)
-        self._draw_fleet_picker(screen)
+        self._draw_right_panel(screen)
         self.game.ui_bar.draw(screen)
-        self._draw_hud(screen)
 
     @staticmethod
     def _draw_dashed_line(screen, color, start, end, dash_len=12, gap_len=8, width=2):
@@ -353,65 +357,182 @@ class GalaxyScene(Scene):
                 worst = t
         return worst if worst > 0 else None
 
-    def _draw_fleet_picker(self, screen):
-        """Top-right panel: per-class +/- count picker for the selected fleet."""
+    def _draw_right_panel(self, screen):
+        """MOO2-style sidebar: empire summary at top, contextual section
+        below (selected-fleet picker, hovered-star info, or empty)."""
         self._fleet_picker_hits = []
-        if self.selected_fleet_star is None:
+        sw = self.game.screen_width
+        panel_w = self.game.GALAXY_RIGHT_PANEL_WIDTH
+        panel_x = sw - panel_w
+        panel_h = self.game.play_area_height
+        panel = pygame.Rect(panel_x, 0, panel_w, panel_h)
+
+        # Solid backing — distinct enough from the map that the eye knows
+        # this is UI, not space.
+        pygame.draw.rect(screen, (18, 20, 32), panel)
+        pygame.draw.line(screen, (90, 100, 140), (panel.x, panel.y), (panel.x, panel.bottom), 2)
+
+        y = self._draw_empire_summary(screen, panel) + 8
+        pygame.draw.line(screen, (60, 64, 90), (panel.x + 8, y), (panel.right - 8, y), 1)
+        y += 8
+
+        if self.selected_fleet_star is not None:
+            self._draw_fleet_picker_section(screen, panel, y)
+        else:
+            self._draw_hover_info_section(screen, panel, y)
+
+    def _draw_empire_summary(self, screen, panel: pygame.Rect) -> int:
+        """Render the top section. Returns the y just below it."""
+        font = self._label_font or self.game.font
+        font_bold = self._label_font_bold or self.game.font
+        galaxy = self.game.galaxy
+        player = self.game.player_empire()
+        x = panel.x + 12
+        y = panel.y + 12
+
+        if player is None:
+            label = font.render(f"Turn {galaxy.turn}" if galaxy else "—", True, (240, 240, 240))
+            screen.blit(label, (x, y))
+            return y + label.get_height()
+
+        # Empire color bar + name.
+        pygame.draw.rect(screen, empire_color(player.color), pygame.Rect(x, y + 2, 6, 22))
+        name_surf = font_bold.render(player.name, True, (255, 230, 120))
+        screen.blit(name_surf, (x + 14, y))
+        y += name_surf.get_height() + 6
+
+        per_turn = empire_per_turn(self.game.component_mgr, player.id)
+        food = per_turn["food_balance"]
+        rows = [
+            ("BC",       f"{player.bc} (+{per_turn['bc']})"),
+            ("Industry", f"+{per_turn['industry']}"),
+            ("Research", f"{player.research_points} (+{per_turn['research']})"),
+            ("Food",     f"{food:+d}"),
+            ("Turn",     str(galaxy.turn) if galaxy else "—"),
+        ]
+        # Two-column layout: label / value
+        for label, value in rows:
+            screen.blit(font.render(label, True, (180, 200, 220)), (x, y))
+            v = font_bold.render(value, True, (240, 240, 240))
+            screen.blit(v, (panel.right - 12 - v.get_width(), y))
+            y += font.get_height() + 4
+        return y
+
+    def _draw_hover_info_section(self, screen, panel: pygame.Rect, y: int):
+        """Show the star (or empty space) under the cursor."""
+        font = self._label_font or self.game.font
+        font_bold = self._label_font_bold or self.game.font
+        x = panel.x + 12
+        mouse_pos = pygame.mouse.get_pos()
+        if mouse_pos[0] >= panel.x:
+            star = None  # cursor over the panel itself
+        else:
+            star = self._star_at(mouse_pos)
+
+        screen.blit(font.render("Hover", True, (150, 170, 200)), (x, y))
+        y += font.get_height() + 4
+
+        if star is None:
+            screen.blit(font.render("(no star)", True, (130, 130, 150)), (x, y))
             return
+
+        cm = self.game.component_mgr
+        name = cm.get_component(star, Name)
+        visual = cm.get_component(star, StarVisual)
+        title = (name.value if name else "?") + (f" ({visual.star_class})" if visual else "")
+        screen.blit(font_bold.render(title, True, (240, 240, 240)), (x, y))
+        y += font.get_height() + 4
+
+        # Planets at this star, grouped by owner.
+        planet_count = 0
+        owned_per_empire: dict[int, int] = {}
+        for planet_entity, orbit in cm.get_all(Orbiting):
+            if orbit.star_entity != star:
+                continue
+            planet_count += 1
+            owner = cm.get_component(planet_entity, Owner)
+            if owner is not None:
+                owned_per_empire[owner.empire_id] = owned_per_empire.get(owner.empire_id, 0) + 1
+
+        screen.blit(font.render(f"Planets: {planet_count}", True, (240, 240, 240)), (x, y))
+        y += font.get_height() + 2
+
+        if owned_per_empire:
+            empire_info = {emp.id: (emp.name, emp.color) for _e, emp in cm.get_all(Empire)}
+            for eid, count in sorted(owned_per_empire.items()):
+                ename, ecolor = empire_info.get(eid, (f"Empire {eid}", "blue"))
+                pygame.draw.rect(screen, empire_color(ecolor), pygame.Rect(x, y + 4, 6, 14))
+                screen.blit(font.render(f"{ename}: {count}", True, (220, 220, 220)), (x + 12, y))
+                y += font.get_height() + 2
+
+        # Ships at this star, by empire.
+        ships_per_empire: dict[int, int] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != star:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            if owner is not None:
+                ships_per_empire[owner.empire_id] = ships_per_empire.get(owner.empire_id, 0) + 1
+        if ships_per_empire:
+            y += 6
+            screen.blit(font.render("Fleets:", True, (180, 200, 220)), (x, y))
+            y += font.get_height() + 2
+            empire_info = {emp.id: (emp.name, emp.color) for _e, emp in cm.get_all(Empire)}
+            for eid, count in sorted(ships_per_empire.items()):
+                ename, ecolor = empire_info.get(eid, (f"Empire {eid}", "blue"))
+                pygame.draw.rect(screen, empire_color(ecolor), pygame.Rect(x, y + 4, 6, 14))
+                screen.blit(font.render(f"{ename}: {count}", True, (220, 220, 220)), (x + 12, y))
+                y += font.get_height() + 2
+
+    def _draw_fleet_picker_section(self, screen, panel: pygame.Rect, y_start: int):
+        """Per-class +/- counts for the selected fleet. Lives in the
+        right panel; populates self._fleet_picker_hits for click handling."""
         cm = self.game.component_mgr
         max_counts = self._max_counts_for(self.selected_fleet_star)
         if not max_counts:
             return
+        font = self._label_font or self.game.font
+        font_bold = self._label_font_bold or self.game.font
 
         star_name = cm.get_component(self.selected_fleet_star, Name)
-        title = f"Fleet at {star_name.value}" if star_name else "Fleet"
+        title = f"Fleet at {star_name.value}" if star_name else "Selected fleet"
 
-        # Layout: panel at top-right.
-        row_h = 24
-        rows = len(max_counts)
-        panel_w = 260
-        panel_h = 36 + rows * row_h + 24  # title + rows + hint
-        panel_x = self.game.screen_width - panel_w - 8
-        panel_y = 56  # below the HUD line
-        panel = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        x = panel.x + 12
+        screen.blit(font_bold.render(title, True, (255, 230, 120)), (x, y_start))
+        y = y_start + font_bold.get_height() + 6
 
-        overlay = pygame.Surface(panel.size, pygame.SRCALPHA)
-        overlay.fill((10, 12, 24, 220))
-        screen.blit(overlay, panel.topleft)
-        pygame.draw.rect(screen, (180, 180, 220), panel, 1)
-
-        font = self.game.font
-        bold = self._picker_font_bold or font
-        screen.blit(bold.render(title, True, (255, 230, 120)), (panel.x + 12, panel.y + 8))
-
-        # Each row: name | [-] count [+] | / max
-        y = panel.y + 32
-        btn_w = 22
+        row_h = 26
+        btn_w = 26
         for class_id, max_n in sorted(max_counts.items()):
             count = self.selected_counts.get(class_id, max_n)
             name = class_id.replace("ship_", "").capitalize()
-            screen.blit(font.render(name, True, (240, 240, 240)), (panel.x + 12, y + 4))
+            screen.blit(font.render(name, True, (240, 240, 240)), (x, y + 4))
 
-            minus_rect = pygame.Rect(panel.x + 110, y, btn_w, row_h - 4)
-            plus_rect = pygame.Rect(panel.x + 110 + btn_w + 36, y, btn_w, row_h - 4)
-            pygame.draw.rect(screen, (60, 60, 90), minus_rect)
-            pygame.draw.rect(screen, (60, 60, 90), plus_rect)
+            minus_rect = pygame.Rect(panel.right - 12 - btn_w - 36 - btn_w, y, btn_w, row_h - 4)
+            plus_rect = pygame.Rect(panel.right - 12 - btn_w, y, btn_w, row_h - 4)
+            pygame.draw.rect(screen, (60, 64, 96), minus_rect)
+            pygame.draw.rect(screen, (60, 64, 96), plus_rect)
             pygame.draw.rect(screen, (180, 180, 220), minus_rect, 1)
             pygame.draw.rect(screen, (180, 180, 220), plus_rect, 1)
-            screen.blit(bold.render("−", True, (240, 240, 240)),
-                        bold.render("−", True, (240, 240, 240)).get_rect(center=minus_rect.center))
-            screen.blit(bold.render("+", True, (240, 240, 240)),
-                        bold.render("+", True, (240, 240, 240)).get_rect(center=plus_rect.center))
+            for rect, glyph in ((minus_rect, "−"), (plus_rect, "+")):
+                gs = font_bold.render(glyph, True, (240, 240, 240))
+                screen.blit(gs, gs.get_rect(center=rect.center))
 
             count_text = font.render(f"{count}/{max_n}", True, (240, 240, 240))
-            screen.blit(count_text, count_text.get_rect(center=(minus_rect.right + 18, y + (row_h - 4) // 2)))
-
+            screen.blit(
+                count_text,
+                count_text.get_rect(midleft=(minus_rect.right + 8, minus_rect.centery)),
+            )
             self._fleet_picker_hits.append(("minus", class_id, minus_rect))
             self._fleet_picker_hits.append(("plus", class_id, plus_rect))
             y += row_h
 
-        hint = font.render("Right-click target star to send", True, (180, 180, 180))
-        screen.blit(hint, (panel.x + 12, panel.bottom - hint.get_height() - 6))
+        y += 6
+        hint = font.render("Right-click target star to send.", True, (180, 180, 180))
+        screen.blit(hint, (x, y))
+        y += font.get_height() + 2
+        hint2 = font.render("Esc to cancel.", True, (160, 160, 180))
+        screen.blit(hint2, (x, y))
 
     def _draw_selection_ring(self, screen):
         if self.selected_fleet_star is None:
@@ -478,39 +599,4 @@ class GalaxyScene(Scene):
                 screen.blit(text, (x + 9, y - 2))
                 x += 9 + text.get_width() + 4
 
-    def _draw_hud(self, screen):
-        if self.game.galaxy is None:
-            return
-        font = self._label_font or self.game.font
-        player = self.game.player_empire()
-        x, y = 8, 8
-
-        if player is not None:
-            per_turn = empire_per_turn(self.game.component_mgr, player.id)
-            food = per_turn["food_balance"]
-            food_label = f"Food {food:+d}"
-
-            # Empire color bar.
-            pygame.draw.rect(screen, empire_color(player.color), pygame.Rect(x, y + 2, 6, 16))
-            x += 12
-
-            items = [
-                player.name,
-                f"BC {player.bc} (+{per_turn['bc']})",
-                f"Res {player.research_points} (+{per_turn['research']})",
-                food_label,
-                f"Turn {self.game.galaxy.turn}",
-            ]
-            for i, text in enumerate(items):
-                if i > 0:
-                    sep = self._render_outlined(font, "  ·  ", (140, 140, 160))
-                    screen.blit(sep, (x, y))
-                    x += sep.get_width()
-                surf = self._render_outlined(font, text, (255, 255, 255))
-                screen.blit(surf, (x, y))
-                x += surf.get_width()
-        else:
-            screen.blit(
-                self._render_outlined(font, f"Turn {self.game.galaxy.turn}", (255, 255, 255)),
-                (x, y),
-            )
+    # (HUD moved into the right panel — see _draw_empire_summary.)
