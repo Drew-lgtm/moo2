@@ -122,10 +122,10 @@ demand and are gitignored.
 | Cancel a panel | Esc |
 | Toggle fullscreen | F11 |
 
-The window uses `pygame.SCALED`, so the logical resolution is always
-1200×800 but the actual window is shrunk to fit your desktop. F11
-toggles between the scaled window and true fullscreen at the same
-logical resolution.
+The game starts in fullscreen at a logical resolution of 1200×800;
+`pygame.SCALED` stretches the content to fit whatever physical display
+you have. **F11** toggles between fullscreen and a scaled window at
+any time.
 
 ---
 

@@ -28,13 +28,12 @@ class Game:
         self.screen_height = screen_height
         self.num_stars = num_stars
 
-        # SCALED tells pygame to pick a window size that fits the user's
-        # desktop (after taskbar / title bar) while keeping the logical
-        # resolution at (screen_width, screen_height) — so all of our
-        # pixel math stays the same and content auto-scales to fit.
+        # Start fullscreen at the game's logical resolution; SCALED makes
+        # pygame stretch the 1200x800 content to fill whatever physical
+        # display the user has. F11 toggles to windowed mode at runtime.
         self.screen = pygame.display.set_mode(
             (screen_width, screen_height),
-            pygame.SCALED,
+            pygame.SCALED | pygame.FULLSCREEN,
         )
         pygame.display.set_caption("Master Of Galaxy")
         self.clock = pygame.time.Clock()
