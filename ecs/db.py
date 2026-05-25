@@ -284,6 +284,10 @@ def update_ship_transit(conn, ship_id, current_star_id, dest_star_id, turns_rema
     )
 
 
+def delete_ship(conn, ship_id):
+    conn.execute("DELETE FROM ships WHERE id = ?", (ship_id,))
+
+
 def get_stars(conn=None):
     if conn is None:
         with get_connection() as c:
