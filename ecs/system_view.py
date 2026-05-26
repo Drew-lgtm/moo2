@@ -7,6 +7,8 @@ MOO2's two-screen flow (system -> planet info).
 """
 from __future__ import annotations
 
+import math
+
 import pygame
 
 from ecs.components import (
@@ -25,16 +27,15 @@ SIZE_RADIUS = {
     "Huge":   50,
 }
 STAR_RADIUS = 36         # central star disc
-ORBIT_BASE = 110         # innermost orbit radius
-# Distance between adjacent orbits. Worst case is two Huge planets
-# (r=50 each, 100 px combined). At STEP=140 they sit 40 px apart with
-# plenty of breathing room between their white rings.
-ORBIT_STEP = 140
-
-# Star sits well to the left, MOO2-style, instead of centred. This
-# frees the full screen width for the orbit chain so a 5-planet system
-# with a Huge outer planet still fits comfortably.
-STAR_X_FRACTION = 0.18
+# MOO2-style elliptical orbits: each planet sits on its own oval ring
+# around the centred star, ovals squashed vertically for a perspective
+# look (top-down on a tilted plane). Planet angles are spread by the
+# golden ratio so successive planets land far apart visually — no two
+# pile up on the same side of the star.
+ORBIT_BASE_X = 100       # horizontal radius of innermost orbit
+ORBIT_STEP_X = 90        # extra horizontal radius per outer orbit
+ORBIT_SQUASH = 0.45      # vertical radius = horizontal * this
+GOLDEN_ANGLE_DEG = 137.508  # rotation increment between planets
 
 
 class SystemView:
@@ -61,9 +62,14 @@ class SystemView:
         self.close_button_rect = pygame.Rect(self.logical_w - 100, 20, 80, 30)
         self.star_pos = component_mgr.get_component(star_id, Position)
 
-        # (entity_id, planet, center_pos, hit_radius) — fixed at construction.
-        center = (int(self.logical_w * STAR_X_FRACTION), self.logical_h // 2)
-        self.planet_layout: list[tuple[int, Planet, tuple[int, int], int]] = []
+        # Star centred. Each planet on an elliptical orbit, with the
+        # vertical squashed to mimic MOO2's perspective view of a tilted
+        # orbital plane.
+        center = (self.logical_w // 2, self.logical_h // 2)
+        # (entity_id, planet, center_pos, hit_radius, orbit_rx, orbit_ry)
+        # — fixed at construction so click hit-testing and orbit drawing
+        # use the same numbers.
+        self.planet_layout: list[tuple[int, Planet, tuple[int, int], int, int, int]] = []
         i = 0
         for entity_id, orbit in component_mgr.get_all(Orbiting):
             if orbit.star_entity != star_id:
@@ -71,10 +77,19 @@ class SystemView:
             planet = component_mgr.get_component(entity_id, Planet)
             if planet is None:
                 continue
-            orbit_radius = ORBIT_BASE + i * ORBIT_STEP
-            pos = (center[0] + orbit_radius, center[1])
+            rx = ORBIT_BASE_X + i * ORBIT_STEP_X
+            ry = max(int(rx * ORBIT_SQUASH), 30)
+            # Golden-angle spread keeps successive planets from stacking
+            # on the same side of the star. Offset by a deterministic
+            # constant so the first planet doesn't always sit due-east.
+            angle_deg = (i * GOLDEN_ANGLE_DEG + 50.0) % 360.0
+            theta = math.radians(angle_deg)
+            pos = (
+                int(center[0] + rx * math.cos(theta)),
+                int(center[1] + ry * math.sin(theta)),
+            )
             radius = SIZE_RADIUS.get(planet.size, 20)
-            self.planet_layout.append((entity_id, planet, pos, radius))
+            self.planet_layout.append((entity_id, planet, pos, radius, rx, ry))
             i += 1
 
     # ------------------------------------------------------------------ input
@@ -87,7 +102,7 @@ class SystemView:
             if self.close_button_rect.collidepoint(event.pos):
                 self.is_open = False
                 return
-            for entity_id, _planet, pos, radius in self.planet_layout:
+            for entity_id, _planet, pos, radius, _rx, _ry in self.planet_layout:
                 hit = max(radius + 6, 14)
                 dx = event.pos[0] - pos[0]
                 dy = event.pos[1] - pos[1]
@@ -101,21 +116,24 @@ class SystemView:
         overlay = pygame.Surface((self.logical_w, self.logical_h), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
 
-        center = (int(self.logical_w * STAR_X_FRACTION), self.logical_h // 2)
-        # Star to the left: layered discs build a soft halo that survives
-        # SCALED's non-integer downscaling. Thin (1-2 px) strokes were
-        # vanishing in places on laptop displays — every ring here is at
-        # least 3 px wide so the outline reads cleanly.
+        center = (self.logical_w // 2, self.logical_h // 2)
+
+        # Elliptical orbits (MOO2 perspective view). Drawn first so the
+        # star and planets render on top.
+        for _entity_id, _planet, _pos, _radius, rx, ry in self.planet_layout:
+            orbit_rect = pygame.Rect(
+                center[0] - rx, center[1] - ry, rx * 2, ry * 2,
+            )
+            pygame.draw.ellipse(overlay, (90, 100, 150), orbit_rect, 2)
+
+        # Star: layered discs build a soft halo that survives SCALED's
+        # non-integer downscaling. Thin (1-2 px) strokes were vanishing
+        # on laptop displays — every ring here is at least 3 px wide.
         pygame.draw.circle(overlay, (180, 130, 50), center, STAR_RADIUS + 10, 3)
         pygame.draw.circle(overlay, (255, 200, 90), center, STAR_RADIUS + 4, 3)
         pygame.draw.circle(overlay, (255, 230, 120), center, STAR_RADIUS)
 
-        for entity_id, planet, pos, radius in self.planet_layout:
-            # Orbit ring: 2 px wide for visibility — single-pixel rings
-            # disappeared at fractional scale factors.
-            orbit_radius = pos[0] - center[0]
-            pygame.draw.circle(overlay, (110, 110, 130), center, orbit_radius, 2)
-
+        for entity_id, planet, pos, radius, _rx, _ry in self.planet_layout:
             # Planet body + a black ring just inside the white halo gives
             # the outline contrast against bright planet colors (Desert,
             # Tundra) on dark space; 3 px white ring outside reads as
