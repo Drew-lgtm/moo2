@@ -15,11 +15,17 @@ across difficulties; only the cheating bonus changes.
 """
 from __future__ import annotations
 
-from ecs.components import Empire, Owner, Planet, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, StarRef
+from ecs.components import (
+    Empire, Owner, Planet, Population, BuildState, TechState,
+    Ship, ShipOwner, ShipAt, ShipInTransit, StarRef, Orbiting, Position,
+)
 from ecs.economy import FARMER_FOOD
 from ecs.projects import PROJECTS, project_is_available
 from ecs.techs import TECHS, is_available
 from ecs.fleet import start_fleet_movement
+from ecs.colonization import (
+    COLONY_SHIP_CLASS, colonize_planet, can_colonize,
+)
 from ecs.db import (
     get_connection,
     update_planet_workers,
@@ -27,6 +33,12 @@ from ecs.db import (
     update_empire_tech,
 )
 from ecs.personalities import get as get_personality
+
+
+# How many Colony Ships the AI lets pile up at once before pausing
+# colony-ship construction. Keeps it from spending all its BC on
+# transports it can't use.
+AI_MAX_PARKED_COLONY_SHIPS = 2
 
 
 def ai_tick(game, new_turn: int):
@@ -43,6 +55,11 @@ def ai_tick(game, new_turn: int):
 
     pending_writes: list[tuple[str, tuple]] = []
 
+    # Galaxy-wide colonisation candidates — computed once per tick so
+    # every AI can reuse the list (and so we know whether building more
+    # colony ships is worth it).
+    candidate_stars = _unowned_habitable_stars(cm)
+
     for _eid, empire in cm.get_all(Empire):
         if empire.is_player:
             continue
@@ -50,12 +67,32 @@ def ai_tick(game, new_turn: int):
         tech_state = tech_by_empire.get(empire.id)
         unlocked = set(tech_state.unlocked) if tech_state else set()
 
+        # Settle planets first — a Colony Ship already at a habitable
+        # target should be spent this turn (before production_tick
+        # touches the new colony).
+        _ai_settle_arrived_colony_ships(game, empire)
+
+        # Pause queuing new colony ships when the AI has plenty parked
+        # or there's nowhere left to settle.
+        parked_colony_count = _count_parked_colony_ships(cm, empire.id)
+        suppress_colony = (
+            not candidate_stars
+            or parked_colony_count >= AI_MAX_PARKED_COLONY_SHIPS
+        )
+
         for entity_id in empire_planets.get(empire.id, []):
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
-            _ai_queue_building(cm, entity_id, personality["build_priority"], unlocked, pending_writes)
+            _ai_queue_building(
+                cm, entity_id, personality["build_priority"], unlocked,
+                pending_writes, suppress=("ship_colony_ship",) if suppress_colony else (),
+            )
 
         if tech_state is not None:
             _ai_pick_research(tech_state, personality["research_priority"], pending_writes)
+
+        # Dispatch any colony ships still parked after settling — fly
+        # them to the closest unowned habitable star.
+        _ai_dispatch_colony_ships(cm, empire, candidate_stars)
 
         if personality.get("aggressive"):
             _ai_dispatch_ships(cm, empire)
@@ -107,7 +144,8 @@ def _ai_rebalance_workers(cm, entity_id, worker_pct, pending_writes):
     pending_writes.append(("workers", (planet.id, farmers, workers, scientists)))
 
 
-def _ai_queue_building(cm, entity_id, build_priority, unlocked: set, pending_writes):
+def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
+                        pending_writes, suppress: tuple = ()):
     build_state = cm.get_component(entity_id, BuildState)
     planet = cm.get_component(entity_id, Planet)
     if build_state is None or planet is None:
@@ -116,7 +154,10 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set, pending_wri
         return
 
     completed = set(build_state.completed)
+    suppressed = set(suppress)
     for proj_id in build_priority:
+        if proj_id in suppressed:
+            continue
         if proj_id in completed:
             continue
         if not project_is_available(proj_id, unlocked):
@@ -124,6 +165,122 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set, pending_wri
         build_state.current_project = proj_id
         pending_writes.append(("build", (planet.id, proj_id, build_state.progress)))
         return
+
+
+def _unowned_habitable_stars(cm) -> list[int]:
+    """Stars that host at least one unowned habitable planet. Used by
+    every AI's colonisation budget guard + dispatch heuristic."""
+    seen: set[int] = set()
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        planet = cm.get_component(planet_entity, Planet)
+        if planet is None or not planet.colonizable:
+            continue
+        if cm.get_component(planet_entity, Owner) is not None:
+            continue
+        seen.add(orbit.star_entity)
+    return list(seen)
+
+
+def _count_parked_colony_ships(cm, empire_id: int) -> int:
+    """Colony ships of ``empire_id`` currently parked (ShipAt). Ships in
+    transit don't count — they're already committed."""
+    n = 0
+    for ship_entity, _at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire_id:
+            continue
+        if ship.ship_class != COLONY_SHIP_CLASS:
+            continue
+        n += 1
+    return n
+
+
+def _ai_settle_arrived_colony_ships(game, empire):
+    """If any of the empire's Colony Ships is parked at a star with an
+    unowned habitable planet, settle the best candidate there. Best =
+    Gaia first (rare prize), then Terran, then anything else habitable.
+    """
+    cm = game.component_mgr
+    type_priority = {
+        "Gaia": 0, "Terran": 1, "Ocean": 2, "Swamp": 3, "Jungle": 4,
+        "Steppe": 5, "Arid": 6, "Tundra": 7, "Desert": 8, "Barren": 9,
+    }
+
+    parked_colony_stars: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class != COLONY_SHIP_CLASS:
+            continue
+        parked_colony_stars.setdefault(at.star_entity, []).append(ship_entity)
+
+    for star_entity, _ships in parked_colony_stars.items():
+        # Candidate planets at this star.
+        candidates: list[tuple[int, int]] = []
+        for planet_entity, orbit in cm.get_all(Orbiting):
+            if orbit.star_entity != star_entity:
+                continue
+            planet = cm.get_component(planet_entity, Planet)
+            if planet is None or not planet.colonizable:
+                continue
+            if cm.get_component(planet_entity, Owner) is not None:
+                continue
+            candidates.append((type_priority.get(planet.planet_type, 99), planet_entity))
+        if not candidates:
+            continue
+        candidates.sort(key=lambda t: t[0])
+        # Spend one ship per planet; settle as many as possible at this
+        # star this turn (cheap colony-ship hoarders thank us).
+        for _, planet_entity in candidates:
+            if not can_colonize(cm, planet_entity, empire.id):
+                break
+            colonize_planet(game, planet_entity, empire.id)
+
+
+def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int]):
+    """Send parked Colony Ships not currently at a candidate star to
+    the closest one. No-op if there are no candidates."""
+    if not candidate_stars:
+        return
+    candidate_set = set(candidate_stars)
+
+    ships_by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class != COLONY_SHIP_CLASS:
+            continue
+        if at.star_entity in candidate_set:
+            continue  # already at a settle target — settle pass handles it
+        ships_by_star.setdefault(at.star_entity, []).append(ship_entity)
+
+    if not ships_by_star:
+        return
+
+    for src_star, ships in ships_by_star.items():
+        src_pos = cm.get_component(src_star, Position)
+        if src_pos is None:
+            continue
+        # Pick closest candidate star.
+        best, best_dist = None, float("inf")
+        for cand in candidate_stars:
+            if cand == src_star:
+                continue
+            cand_pos = cm.get_component(cand, Position)
+            if cand_pos is None:
+                continue
+            d = (cand_pos.x - src_pos.x) ** 2 + (cand_pos.y - src_pos.y) ** 2
+            if d < best_dist:
+                best_dist, best = d, cand
+        if best is not None:
+            start_fleet_movement(cm, ships, src_star, best)
 
 
 def _ai_dispatch_ships(cm, empire):

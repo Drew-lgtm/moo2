@@ -19,9 +19,10 @@ PERSONALITIES: dict[str, dict] = {
         "description": "Even mix of growth, science, and economy.",
         "worker_pct": 75,
         "build_priority": [
-            "factory", "granary", "research_lab", "marketplace", "hydroponics",
-            "capital", "supercomputer", "stock_exchange", "atmospheric_renewer",
-            "ship_frigate", "ship_cruiser",
+            "factory", "granary", "research_lab", "marketplace",
+            "ship_colony_ship",  # expand once basic infra is up
+            "hydroponics", "capital", "supercomputer", "stock_exchange",
+            "atmospheric_renewer", "ship_frigate", "ship_cruiser",
         ],
         "research_priority": [
             "agriculture", "trade", "computer_science", "industrial_engineering",
@@ -33,11 +34,13 @@ PERSONALITIES: dict[str, dict] = {
     },
     "economic": {
         "name": "Economic",
-        "description": "Markets and growth first; no fleet building.",
+        "description": "Markets and growth first; aggressive expansion.",
         "worker_pct": 70,
         "build_priority": [
-            "granary", "marketplace", "factory", "hydroponics", "stock_exchange",
-            "research_lab", "capital", "atmospheric_renewer", "soil_enrichment_b",
+            "granary", "marketplace", "factory",
+            "ship_colony_ship",  # spread wide for more revenue
+            "hydroponics", "stock_exchange", "research_lab", "capital",
+            "atmospheric_renewer", "soil_enrichment_b",
             "cloning_center", "automated_factory",
         ],
         "research_priority": [
@@ -52,8 +55,10 @@ PERSONALITIES: dict[str, dict] = {
         "description": "Researches aggressively; light defensive fleet.",
         "worker_pct": 40,
         "build_priority": [
-            "research_lab", "supercomputer", "factory", "granary", "marketplace",
-            "galactic_cybernet", "hydroponics", "capital", "ship_frigate",
+            "research_lab", "supercomputer", "factory", "granary",
+            "ship_colony_ship",  # more colonies = more scientists
+            "marketplace", "galactic_cybernet", "hydroponics", "capital",
+            "ship_frigate",
         ],
         "research_priority": [
             "computer_science", "advanced_computers", "agriculture",
@@ -68,9 +73,11 @@ PERSONALITIES: dict[str, dict] = {
         "description": "Heavy fleet, attacks the player on sight.",
         "worker_pct": 90,
         "build_priority": [
-            "factory", "ship_frigate", "automated_factory", "research_lab",
-            "ship_cruiser", "marketplace", "ship_battleship", "hydroponics",
-            "ship_dreadnought", "granary", "capital",
+            "factory", "ship_frigate",
+            "ship_colony_ship",  # secure border worlds before fighting
+            "automated_factory", "research_lab", "ship_cruiser", "marketplace",
+            "ship_battleship", "hydroponics", "ship_dreadnought", "granary",
+            "capital",
         ],
         "research_priority": [
             "industrial_engineering", "nuclear_drives", "trade", "fusion_drives",
