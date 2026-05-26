@@ -3,23 +3,31 @@
 Kept here so SystemView and the panel scenes don't drift apart.
 """
 
+# Per-type planet colors. Aim for thematic, immediately-readable hues
+# against the black system-view background: cold biomes lean blue/white,
+# hot ones red/orange, fertile ones green, hostile ones sickly. Used as
+# both the system-view planet disc and the small status dot in colony /
+# panel rows.
 PLANET_COLORS = {
-    "Terran":    (100, 200, 255),
-    "Ocean":     (80, 160, 255),
-    "Jungle":    (50, 180, 50),
-    "Swamp":     (90, 130, 80),
-    "Arid":      (210, 180, 100),
-    "Desert":    (230, 200, 120),
-    "Tundra":    (180, 180, 220),
-    "Steppe":    (160, 200, 140),
-    "Barren":    (150, 150, 150),
-    "Gaia":      (0, 255, 0),
-    "Radiated":  (255, 100, 255),
-    "Toxic":     (255, 80, 80),
-    "Inferno":   (255, 50, 0),
-    "Volcanic":  (255, 100, 0),
-    "Asteroids": (100, 100, 100),
-    "Gas Giant": (120, 120, 255),
+    # Habitable (cool, life-friendly).
+    "Terran":    (90, 150, 220),   # earth blue with continents
+    "Ocean":     (40, 110, 210),   # deep ocean blue
+    "Jungle":    (40, 150, 60),    # lush dark green
+    "Swamp":     (100, 120, 70),   # muddy olive
+    "Steppe":    (170, 200, 130),  # pale grass
+    "Arid":      (200, 150, 80),   # warm tan
+    "Desert":    (240, 210, 90),   # golden yellow sand
+    "Tundra":    (220, 230, 250),  # icy frost white-blue
+    "Barren":    (140, 130, 120),  # rocky brown-grey
+    "Gaia":      (60, 170, 80),    # rich saturated golf-course green
+    # Hostile (visually warn the player they're not freebies).
+    "Radiated":  (200, 80, 200),   # sickly magenta glow
+    "Toxic":     (190, 80, 60),    # noxious red-brown
+    "Volcanic":  (200, 60, 30),    # molten dark red
+    "Inferno":   (255, 90, 30),    # blazing fire orange
+    # Uncolonisable.
+    "Asteroids": (130, 120, 110),  # cold rocky grey
+    "Gas Giant": (200, 170, 130),  # Jupiter-like banded tan
 }
 PLANET_COLOR_DEFAULT = (200, 200, 200)
 
