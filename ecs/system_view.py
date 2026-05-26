@@ -25,8 +25,12 @@ SIZE_RADIUS = {
     "Huge":   50,
 }
 STAR_RADIUS = 36         # central star disc — was 12
-ORBIT_BASE = 110         # innermost orbit radius — was 60
-ORBIT_STEP = 80          # additional radius per orbit — was 40
+ORBIT_BASE = 110         # innermost orbit radius
+# Distance between adjacent orbits. Worst-case pair = two Huge planets
+# (r=50 each, so 100 px of combined planet) — at STEP=115 they sit 15 px
+# apart, plus another 6 px taken by their white rings → a 9 px visible
+# gap, enough that Large/Medium pairs no longer kiss.
+ORBIT_STEP = 115
 
 
 class SystemView:
