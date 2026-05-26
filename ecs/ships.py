@@ -8,6 +8,13 @@ the building planet's star instead of marking the project as completed.
 Combat stats (attack, hull) are placeholders for the future combat tick.
 ``speed`` is parsecs per turn — used by the fleet movement tick once
 that lands.
+
+**Speed model**: in vacuum there's no drag, so cruise speed is set by
+the drive tech rather than hull size. Every combat hull therefore
+ships at the same baseline speed (2). Scout is the only outlier — its
+dedicated reconnaissance frame trades hull / armor mass for extra
+engines, justifying a +1 speed advantage at the design level. Drive
+tech (Nuclear → Fusion → Ion → …) adds an empire-wide bonus on top.
 """
 from __future__ import annotations
 
@@ -19,9 +26,9 @@ SHIPS: dict[str, dict] = {
     # systems; Colony Ship founds new colonies.
     "scout": {
         "id": "scout", "name": "Scout", "ship_class_kind": "civilian",
-        "cost": 20, "speed": 4, "attack": 0, "hull": 1,
+        "cost": 20, "speed": 3, "attack": 0, "hull": 1,
         "image": "ships/frigate.png",
-        "description": "Fast recon. Long-range eyes for the empire.",
+        "description": "Dedicated recon hull. +1 speed over the line.",
     },
     "transport": {
         "id": "transport", "name": "Transport", "ship_class_kind": "civilian",
@@ -42,9 +49,14 @@ SHIPS: dict[str, dict] = {
         "description": "Founds a new colony on an unowned habitable planet.",
     },
     # ---- Military ships --------------------------------------------------
+    # All combat hulls share the same base cruise speed (2). Drive tech
+    # (Power field in the tech tree) lifts every ship in the fleet by
+    # the same amount, so warship size doesn't compromise strategic
+    # mobility — only acceleration in tactical combat would, and we
+    # don't model that yet.
     "frigate": {
         "id": "frigate", "name": "Frigate", "ship_class_kind": "military",
-        "cost": 30, "speed": 3, "attack": 1, "hull": 2,
+        "cost": 30, "speed": 2, "attack": 1, "hull": 2,
         "image": "ships/frigate.png",
         "description": "Small skirmisher.",
     },
@@ -62,13 +74,13 @@ SHIPS: dict[str, dict] = {
     },
     "battleship": {
         "id": "battleship", "name": "Battleship", "ship_class_kind": "military",
-        "cost": 150, "speed": 1, "attack": 6, "hull": 12,
+        "cost": 150, "speed": 2, "attack": 6, "hull": 12,
         "image": "ships/battleship.png",
         "description": "Heavy line-of-battle vessel.",
     },
     "dreadnought": {
         "id": "dreadnought", "name": "Dreadnought", "ship_class_kind": "military",
-        "cost": 250, "speed": 1, "attack": 12, "hull": 20,
+        "cost": 250, "speed": 2, "attack": 12, "hull": 20,
         "image": "ships/dreadnought.png",
         "description": "Capital ship. Devastating in a fleet engagement.",
     },
