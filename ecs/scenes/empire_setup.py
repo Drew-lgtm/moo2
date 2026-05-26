@@ -446,6 +446,12 @@ class EmpireSetupScene(Scene):
         label = self.button_font.render(glyph, True, fg)
         screen.blit(label, label.get_rect(center=rect.center))
 
+    def _draw_button(self, screen, rect, text):
+        pygame.draw.rect(screen, BUTTON_BG, rect)
+        pygame.draw.rect(screen, BUTTON_BORDER, rect, width=1)
+        label = self.button_font.render(text, True, TEXT_COLOR)
+        screen.blit(label, label.get_rect(center=rect.center))
+
     def _draw_color_row(self, screen):
         screen.blit(self.label_font.render("Color", True, LABEL_COLOR), self._color_label_pos)
         for color_name, rect in self._color_rects:
