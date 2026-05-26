@@ -30,11 +30,16 @@ STAR_RADIUS = 36         # central star disc
 # MOO2-style elliptical orbits: each planet sits on its own oval ring
 # around the centred star, ovals squashed vertically for a perspective
 # look (top-down on a tilted plane). Planet angles are spread by the
-# golden ratio so successive planets land far apart visually — no two
-# pile up on the same side of the star.
-ORBIT_BASE_X = 100       # horizontal radius of innermost orbit
-ORBIT_STEP_X = 90        # extra horizontal radius per outer orbit
-ORBIT_SQUASH = 0.45      # vertical radius = horizontal * this
+# golden ratio so successive planets land far apart visually.
+#
+# Innermost orbit's vertical radius (rx*squash) must clear:
+#   STAR_RADIUS + halo (10) + max planet radius (50) + buffer ≈ 100 px.
+# That's why ORBIT_BASE_X * ORBIT_SQUASH = 190*0.55 ≈ 105 — gives ~9 px
+# of breathing room between the largest Huge inner planet and the star
+# halo at the top/bottom of its orbit.
+ORBIT_BASE_X = 190       # horizontal radius of innermost orbit
+ORBIT_STEP_X = 100       # extra horizontal radius per outer orbit
+ORBIT_SQUASH = 0.55      # vertical radius = horizontal * this
 GOLDEN_ANGLE_DEG = 137.508  # rotation increment between planets
 
 # Per-orbit rotation per turn, in degrees. Inner orbits sweep faster
@@ -44,6 +49,24 @@ GOLDEN_ANGLE_DEG = 137.508  # rotation increment between planets
 def _orbit_speed_deg(orbit_index: int) -> float:
     """Inner orbits move faster. Index 0..4 → ~14..6 deg/turn."""
     return 30.0 / (orbit_index + 2.2)
+
+
+def _planet_angle_deg(orbit_index: int, turn: int) -> float:
+    """Deterministic planet angle for ``orbit_index`` on a given ``turn``.
+
+    Two pieces:
+    - Base offset: golden-angle stepping spreads orbits at construction.
+    - Per-orbit phase offset: every-other-orbit lands on the opposite
+      half of the ellipse, so two adjacent orbits never start with
+      similar angles — turn drift can still push them close eventually,
+      but the typical view stays cleanly separated.
+    - Turn drift: each orbit rotates at ``_orbit_speed_deg`` per turn.
+    """
+    base = orbit_index * GOLDEN_ANGLE_DEG + 50.0
+    # Alternate orbits get +180° to keep neighbours visually apart.
+    half = 180.0 if (orbit_index % 2) else 0.0
+    drift = (turn - 1) * _orbit_speed_deg(orbit_index)
+    return (base + half + drift) % 360.0
 
 
 class SystemView:
@@ -90,14 +113,7 @@ class SystemView:
                 continue
             rx = ORBIT_BASE_X + i * ORBIT_STEP_X
             ry = max(int(rx * ORBIT_SQUASH), 30)
-            # Golden-angle spread keeps successive planets from stacking
-            # on the same side of the star. Offset by a deterministic
-            # constant so the first planet doesn't always sit due-east.
-            # Then add per-turn drift — inner orbits rotate faster (see
-            # _orbit_speed_deg) so the system feels alive between turns.
-            base_angle = (i * GOLDEN_ANGLE_DEG + 50.0)
-            drift = (self.turn - 1) * _orbit_speed_deg(i)
-            angle_deg = (base_angle + drift) % 360.0
+            angle_deg = _planet_angle_deg(i, self.turn)
             theta = math.radians(angle_deg)
             pos = (
                 int(center[0] + rx * math.cos(theta)),
