@@ -20,11 +20,11 @@ from ecs.projects import PROJECTS
 
 
 SIZE_RADIUS = {
-    "Tiny":   10,
-    "Small":  18,
-    "Medium": 28,
-    "Large":  38,
-    "Huge":   50,
+    "Tiny":    8,
+    "Small":  14,
+    "Medium": 22,
+    "Large":  28,
+    "Huge":   36,
 }
 STAR_RADIUS = 36         # central star disc
 # MOO2-style elliptical orbits: each planet sits on its own oval ring
@@ -39,7 +39,9 @@ STAR_RADIUS = 36         # central star disc
 # halo at the top/bottom of its orbit.
 ORBIT_BASE_X = 190       # horizontal radius of innermost orbit
 ORBIT_STEP_X = 100       # extra horizontal radius per outer orbit
-ORBIT_SQUASH = 0.55      # vertical radius = horizontal * this
+ORBIT_SQUASH = 0.60      # vertical radius = horizontal * this (less squashed
+                         # than before so vertical step between orbits keeps
+                         # adjacent planets from kissing at top/bottom)
 GOLDEN_ANGLE_DEG = 137.508  # rotation increment between planets
 
 # Per-orbit rotation per turn, in degrees. Inner orbits sweep faster
