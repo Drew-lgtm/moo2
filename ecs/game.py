@@ -59,7 +59,7 @@ class Game:
 
     # Galaxy view reserves this many pixels on the right for the MOO2
     # status / hover / picker panel.
-    GALAXY_RIGHT_PANEL_WIDTH = 240
+    GALAXY_RIGHT_PANEL_WIDTH = 280
 
     @property
     def play_area_height(self) -> int:
@@ -87,7 +87,8 @@ class Game:
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(self.screen_width, self.screen_height)
 
-    def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal"):
+    def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal",
+                       galaxy_age="average"):
         clear_galaxy()
         self._reset_world()
         self.galaxy = GalaxyGenerator(
@@ -95,7 +96,10 @@ class Game:
             self.play_area_width, self.play_area_height,
             num_stars=self.num_stars,
         )
-        self.galaxy.generate(num_empires=num_empires, player_empire=player_empire, difficulty=difficulty)
+        self.galaxy.generate(
+            num_empires=num_empires, player_empire=player_empire,
+            difficulty=difficulty, galaxy_age=galaxy_age,
+        )
         self._bind_game_ui()
 
     def load_game(self):

@@ -31,32 +31,43 @@ from ecs.db import (
 from ecs.projects import PROJECTS, building_growth_bonus
 from ecs.techs import TECHS
 from ecs.difficulty import ai_output_multiplier
+from ecs.races import trait_count, traits_for_empire
+from ecs.planet_features import (
+    RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT, feature_bonuses,
+)
 
 
 # ---- planet capacity (max population) ---------------------------------
 
+# Each pop unit represents 1 million inhabitants (MOO2 convention). UIs
+# render the count with an "M" suffix. Numbers below are tuned to MOO2's
+# Terran reference so a Medium Terran caps at ~12 million people.
 SIZE_CAP = {
-    "Tiny": 2,
-    "Small": 4,
-    "Medium": 8,
-    "Large": 12,
-    "Huge": 16,
+    "Tiny":   4,
+    "Small":  8,
+    "Medium": 12,
+    "Large":  16,
+    "Huge":   20,
 }
 
+# Climate multiplier applied to SIZE_CAP. Friendlier biomes support more
+# population; hostile worlds need terraforming / shielding (not modelled
+# yet) to scale further. Asteroid belts / gas giants stay uncolonisable.
 TYPE_CAP_MULT = {
+    "Gaia":      1.25,
     "Terran":    1.0,
-    "Gaia":      1.2,
-    "Ocean":     0.9,
-    "Jungle":    0.9,
-    "Arid":      0.8,
-    "Desert":    0.7,
-    "Tundra":    0.7,
+    "Ocean":     1.0,
+    "Swamp":     1.0,
+    "Jungle":    1.0,
     "Steppe":    0.9,
-    "Barren":    0.5,
-    "Radiated":  0.3,
+    "Arid":      0.75,
+    "Tundra":    0.75,
+    "Desert":    0.5,
+    "Barren":    0.4,
+    "Volcanic":  0.3,
+    "Radiated":  0.2,
     "Toxic":     0.2,
-    "Inferno":   0.2,
-    "Volcanic":  0.4,
+    "Inferno":   0.15,
     "Asteroids": 0.0,
     "Gas Giant": 0.0,
 }
@@ -64,15 +75,20 @@ TYPE_CAP_MULT = {
 
 # ---- per-worker outputs by planet type --------------------------------
 
+# Food per farmer. Swamp / Ocean / Jungle are wet biomes — good for
+# food. Desert/Arid/Tundra are marginal. Barren and worse can't farm at
+# all without buildings (hydroponic farm bonuses live on the Project
+# catalog and are added in _building_bonuses).
 FARMER_FOOD = {
     "Gaia":      3,
     "Terran":    2,
     "Ocean":     2,
+    "Swamp":     2,
     "Jungle":    2,
     "Steppe":    2,
     "Arid":      1,
-    "Desert":    1,
     "Tundra":    1,
+    "Desert":    1,
     "Barren":    0,
     "Radiated":  0,
     "Toxic":     0,
@@ -86,6 +102,7 @@ WORKER_INDUSTRY = {
     "Gaia":      1,
     "Terran":    1,
     "Ocean":     1,
+    "Swamp":     1,
     "Jungle":    1,
     "Arid":      1,
     "Desert":    1,
@@ -104,6 +121,7 @@ SCIENTIST_RESEARCH = {
     "Gaia":      2,
     "Terran":    1,
     "Ocean":     1,
+    "Swamp":     1,
     "Jungle":    1,
     "Arid":      1,
     "Desert":    1,
@@ -183,27 +201,64 @@ def _building_bonuses(build_state: BuildState | None):
 
 
 def planet_output(planet: Planet, population: Population | None,
-                  build_state: BuildState | None = None) -> tuple[int, int, int, int]:
+                  build_state: BuildState | None = None,
+                  traits=None) -> tuple[int, int, int, int]:
     """Return (food, industry, research, bonus_bc) for one planet.
 
     - food / industry / research are per-pop outputs (farmers, workers,
-      scientists respectively) plus building flat bonuses for the same
-      stat.
-    - bonus_bc is BC contributed by buildings regardless of project state
-      (e.g. Marketplace's +3). Industry-as-BC happens in production_tick
-      only when the planet has no active project.
+      scientists respectively) + race trait bonuses (food_bonus,
+      industry_bonus, research_bonus) + building flat bonuses for the
+      same stat.
+    - bonus_bc is BC contributed by buildings + bc_bonus race trait
+      (per worker). Industry-as-BC happens in production_tick only when
+      the planet has no active project.
 
     Uncolonized planets (no Population) return (0, 0, 0, 0).
     """
     if population is None or population.current <= 0:
         return 0, 0, 0, 0
+    traits = traits or []
     p_type = planet.planet_type
-    food = population.farmers * FARMER_FOOD.get(p_type, 0)
-    industry = population.workers * WORKER_INDUSTRY.get(p_type, 0)
-    research = population.scientists * SCIENTIST_RESEARCH.get(p_type, 0)
+
+    farm_per = FARMER_FOOD.get(p_type, 0) + trait_count(traits, "food_bonus")
+    work_industry_per = max(
+        0,
+        WORKER_INDUSTRY.get(p_type, 0)
+        + trait_count(traits, "industry_bonus")
+        - trait_count(traits, "weak_industry"),
+    )
+    sci_per = SCIENTIST_RESEARCH.get(p_type, 0) + trait_count(traits, "research_bonus")
+
+    food = population.farmers * farm_per
+    industry = population.workers * work_industry_per
+    research = population.scientists * sci_per
+
+    # Richness scales raw industry from the workforce. Buildings that
+    # produce flat industry (factories) bypass it — they're machines,
+    # not labour, so mineral abundance doesn't matter to them.
+    rich_mult = RICHNESS_INDUSTRY_MULT.get(getattr(planet, "richness", "Abundant"), 1.0)
+    industry = int(round(industry * rich_mult))
+
+    # Gravity penalises per-pop output across the board. Flat building
+    # bonuses are unaffected — equipment doesn't care about gravity.
+    grav_mult = GRAVITY_OUTPUT_MULT.get(getattr(planet, "gravity", "Normal"), 1.0)
+    if grav_mult != 1.0:
+        food = int(round(food * grav_mult))
+        industry = int(round(industry * grav_mult))
+        research = int(round(research * grav_mult))
 
     b_food, b_industry, b_research, b_bc = _building_bonuses(build_state)
-    return food + b_food, industry + b_industry, research + b_research, b_bc
+    # Special features add a flat per-turn bonus regardless of pop —
+    # artifact ruins yield research even if no scientists are assigned,
+    # and deposits passively generate BC.
+    feat_research, feat_bc = feature_bonuses(getattr(planet, "special", []))
+    bonus_bc = b_bc + feat_bc + population.workers * trait_count(traits, "bc_bonus")
+    return (
+        food + b_food,
+        industry + b_industry,
+        research + b_research + feat_research,
+        bonus_bc,
+    )
 
 
 # ---- empire-level summaries (HUD + per-turn) --------------------------
@@ -213,10 +268,11 @@ def empire_per_turn(component_mgr, empire_id: int) -> dict[str, int]:
 
     Returns dict with: bc, research, food_balance, industry.
     BC = sum across planets of (industry if idle else 0) + building bonus_bc.
-    Food balance = produced - pop.
+    Food balance = produced - pop (halved for Tolerant races).
     """
+    traits = traits_for_empire(component_mgr, empire_id)
     bc_total = research_total = industry_total = 0
-    food_produced = food_needed = 0
+    food_produced = pop_total = 0
 
     for entity_id, owner in component_mgr.get_all(Owner):
         if owner.empire_id != empire_id:
@@ -226,17 +282,18 @@ def empire_per_turn(component_mgr, empire_id: int) -> dict[str, int]:
             continue
         pop = component_mgr.get_component(entity_id, Population)
         build_state = component_mgr.get_component(entity_id, BuildState)
-        food, industry, research, bonus_bc = planet_output(planet, pop, build_state)
+        food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
 
         food_produced += food
         if pop is not None:
-            food_needed += pop.current
+            pop_total += pop.current
         research_total += research
         industry_total += industry
 
         idle = not (build_state and build_state.current_project)
         bc_total += bonus_bc + (industry if idle else 0)
 
+    food_needed = pop_total // 2 if "tolerant" in traits else pop_total
     return {
         "bc": bc_total,
         "research": research_total,
@@ -265,17 +322,19 @@ def pop_growth_tick(game, new_turn: int):
     worker_updates: list[tuple[int, int, int, int]] = []
 
     for empire_id, entity_ids in empire_planets.items():
-        food_produced = food_needed = 0
+        traits = traits_for_empire(cm, empire_id)
+        food_produced = pop_total = 0
         for eid in entity_ids:
             planet = cm.get_component(eid, Planet)
             pop = cm.get_component(eid, Population)
             build_state = cm.get_component(eid, BuildState)
             if planet is None or pop is None:
                 continue
-            f, _i, _r, _b = planet_output(planet, pop, build_state)
+            f, _i, _r, _b = planet_output(planet, pop, build_state, traits)
             food_produced += f
-            food_needed += pop.current
+            pop_total += pop.current
 
+        food_needed = pop_total // 2 if "tolerant" in traits else pop_total
         food_balance = food_produced - food_needed
 
         if food_balance < 0:
@@ -313,15 +372,20 @@ def pop_growth_tick(game, new_turn: int):
 
             if pop.current < pop.max:
                 bonus = building_growth_bonus(build_state.completed) if build_state else 0.0
-                rate = POP_GROWTH_RATE + bonus
+                trait_growth = 0.2 * (
+                    trait_count(traits, "fast_growth")
+                    - trait_count(traits, "slow_growth")
+                )
+                rate = max(0.05, POP_GROWTH_RATE + bonus + trait_growth)
                 increment = rate * pop.current * (pop.max - pop.current) / pop.max
                 pop.growth_progress += increment
 
                 grew = 0
-                farmer_food = FARMER_FOOD.get(planet.planet_type, 0)
+                farmer_food = FARMER_FOOD.get(planet.planet_type, 0) + trait_count(traits, "food_bonus")
+                pop_food_need = 0.5 if "tolerant" in traits else 1.0
                 while pop.growth_progress >= 1.0 and pop.current < pop.max:
                     pop.current += 1
-                    food_surplus -= 1  # new pop consumes 1 food
+                    food_surplus -= pop_food_need  # new pop consumes its share
                     # Prefer farmer if (a) the planet can grow food and
                     # (b) the empire surplus is now non-positive.
                     if farmer_food > 0 and food_surplus < 0:
@@ -360,6 +424,12 @@ def production_tick(game, new_turn: int):
     """Apply per-planet industry/research to empires; resolve project progress."""
     cm = game.component_mgr
 
+    # Cache trait lists per empire so we don't re-walk Empire components
+    # for every planet on big maps.
+    traits_by_empire: dict[int, list[str]] = {
+        emp.id: traits_for_empire(cm, emp.id) for _eid, emp in cm.get_all(Empire)
+    }
+
     empire_gains: dict[int, tuple[int, int]] = {}  # empire_id -> (bc, research)
     planet_build_updates: list[tuple[int, str | None, int]] = []
     queue_updates: list[tuple[int, list[str]]] = []
@@ -374,7 +444,8 @@ def production_tick(game, new_turn: int):
             continue
         pop = cm.get_component(entity_id, Population)
         build_state = cm.get_component(entity_id, BuildState)
-        food, industry, research, bonus_bc = planet_output(planet, pop, build_state)
+        traits = traits_by_empire.get(owner.empire_id, [])
+        food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
 
         bc_to_empire = bonus_bc
         if build_state and build_state.current_project:

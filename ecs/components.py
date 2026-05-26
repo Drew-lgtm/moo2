@@ -31,10 +31,25 @@ class Owner:
 
 @dataclass
 class Planet:
+    """A planet orbiting a star.
+
+    MOO2-style descriptors beyond bare type/size:
+
+    - ``richness`` mineral abundance (Ultra Poor / Poor / Abundant /
+      Rich / Ultra Rich) multiplies industry output.
+    - ``gravity`` (Low / Normal / Heavy) penalises all per-pop output
+      for races not adapted to it. We don't model adaptation traits
+      yet so Low/Heavy are flat penalties.
+    - ``special`` is a list of feature keys (artifacts, gem_deposits,
+      gold_veins, ...). Effects in ``ecs.economy.planet_output``.
+    """
     id: int
     planet_type: str
     size: str
     colonizable: bool
+    richness: str = "Abundant"
+    gravity: str = "Normal"
+    special: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +99,9 @@ class Empire:
     research_points: int = 0
     is_player: bool = False
     personality: str = "balanced"
+    # Comma-separated trait keys for custom races. Empty for preset races
+    # (their traits live in ecs.races.RACES[race_type]).
+    custom_traits: str = ""
 
 
 @dataclass

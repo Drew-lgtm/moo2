@@ -19,6 +19,7 @@ from ecs.components import (
 from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS, BUILDING_ORDER, SHIP_PROJECT_ORDER, project_is_available
 from ecs.techs import TECHS
+from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
 from ecs.db import (
     get_connection, update_planet_build, update_planet_workers,
     save_planet_build_queue,
@@ -83,7 +84,8 @@ class ColonyScene(Scene):
         cluster_w = 200
         total_w = len(self.WORKER_ROLES) * cluster_w
         start_x = (sw - total_w) // 2
-        y = 140
+        # Worker pickers sit below the descriptor chip row.
+        y = 168
         for i, (role, _label) in enumerate(self.WORKER_ROLES):
             cluster_x = start_x + i * cluster_w
             minus_rect = pygame.Rect(cluster_x + 40, y, btn_w, btn_h)
@@ -286,12 +288,39 @@ class ColonyScene(Scene):
         else:
             screen.blit(self.header_font.render("Uncolonized", True, HINT_COLOR), (48, 52))
 
+        # Descriptors line: Richness · Gravity · Specials. Sits under the
+        # title and to the right of the type dot/owner.
+        rich_mult = RICHNESS_INDUSTRY_MULT.get(planet.richness, 1.0)
+        grav_mult = GRAVITY_OUTPUT_MULT.get(planet.gravity, 1.0)
+        chips = [
+            (f"{planet.richness} (Ind ×{rich_mult:g})",
+             (200, 180, 120) if rich_mult >= 1.0 else (220, 140, 120)),
+            (f"{planet.gravity} grav (×{grav_mult:g})",
+             (180, 200, 220) if grav_mult >= 1.0 else (220, 140, 120)),
+        ]
+        for key in planet.special:
+            meta = SPECIAL_FEATURES.get(key, {})
+            chips.append((meta.get("name", key), (220, 200, 120)))
+
+        cx = 24
+        cy = 76
+        for text, color in chips:
+            chip = self.body_font.render(text, True, color)
+            chip_rect = chip.get_rect()
+            bg_rect = chip_rect.inflate(12, 6).move(cx, cy)
+            pygame.draw.rect(screen, (30, 34, 50), bg_rect)
+            pygame.draw.rect(screen, color, bg_rect, width=1)
+            screen.blit(chip, (bg_rect.x + 6, bg_rect.y + 3))
+            cx += bg_rect.width + 8
+
     def _draw_pop_block(self, screen, pop, owner):
+        # Sits between the descriptor chips (~y=76-100) and worker widgets (y=168).
         if pop is None:
-            screen.blit(self.header_font.render("No population", True, HINT_COLOR), (24, 100))
+            screen.blit(self.header_font.render("No population", True, HINT_COLOR), (24, 124))
             return
-        line = f"Population: {pop.current}/{pop.max}    F:{pop.farmers}  W:{pop.workers}  S:{pop.scientists}"
-        screen.blit(self.header_font.render(line, True, TEXT_COLOR), (24, 100))
+        # 1 pop unit = 1 million inhabitants (MOO2 convention).
+        line = f"Population: {pop.current}M / {pop.max}M    F:{pop.farmers}  W:{pop.workers}  S:{pop.scientists}"
+        screen.blit(self.header_font.render(line, True, TEXT_COLOR), (24, 124))
 
     def _draw_worker_widgets(self, screen, pop, owner):
         editable = pop is not None and self._player_owns_this(owner)

@@ -124,16 +124,29 @@ class SystemView:
     def _draw_planet_labels(self, overlay, font, entity_id, planet, pos):
         x, y = pos
         line_y = y + 14
-        # Line 1: type + size shorthand.
-        type_label = font.render(f"{planet.planet_type[:3]} {planet.size[:1]}", True, (255, 255, 255))
+        # Line 1: type + size shorthand, with richness/gravity glyphs.
+        # Glyphs are MOO2-style shorthand so the system view stays scannable.
+        rich_glyph = {"Ultra Poor": "--", "Poor": "-", "Abundant": "",
+                      "Rich": "+", "Ultra Rich": "++"}.get(
+            getattr(planet, "richness", "Abundant"), "")
+        grav_glyph = {"Low": "↓", "Heavy": "↑"}.get(
+            getattr(planet, "gravity", "Normal"), "")
+        special = getattr(planet, "special", [])
+        special_glyph = "★" if special else ""
+        suffix = f" {rich_glyph}{grav_glyph}{special_glyph}".rstrip()
+        type_label = font.render(
+            f"{planet.planet_type[:3]} {planet.size[:1]}{suffix}",
+            True, (255, 255, 255),
+        )
         overlay.blit(type_label, (x - 15, line_y))
         line_y += 14
 
         # Line 2: pop + F/W/S.
         population = self.component_mgr.get_component(entity_id, Population)
         if population is not None:
+            # MOO2 convention: each pop unit = 1 million inhabitants.
             pop_label = font.render(
-                f"{population.current}/{population.max}  {population.farmers}/{population.workers}/{population.scientists}",
+                f"{population.current}M/{population.max}M  {population.farmers}/{population.workers}/{population.scientists}",
                 True, (180, 220, 255),
             )
             overlay.blit(pop_label, (x - 30, line_y))

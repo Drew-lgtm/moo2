@@ -37,6 +37,7 @@ def init_db():
             tech_target TEXT,
             tech_progress INTEGER DEFAULT 0,
             personality TEXT DEFAULT 'balanced',
+            custom_traits TEXT DEFAULT '',
             FOREIGN KEY(home_star_id) REFERENCES stars(id)
         );
 
@@ -62,6 +63,9 @@ def init_db():
             farmers INTEGER DEFAULT 0,
             workers INTEGER DEFAULT 0,
             scientists INTEGER DEFAULT 0,
+            richness TEXT DEFAULT 'Abundant',
+            gravity TEXT DEFAULT 'Normal',
+            special TEXT DEFAULT '',
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -118,6 +122,8 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN tech_progress INTEGER DEFAULT 0")
     if "personality" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN personality TEXT DEFAULT 'balanced'")
+    if "custom_traits" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN custom_traits TEXT DEFAULT ''")
 
 
 def _migrate_planets(conn):
@@ -140,6 +146,12 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN workers INTEGER DEFAULT 0")
     if "scientists" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN scientists INTEGER DEFAULT 0")
+    if "richness" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN richness TEXT DEFAULT 'Abundant'")
+    if "gravity" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN gravity TEXT DEFAULT 'Normal'")
+    if "special" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN special TEXT DEFAULT ''")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -152,13 +164,16 @@ def insert_star(conn, name, x, y, star_class, image, size):
 
 def insert_planet(conn, star_id, planet_type, size, colonizable, owner_empire_id=None,
                   population=0, max_population=0,
-                  farmers=0, workers=0, scientists=0):
+                  farmers=0, workers=0, scientists=0,
+                  richness="Abundant", gravity="Normal", special=""):
     cursor = conn.execute(
         "INSERT INTO planets (star_id, type, size, colonizable, owner_empire_id, "
-        "population, max_population, farmers, workers, scientists) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "population, max_population, farmers, workers, scientists, "
+        "richness, gravity, special) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (star_id, planet_type, size, colonizable, owner_empire_id,
-         population, max_population, farmers, workers, scientists),
+         population, max_population, farmers, workers, scientists,
+         richness, gravity, special),
     )
     return cursor.lastrowid
 
@@ -223,11 +238,13 @@ def save_planet_build_queue(conn, planet_id, project_ids):
 
 
 def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *,
-                  is_player=False, personality="balanced") -> int:
+                  is_player=False, personality="balanced", custom_traits="") -> int:
     cursor = conn.execute(
-        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level, is_player, personality) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (name, race_type, color, home_star_id, tech_level, 1 if is_player else 0, personality),
+        "INSERT INTO empires (name, race_type, color, home_star_id, tech_level, "
+        "is_player, personality, custom_traits) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, race_type, color, home_star_id, tech_level,
+         1 if is_player else 0, personality, custom_traits),
     )
     result = cursor.lastrowid
     assert result is not None

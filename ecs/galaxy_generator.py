@@ -5,6 +5,17 @@ from ecs.economy import compute_max_population, default_assignment, normalize_as
 from ecs.personalities import AI_PERSONALITY_CYCLE
 from assets.star_name_pool import load_star_names, get_random_star_name
 from assets.loader import list_race_names
+from ecs.races import RACE_ORDER, effective_traits, trait_count, CUSTOM_RACE_NAME
+from ecs.planet_features import (
+    random_richness, random_gravity, maybe_special_feature,
+    parse_specials, specials_to_blob,
+)
+from ecs.galaxy_age import (
+    DEFAULT_AGE, normalize_age,
+    planet_type_weights as age_type_weights,
+    richness_weights_habitable as age_rich_hab,
+    richness_weights_mining as age_rich_min,
+)
 from ecs.db import (
     init_db,
     get_connection,
@@ -25,6 +36,7 @@ from ecs.db import (
 META_TURN = "turn"
 META_SEED = "seed"
 META_DIFFICULTY = "difficulty"
+META_GALAXY_AGE = "galaxy_age"
 DEFAULT_DIFFICULTY = "normal"
 
 STAR_CLASSES = [
@@ -37,7 +49,7 @@ STAR_CLASSES = [
     {"class": "M", "image": "red_star.png",    "weight": 0.31},
 ]
 
-HABITABLE_TYPES = ["Terran", "Ocean", "Jungle", "Arid", "Desert", "Tundra", "Steppe", "Barren", "Gaia"]
+HABITABLE_TYPES = ["Terran", "Ocean", "Swamp", "Jungle", "Arid", "Desert", "Tundra", "Steppe", "Barren", "Gaia"]
 HOSTILE_TYPES = ["Radiated", "Toxic", "Inferno", "Volcanic"]
 UNINHABITABLE_TYPES = ["Asteroids", "Gas Giant"]
 
@@ -48,8 +60,9 @@ SIZE_WEIGHTS = {
 }
 
 PLANET_TYPE_WEIGHTS = {
-    "Terran": 0.10, "Ocean": 0.10, "Jungle": 0.08, "Arid": 0.08, "Desert": 0.07,
-    "Tundra": 0.07, "Steppe": 0.06, "Barren": 0.04, "Gaia": 0.01,
+    "Terran": 0.09, "Ocean": 0.08, "Swamp": 0.06, "Jungle": 0.07,
+    "Arid": 0.08, "Desert": 0.07, "Tundra": 0.07, "Steppe": 0.06,
+    "Barren": 0.04, "Gaia": 0.01,
     "Radiated": 0.05, "Toxic": 0.05, "Inferno": 0.03, "Volcanic": 0.03,
     "Asteroids": 0.06, "Gas Giant": 0.07,
 }
@@ -77,8 +90,10 @@ class GalaxyGenerator:
         self.turn = 1
         self.seed = None
         self.difficulty = DEFAULT_DIFFICULTY
+        self.galaxy_age = DEFAULT_AGE
 
-    def generate(self, num_empires=2, seed=None, player_empire=None, difficulty=DEFAULT_DIFFICULTY):
+    def generate(self, num_empires=2, seed=None, player_empire=None,
+                 difficulty=DEFAULT_DIFFICULTY, galaxy_age=DEFAULT_AGE):
         """Create a fresh galaxy in the DB, then load it into ECS.
 
         If ``player_empire`` is provided, it lands on the first generated
@@ -91,6 +106,7 @@ class GalaxyGenerator:
         self.seed = seed
         self.turn = 1
         self.difficulty = difficulty
+        self.galaxy_age = normalize_age(galaxy_age)
         random.seed(seed)
         with get_connection() as conn:
             self._place_stars_and_planets(conn)
@@ -98,6 +114,7 @@ class GalaxyGenerator:
             set_meta(conn, META_SEED, seed)
             set_meta(conn, META_TURN, self.turn)
             set_meta(conn, META_DIFFICULTY, self.difficulty)
+            set_meta(conn, META_GALAXY_AGE, self.galaxy_age)
             conn.commit()
         self.load_from_db()
 
@@ -111,6 +128,11 @@ class GalaxyGenerator:
     def _place_stars_and_planets(self, conn):
         used_names = set()
         available_names = load_star_names()
+
+        # Age-modified generation tables — computed once per generate().
+        type_weights = age_type_weights(self.galaxy_age)
+        rich_hab = age_rich_hab(self.galaxy_age)
+        rich_min = age_rich_min(self.galaxy_age)
 
         MIN_STAR_DISTANCE = 60
         placed_positions = []
@@ -135,10 +157,21 @@ class GalaxyGenerator:
 
             num_planets = random.choices([0, 1, 2, 3, 4, 5], weights=[0.05, 0.2, 0.3, 0.25, 0.15, 0.05])[0]
             for _ in range(num_planets):
-                planet_type = weighted_choice(PLANET_TYPE_WEIGHTS)
+                planet_type = weighted_choice(type_weights)
                 planet_size = weighted_choice(SIZE_WEIGHTS)
                 colonizable = planet_type in HABITABLE_TYPES
-                insert_planet(conn, star_id, planet_type, planet_size, colonizable)
+                richness = random_richness(
+                    planet_type,
+                    weights_habitable=rich_hab,
+                    weights_mining=rich_min,
+                )
+                gravity = random_gravity(planet_size)
+                feature = maybe_special_feature()
+                special_blob = specials_to_blob([feature] if feature else [])
+                insert_planet(
+                    conn, star_id, planet_type, planet_size, colonizable,
+                    richness=richness, gravity=gravity, special=special_blob,
+                )
             placed += 1
 
         if placed < self.num_stars:
@@ -161,7 +194,9 @@ class GalaxyGenerator:
 
         used_colors: set[str] = set()
         used_races: set[str] = set()
-        all_races = list_race_names() or ["Humans"]
+        # Prefer the curated RACE_ORDER catalog (15 races with bundled traits)
+        # but fall back to filesystem scan if the catalog is somehow empty.
+        all_races = list(RACE_ORDER) or list_race_names() or ["Humans"]
 
         for idx, star in enumerate(chosen):
             star_id = star["id"]
@@ -173,6 +208,7 @@ class GalaxyGenerator:
                 color = player_empire.color
                 is_player = True
                 personality = "balanced"
+                custom_traits_str = ",".join(player_empire.custom_traits)
             else:
                 color_pool = [c for c in EMPIRE_COLORS if c not in used_colors] or EMPIRE_COLORS
                 race_pool = [r for r in all_races if r not in used_races] or all_races
@@ -185,6 +221,7 @@ class GalaxyGenerator:
                 # depending on whether slot 0 was the player).
                 ai_index = idx - 1 if player_empire is not None else idx
                 personality = AI_PERSONALITY_CYCLE[ai_index % len(AI_PERSONALITY_CYCLE)]
+                custom_traits_str = ""
 
             used_colors.add(color)
             used_races.add(race)
@@ -193,9 +230,20 @@ class GalaxyGenerator:
             emp_id = insert_empire(
                 conn, emp_name, race, color, star_id, tech,
                 is_player=is_player, personality=personality,
+                custom_traits=custom_traits_str,
             )
+
+            # Apply trait bonuses that fire once at empire creation.
+            traits = effective_traits(race, custom_traits_str)
+            if "rich_homeworld" in traits:
+                conn.execute(
+                    "UPDATE empires SET bc = bc + 50 WHERE id = ?", (emp_id,)
+                )
+
             home_max_pop = compute_max_population("Terran", "Medium")
+            home_max_pop += 2 * trait_count(traits, "subterranean")
             home_farmers, home_workers, home_scientists = default_assignment("Terran", 2)
+            # Homeworld is always Abundant / Normal — predictable starts.
             insert_planet(
                 conn, star_id, "Terran", "Medium", True,
                 owner_empire_id=emp_id,
@@ -204,12 +252,23 @@ class GalaxyGenerator:
                 farmers=home_farmers,
                 workers=home_workers,
                 scientists=home_scientists,
+                richness="Abundant", gravity="Normal", special="",
             )
 
+            type_weights = age_type_weights(self.galaxy_age)
+            rich_hab = age_rich_hab(self.galaxy_age)
+            rich_min = age_rich_min(self.galaxy_age)
             for _ in range(random.randint(1, 2)):
-                pt = weighted_choice(PLANET_TYPE_WEIGHTS)
+                pt = weighted_choice(type_weights)
                 ps = weighted_choice(SIZE_WEIGHTS)
-                insert_planet(conn, star_id, pt, ps, pt in HABITABLE_TYPES)
+                rich = random_richness(pt, weights_habitable=rich_hab, weights_mining=rich_min)
+                grav = random_gravity(ps)
+                feat = maybe_special_feature()
+                spec_blob = specials_to_blob([feat] if feat else [])
+                insert_planet(
+                    conn, star_id, pt, ps, pt in HABITABLE_TYPES,
+                    richness=rich, gravity=grav, special=spec_blob,
+                )
 
     def load_from_db(self):
         """Reconstruct ECS state from the DB without mutating it."""
@@ -217,9 +276,11 @@ class GalaxyGenerator:
             turn_str = get_meta(conn, META_TURN)
             seed_str = get_meta(conn, META_SEED)
             difficulty_str = get_meta(conn, META_DIFFICULTY)
+            age_str = get_meta(conn, META_GALAXY_AGE)
             self.turn = int(turn_str) if turn_str is not None else 1
             self.seed = int(seed_str) if seed_str is not None else None
             self.difficulty = difficulty_str or DEFAULT_DIFFICULTY
+            self.galaxy_age = normalize_age(age_str) if age_str else DEFAULT_AGE
 
             star_entity_by_db_id: dict[int, int] = {}
             for star in get_stars(conn):
@@ -234,6 +295,21 @@ class GalaxyGenerator:
 
                 for planet in get_planets_for_star(star["id"], conn):
                     planet_entity = self.entity_mgr.create_entity()
+                    # New columns may be missing on saves predating the
+                    # richness/gravity/special migration — fall back to
+                    # defaults if the row lookup raises.
+                    try:
+                        richness = planet["richness"] or "Abundant"
+                    except (IndexError, KeyError):
+                        richness = "Abundant"
+                    try:
+                        gravity = planet["gravity"] or "Normal"
+                    except (IndexError, KeyError):
+                        gravity = "Normal"
+                    try:
+                        special_blob = planet["special"] or ""
+                    except (IndexError, KeyError):
+                        special_blob = ""
                     self.component_mgr.add_component(
                         planet_entity,
                         Planet(
@@ -241,6 +317,9 @@ class GalaxyGenerator:
                             planet_type=planet["type"],
                             size=planet["size"],
                             colonizable=bool(planet["colonizable"]),
+                            richness=richness,
+                            gravity=gravity,
+                            special=parse_specials(special_blob),
                         ),
                     )
                     self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
@@ -279,6 +358,11 @@ class GalaxyGenerator:
 
             for emp in get_empires(conn):
                 empire_entity = self.entity_mgr.create_entity()
+                # custom_traits is a TEXT column; old rows might be NULL.
+                try:
+                    raw_traits = emp["custom_traits"] or ""
+                except (IndexError, KeyError):
+                    raw_traits = ""
                 self.component_mgr.add_component(
                     empire_entity,
                     Empire(
@@ -292,6 +376,7 @@ class GalaxyGenerator:
                         research_points=emp["research_points"] or 0,
                         is_player=bool(emp["is_player"]),
                         personality=emp["personality"] or "balanced",
+                        custom_traits=raw_traits,
                     ),
                 )
                 self.component_mgr.add_component(

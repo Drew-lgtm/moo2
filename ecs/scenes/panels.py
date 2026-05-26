@@ -13,6 +13,7 @@ from ecs.scene import Scene
 from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population, BuildState, TechState
 from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output
+from ecs.races import effective_traits
 from ecs.techs import TECHS, TECH_ORDER, is_available
 from ecs.db import get_connection, update_empire_tech
 from assets.loader import load_image, find_race_portrait
@@ -286,7 +287,8 @@ class ColoniesScene(PanelScene):
 
         screen.blit(font.render(planet.size, True, TEXT_COLOR), (x + self.COL_SIZE, text_y))
 
-        pop_label = f"{population.current}/{population.max}" if population is not None else "-"
+        # 1 pop unit = 1 million inhabitants.
+        pop_label = f"{population.current}M/{population.max}M" if population is not None else "-"
         screen.blit(font.render(pop_label, True, TEXT_COLOR), (x + self.COL_POP, text_y))
 
         if population is not None:
@@ -295,7 +297,8 @@ class ColoniesScene(PanelScene):
             fws_label = "-"
         screen.blit(font.render(fws_label, True, TEXT_COLOR), (x + self.COL_FWS, text_y))
 
-        food, industry, research, bonus_bc = planet_output(planet, population, build_state)
+        traits = effective_traits(empire.race_type, empire.custom_traits) if empire is not None else []
+        food, industry, research, bonus_bc = planet_output(planet, population, build_state, traits)
         # Industry diverts to project progress while building; otherwise it
         # becomes BC, on top of any flat building bonus.
         building = bool(build_state and build_state.current_project)

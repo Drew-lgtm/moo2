@@ -399,7 +399,17 @@ class GalaxyScene(Scene):
         pygame.draw.rect(screen, empire_color(player.color), pygame.Rect(x, y + 2, 6, 22))
         name_surf = font_bold.render(player.name, True, (255, 230, 120))
         screen.blit(name_surf, (x + 14, y))
-        y += name_surf.get_height() + 6
+        y += name_surf.get_height() + 2
+
+        # Race line: preset name or "Custom (N traits)".
+        race_label = (
+            f"Custom ({len([t for t in player.custom_traits.split(',') if t])} traits)"
+            if player.race_type == "Custom"
+            else player.race_type
+        )
+        race_surf = font.render(race_label, True, (200, 210, 230))
+        screen.blit(race_surf, (x + 14, y))
+        y += race_surf.get_height() + 6
 
         per_turn = empire_per_turn(self.game.component_mgr, player.id)
         food = per_turn["food_balance"]
