@@ -94,19 +94,27 @@ class SystemView:
         overlay.fill((0, 0, 0, 200))
 
         center = (self.logical_w // 2, self.logical_h // 2)
-        # Star at center, with a soft outer glow for presence.
-        pygame.draw.circle(overlay, (255, 200, 90), center, STAR_RADIUS + 8, 2)
+        # Star at center: layered discs build a soft halo that survives
+        # SCALED's non-integer downscaling. Thin (1-2 px) strokes were
+        # vanishing in places on laptop displays — every ring here is at
+        # least 3 px wide so the outline reads cleanly.
+        pygame.draw.circle(overlay, (180, 130, 50), center, STAR_RADIUS + 10, 3)
+        pygame.draw.circle(overlay, (255, 200, 90), center, STAR_RADIUS + 4, 3)
         pygame.draw.circle(overlay, (255, 230, 120), center, STAR_RADIUS)
 
         for entity_id, planet, pos, radius in self.planet_layout:
-            # Orbit ring.
+            # Orbit ring: 2 px wide for visibility — single-pixel rings
+            # disappeared at fractional scale factors.
             orbit_radius = pos[0] - center[0]
-            pygame.draw.circle(overlay, (100, 100, 100), center, orbit_radius, 1)
+            pygame.draw.circle(overlay, (110, 110, 130), center, orbit_radius, 2)
 
-            # Planet body.
+            # Planet body + a black ring just inside the white halo gives
+            # the outline contrast against bright planet colors (Desert,
+            # Tundra) on dark space; 3 px white ring outside reads as
+            # "clickable".
             pygame.draw.circle(overlay, planet_color(planet.planet_type), pos, radius)
-            # Subtle white ring so it reads as clickable.
-            pygame.draw.circle(overlay, (255, 255, 255), pos, radius + 2, 1)
+            pygame.draw.circle(overlay, (0, 0, 0), pos, radius + 1, 1)
+            pygame.draw.circle(overlay, (255, 255, 255), pos, radius + 3, 3)
 
             self._draw_planet_labels(overlay, font, entity_id, planet, pos)
 

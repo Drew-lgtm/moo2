@@ -62,11 +62,14 @@ class EmpireSetupScene(Scene):
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 28, bold=True)
-        self.label_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
-        self.button_font = pygame.font.SysFont("Arial", 18, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 12, bold=True)
+        # Bumped sizes a couple steps so 1-px stroke widths survive
+        # SCALED's non-integer scaling on laptop displays. Bold + larger
+        # is the same fix applied to galaxy star labels.
+        self.title_font = pygame.font.SysFont("Arial", 30, bold=True)
+        self.label_font = pygame.font.SysFont("Arial", 18, bold=True)
+        self.body_font = pygame.font.SysFont("Arial", 16, bold=True)
+        self.button_font = pygame.font.SysFont("Arial", 20, bold=True)
+        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
 
         self.colors: list[str] = list(EMPIRE_COLOR_RGB.keys())
         # Curated catalog + a Custom slot at the end.

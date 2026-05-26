@@ -124,6 +124,39 @@ PROJECTS: dict[str, dict] = {
         "effects": {"max_pop": 1, "growth_rate": 0.3},
         "required_tech": "cloning",
     },
+    # ---- Tier 4 expansions (added with the physics field overhaul) ----
+    "deep_core_mine": {
+        "id": "deep_core_mine",
+        "name": "Deep Core Mine",
+        "cost": 300,
+        "description": "+8 BC per turn",
+        "effects": {"bc": 8},
+        "required_tech": "robo_miners",
+    },
+    "vr_network": {
+        "id": "vr_network",
+        "name": "VR Network",
+        "cost": 280,
+        "description": "+4 Research, faster growth",
+        "effects": {"research": 4, "growth_rate": 0.15},
+        "required_tech": "virtual_reality_network",
+    },
+    "positronic_brain": {
+        "id": "positronic_brain",
+        "name": "Positronic Brain",
+        "cost": 400,
+        "description": "+15 Research per turn",
+        "effects": {"research": 15},
+        "required_tech": "positronic_computers",
+    },
+    "terraforming": {
+        "id": "terraforming",
+        "name": "Terraforming",
+        "cost": 350,
+        "description": "+3 max pop",
+        "effects": {"max_pop": 3},
+        "required_tech": "terraforming",
+    },
 }
 
 # Inject ship projects from the SHIPS catalog so SystemView gets them
@@ -148,6 +181,8 @@ BUILDING_ORDER = [
     # Mid / late game (gated by deeper tech)
     "atmospheric_renewer", "automated_factory", "stock_exchange",
     "supercomputer", "galactic_cybernet", "soil_enrichment_b", "cloning_center",
+    # Late game (tier-4 tech unlocks)
+    "deep_core_mine", "vr_network", "positronic_brain", "terraforming",
 ]
 SHIP_PROJECT_ORDER = [f"ship_{s}" for s in SHIP_ORDER]
 PROJECT_ORDER = BUILDING_ORDER + SHIP_PROJECT_ORDER

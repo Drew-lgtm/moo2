@@ -28,17 +28,19 @@ TEXT_COLOR = (240, 240, 240)
 
 
 class ResearchScene(Scene):
-    TIER_H = 100
+    # Slightly taller cards now that body font is 15pt; gap unchanged.
+    TIER_H = 110
     GAP = 12
-    PADDING_X = 24
+    PADDING_X = 20
     HEADER_H = 56
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 13, bold=True)
-        self.cost_font = pygame.font.SysFont("Arial", 12, bold=True)
+        # Bigger + bold so the tech card text stays sharp under SCALED.
+        self.title_font = pygame.font.SysFont("Arial", 26, bold=True)
+        self.header_font = pygame.font.SysFont("Arial", 18, bold=True)
+        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
+        self.cost_font = pygame.font.SysFont("Arial", 14, bold=True)
         # (tech_id, rect, available) — refreshed each draw for hit testing.
         self._tech_hits: list[tuple[str, pygame.Rect, bool]] = []
         self._close_rect = pygame.Rect(0, 0, 0, 0)

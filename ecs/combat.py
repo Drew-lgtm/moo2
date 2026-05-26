@@ -15,35 +15,64 @@ change.
 """
 from __future__ import annotations
 
-from ecs.components import Ship, ShipOwner, ShipAt, ShipInTransit
+from ecs.components import Ship, ShipOwner, ShipAt, ShipInTransit, TechState
 from ecs.ships import SHIPS
+from ecs.races import trait_count, traits_for_empire
+from ecs.techs import empire_attack_bonus, empire_hull_bonus
 from ecs.db import get_connection, delete_ship
 
 
-def _attack_of(component_mgr, ship_entity: int) -> int:
+def _empire_bonuses(component_mgr, empire_id: int) -> tuple[int, int]:
+    """Sum tech-driven (Physics field) + trait-driven (ship_attack /
+    ship_hull) bonuses for one empire. MAX semantics on the tech side
+    so weapon tiers replace each other (Laser → Phasor → Plasma)."""
+    traits = traits_for_empire(component_mgr, empire_id)
+    trait_atk = trait_count(traits, "ship_attack")
+    trait_hull = 2 * trait_count(traits, "ship_hull")  # trait wording: "+2 Ship Hull"
+
+    tech_atk = tech_hull = 0
+    for _eid, tech in component_mgr.get_all(TechState):
+        if tech.empire_id == empire_id:
+            tech_atk = empire_attack_bonus(tech.unlocked)
+            tech_hull = empire_hull_bonus(tech.unlocked)
+            break
+    return trait_atk + tech_atk, trait_hull + tech_hull
+
+
+def _attack_of(component_mgr, ship_entity: int, attack_bonus: int = 0) -> int:
     ship = component_mgr.get_component(ship_entity, Ship)
     if ship is None:
         return 0
-    return SHIPS.get(ship.ship_class, {}).get("attack", 0)
+    return SHIPS.get(ship.ship_class, {}).get("attack", 0) + attack_bonus
 
 
-def _hull_of(component_mgr, ship_entity: int) -> int:
+def _hull_of(component_mgr, ship_entity: int, hull_bonus: int = 0) -> int:
     ship = component_mgr.get_component(ship_entity, Ship)
     if ship is None:
         return 0
-    return SHIPS.get(ship.ship_class, {}).get("hull", 0)
+    return SHIPS.get(ship.ship_class, {}).get("hull", 0) + hull_bonus
 
 
 def _compute_losses(component_mgr, ships: list[int], damage: int) -> list[int]:
+    """Backwards-compatible: ignores tech/trait hull bonuses."""
+    return _compute_losses_with_bonus(component_mgr, ships, damage, 0)
+
+
+def _compute_losses_with_bonus(component_mgr, ships: list[int], damage: int,
+                                hull_bonus: int) -> list[int]:
     """Return ship entities destroyed. Cheapest hull dies first; no
-    partial-damage carry between turns."""
+    partial-damage carry between turns. ``hull_bonus`` is added to every
+    ship's hull (from Tachyon Scanner / Plasma Cannon / ship_hull race
+    trait) so tougher empires soak more damage before losing ships."""
     if damage <= 0 or not ships:
         return []
-    sorted_ships = sorted(ships, key=lambda e: _hull_of(component_mgr, e))
+    sorted_ships = sorted(
+        ships, key=lambda e: _hull_of(component_mgr, e, hull_bonus),
+    )
     losses: list[int] = []
     remaining = damage
     for ship_entity in sorted_ships:
-        hull = _hull_of(component_mgr, ship_entity)
+        hull = _hull_of(component_mgr, ship_entity, hull_bonus)
         if hull <= 0:
             continue
         if remaining >= hull:
@@ -76,18 +105,29 @@ def combat_tick(game, new_turn: int):
     destroyed_ids: list[int] = []
     destroyed_entities: list[int] = []
 
+    # Cache empire combat bonuses once per tick — tech state doesn't
+    # change mid-resolution.
+    bonus_by_empire: dict[int, tuple[int, int]] = {}
+
+    def _bonuses(eid: int) -> tuple[int, int]:
+        if eid not in bonus_by_empire:
+            bonus_by_empire[eid] = _empire_bonuses(cm, eid)
+        return bonus_by_empire[eid]
+
     for star_entity, by_owner in by_star.items():
         if len(by_owner) < 2:
             continue
 
         side_attack = {
-            empire_id: sum(_attack_of(cm, e) for e in ships)
+            empire_id: sum(_attack_of(cm, e, _bonuses(empire_id)[0]) for e in ships)
             for empire_id, ships in by_owner.items()
         }
         side_losses: dict[int, list[int]] = {}
         for empire_id, ships in by_owner.items():
             damage = sum(side_attack[other] for other in by_owner if other != empire_id)
-            side_losses[empire_id] = _compute_losses(cm, ships, damage)
+            side_losses[empire_id] = _compute_losses_with_bonus(
+                cm, ships, damage, _bonuses(empire_id)[1],
+            )
 
         # Record the engagement before mutating.
         log_entry = {
