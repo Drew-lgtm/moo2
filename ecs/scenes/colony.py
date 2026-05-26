@@ -171,7 +171,7 @@ class ColonyScene(Scene):
         # Owned planets get a Build button; unowned habitable ones get
         # Colonize; enemy-owned ones get Invade when the player has a
         # Troop Transport parked at the star.
-        planet, _build_state, owner = self._planet_components()
+        planet, _pop, _build_state, owner = self._planet_components()
         player_id = self._player_empire_id()
         if owner is None and self._can_colonize_here():
             if self._colonize_rect.collidepoint(event.pos):
