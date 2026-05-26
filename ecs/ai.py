@@ -41,6 +41,92 @@ from ecs.personalities import get as get_personality
 AI_MAX_PARKED_COLONY_SHIPS = 2
 
 
+# ---- Planet scoring for colonisation ----------------------------------
+#
+# Higher = more attractive. Two AIs at the same star with the same
+# colony ship and the same race might disagree on which planet to take:
+# an Economic AI grabs Ocean/Terran (food → BC), Scientific grabs Gaia
+# (food + research bonus + artifacts), Militaristic grabs Ultra Rich
+# Barren (industry).
+
+_TYPE_BASE_SCORE = {
+    "Gaia":   100,
+    "Terran": 75,
+    "Ocean":  70,
+    "Swamp":  65,
+    "Jungle": 65,
+    "Steppe": 55,
+    "Arid":   40,
+    "Tundra": 40,
+    "Desert": 30,
+    "Barren": 15,
+}
+_FOOD_BIOMES = {"Gaia", "Terran", "Ocean", "Swamp", "Jungle", "Steppe"}
+
+_RICHNESS_SCORE = {
+    "Ultra Poor": -25, "Poor": -10, "Abundant": 0,
+    "Rich": 25, "Ultra Rich": 50,
+}
+_GRAVITY_SCORE = {"Low": -15, "Normal": 0, "Heavy": -30}
+_SIZE_SCORE = {"Tiny": 0, "Small": 15, "Medium": 30, "Large": 45, "Huge": 60}
+
+
+def _score_candidate_planet(planet, traits: list[str], focus: str) -> float:
+    """Personality-and-trait-aware utility score for a candidate planet.
+
+    ``focus`` is one of: ``balanced`` / ``economy`` / ``science`` /
+    ``industry`` — pulled from the empire's personality dict.
+    """
+    score = float(_TYPE_BASE_SCORE.get(planet.planet_type, 0))
+
+    food_value = planet.planet_type in _FOOD_BIOMES
+    rich_value = _RICHNESS_SCORE.get(planet.richness, 0)
+
+    if focus == "economy":
+        # More pop = more BC; food biomes feed faster, gold/gems sweeten.
+        if food_value:
+            score += 25
+    elif focus == "science":
+        # Gaia is a triple-prize (food + research bonus + extra growth);
+        # other food biomes still attractive because more pop = more
+        # scientists.
+        if planet.planet_type == "Gaia":
+            score += 50
+        elif food_value:
+            score += 15
+    elif focus == "industry":
+        # Workforce planets care more about minerals than biome.
+        score += rich_value  # double-weight richness on top of the base bump
+        if planet.planet_type == "Barren":
+            score += 25  # militaristic loves Barren mining worlds
+
+    score += rich_value
+    score += _GRAVITY_SCORE.get(planet.gravity, 0)
+    score += _SIZE_SCORE.get(planet.size, 0)
+
+    # Specials — everyone likes them; focus boosts the matching kind.
+    for sp in getattr(planet, "special", []) or []:
+        score += 30
+        if sp == "artifacts" and focus == "science":
+            score += 40
+        if sp in ("gold_veins", "gem_deposits") and focus == "economy":
+            score += 25
+
+    # Race traits: Subterranean doubles down on Huge/Large planets;
+    # Tolerant cares less about food biomes (counted as neutral instead
+    # of penalised — but our base score doesn't penalise non-food
+    # biomes, so just a small +5 reward for picking what others
+    # avoid).
+    if "subterranean" in traits:
+        score += _SIZE_SCORE.get(planet.size, 0) * 0.5
+    if "tolerant" in traits and not food_value:
+        # Tolerant races thrive on otherwise-marginal Barren/Desert
+        # worlds — bump them a bit so the AI grabs frontier rocks.
+        score += 20
+
+    return score
+
+
 def ai_tick(game, new_turn: int):
     cm = game.component_mgr
 
@@ -67,10 +153,11 @@ def ai_tick(game, new_turn: int):
         tech_state = tech_by_empire.get(empire.id)
         unlocked = set(tech_state.unlocked) if tech_state else set()
 
+        focus = personality.get("colonization_focus", "balanced")
         # Settle planets first — a Colony Ship already at a habitable
         # target should be spent this turn (before production_tick
         # touches the new colony).
-        _ai_settle_arrived_colony_ships(game, empire)
+        _ai_settle_arrived_colony_ships(game, empire, focus)
 
         # Pause queuing new colony ships when the AI has plenty parked
         # or there's nowhere left to settle.
@@ -91,8 +178,9 @@ def ai_tick(game, new_turn: int):
             _ai_pick_research(tech_state, personality["research_priority"], pending_writes)
 
         # Dispatch any colony ships still parked after settling — fly
-        # them to the closest unowned habitable star.
-        _ai_dispatch_colony_ships(cm, empire, candidate_stars)
+        # them to the highest-value reachable star (score minus
+        # distance penalty).
+        _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus)
 
         if personality.get("aggressive"):
             _ai_dispatch_ships(cm, empire)
@@ -198,16 +286,41 @@ def _count_parked_colony_ships(cm, empire_id: int) -> int:
     return n
 
 
-def _ai_settle_arrived_colony_ships(game, empire):
+def _candidate_planets_at_star(cm, star_entity: int) -> list[int]:
+    """Unowned habitable planet entities orbiting ``star_entity``."""
+    out: list[int] = []
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        if orbit.star_entity != star_entity:
+            continue
+        planet = cm.get_component(planet_entity, Planet)
+        if planet is None or not planet.colonizable:
+            continue
+        if cm.get_component(planet_entity, Owner) is not None:
+            continue
+        out.append(planet_entity)
+    return out
+
+
+def _best_planet_at_star(cm, star_entity: int, traits: list[str], focus: str):
+    """Return (planet_entity, score) for the best unowned habitable
+    planet at this star, or (None, -inf) if there's nothing to settle."""
+    best, best_score = None, float("-inf")
+    for planet_entity in _candidate_planets_at_star(cm, star_entity):
+        planet = cm.get_component(planet_entity, Planet)
+        score = _score_candidate_planet(planet, traits, focus)
+        if score > best_score:
+            best, best_score = planet_entity, score
+    return best, best_score
+
+
+def _ai_settle_arrived_colony_ships(game, empire, focus: str):
     """If any of the empire's Colony Ships is parked at a star with an
-    unowned habitable planet, settle the best candidate there. Best =
-    Gaia first (rare prize), then Terran, then anything else habitable.
-    """
+    unowned habitable planet, settle the highest-scoring candidate
+    there. Score uses ``focus`` so Economic / Scientific / Militaristic
+    pick the planet they actually want."""
     cm = game.component_mgr
-    type_priority = {
-        "Gaia": 0, "Terran": 1, "Ocean": 2, "Swamp": 3, "Jungle": 4,
-        "Steppe": 5, "Arid": 6, "Tundra": 7, "Desert": 8, "Barren": 9,
-    }
+    from ecs.races import traits_for_empire
+    traits = traits_for_empire(cm, empire.id)
 
     parked_colony_stars: dict[int, list[int]] = {}
     for ship_entity, at in cm.get_all(ShipAt):
@@ -220,34 +333,49 @@ def _ai_settle_arrived_colony_ships(game, empire):
         parked_colony_stars.setdefault(at.star_entity, []).append(ship_entity)
 
     for star_entity, _ships in parked_colony_stars.items():
-        # Candidate planets at this star.
-        candidates: list[tuple[int, int]] = []
-        for planet_entity, orbit in cm.get_all(Orbiting):
-            if orbit.star_entity != star_entity:
-                continue
+        # Rank candidate planets at this star by score, highest first.
+        scored: list[tuple[float, int]] = []
+        for planet_entity in _candidate_planets_at_star(cm, star_entity):
             planet = cm.get_component(planet_entity, Planet)
-            if planet is None or not planet.colonizable:
-                continue
-            if cm.get_component(planet_entity, Owner) is not None:
-                continue
-            candidates.append((type_priority.get(planet.planet_type, 99), planet_entity))
-        if not candidates:
+            scored.append((
+                _score_candidate_planet(planet, traits, focus),
+                planet_entity,
+            ))
+        if not scored:
             continue
-        candidates.sort(key=lambda t: t[0])
+        scored.sort(key=lambda t: t[0], reverse=True)
         # Spend one ship per planet; settle as many as possible at this
-        # star this turn (cheap colony-ship hoarders thank us).
-        for _, planet_entity in candidates:
+        # star this turn until either we run out of ships or candidates.
+        for _score, planet_entity in scored:
             if not can_colonize(cm, planet_entity, empire.id):
                 break
             colonize_planet(game, planet_entity, empire.id)
 
 
-def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int]):
+# Distance penalty per parsec squared (px²) — keeps the formula in raw
+# pixels so we don't need to import PIXELS_PER_PARSEC here. Tuned so a
+# star ~300 px away (≈12 parsecs) is worth ~10 score points less than
+# the same planet next door — close calls go to nearer stars, but a
+# Gaia 600 px away will still beat a Desert next door.
+_DISPATCH_DISTANCE_WEIGHT = 0.0001
+
+
+def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str):
     """Send parked Colony Ships not currently at a candidate star to
-    the closest one. No-op if there are no candidates."""
+    the star whose best planet has the highest score, minus a small
+    distance penalty. No-op if there are no candidates."""
     if not candidate_stars:
         return
     candidate_set = set(candidate_stars)
+    from ecs.races import traits_for_empire
+    traits = traits_for_empire(cm, empire.id)
+
+    # Pre-compute (star, best_planet_score) once per candidate so we
+    # don't re-score every planet per ship.
+    star_score: dict[int, float] = {}
+    for star_entity in candidate_stars:
+        _planet, score = _best_planet_at_star(cm, star_entity, traits, focus)
+        star_score[star_entity] = score
 
     ships_by_star: dict[int, list[int]] = {}
     for ship_entity, at in cm.get_all(ShipAt):
@@ -268,17 +396,17 @@ def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int]):
         src_pos = cm.get_component(src_star, Position)
         if src_pos is None:
             continue
-        # Pick closest candidate star.
-        best, best_dist = None, float("inf")
-        for cand in candidate_stars:
+        best, best_value = None, float("-inf")
+        for cand, cand_score in star_score.items():
             if cand == src_star:
                 continue
             cand_pos = cm.get_component(cand, Position)
             if cand_pos is None:
                 continue
-            d = (cand_pos.x - src_pos.x) ** 2 + (cand_pos.y - src_pos.y) ** 2
-            if d < best_dist:
-                best_dist, best = d, cand
+            d2 = (cand_pos.x - src_pos.x) ** 2 + (cand_pos.y - src_pos.y) ** 2
+            value = cand_score - d2 * _DISPATCH_DISTANCE_WEIGHT
+            if value > best_value:
+                best_value, best = value, cand
         if best is not None:
             start_fleet_movement(cm, ships, src_star, best)
 

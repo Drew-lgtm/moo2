@@ -18,6 +18,7 @@ PERSONALITIES: dict[str, dict] = {
         "name": "Balanced",
         "description": "Even mix of growth, science, and economy.",
         "worker_pct": 75,
+        "colonization_focus": "balanced",
         "build_priority": [
             "factory", "granary", "research_lab", "marketplace",
             "ship_colony_ship",  # expand once basic infra is up
@@ -36,6 +37,7 @@ PERSONALITIES: dict[str, dict] = {
         "name": "Economic",
         "description": "Markets and growth first; aggressive expansion.",
         "worker_pct": 70,
+        "colonization_focus": "economy",
         "build_priority": [
             "granary", "marketplace", "factory",
             "ship_colony_ship",  # spread wide for more revenue
@@ -54,6 +56,7 @@ PERSONALITIES: dict[str, dict] = {
         "name": "Scientific",
         "description": "Researches aggressively; light defensive fleet.",
         "worker_pct": 40,
+        "colonization_focus": "science",
         "build_priority": [
             "research_lab", "supercomputer", "factory", "granary",
             "ship_colony_ship",  # more colonies = more scientists
@@ -72,6 +75,7 @@ PERSONALITIES: dict[str, dict] = {
         "name": "Militaristic",
         "description": "Heavy fleet, attacks the player on sight.",
         "worker_pct": 90,
+        "colonization_focus": "industry",
         "build_priority": [
             "factory", "ship_frigate",
             "ship_colony_ship",  # secure border worlds before fighting
