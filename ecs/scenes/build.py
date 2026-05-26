@@ -142,19 +142,37 @@ class BuildScene(Scene):
         return set()
 
     def _filtered_projects(self, build_state, unlocked) -> list[dict]:
-        """Projects shown in the list, after category + search filter."""
-        items: list[dict] = []
-        # When searching, ignore the category tab and search across all
-        # projects. This matches user expectation ("look it up directly").
+        """Projects shown in the list, after category + search filter.
+
+        For the Ships tab we group by ship_kind so civilian vessels sit
+        above military ones (with a subheader between them, rendered in
+        ``_draw_list``). Search ignores the category and matches across
+        every project.
+        """
         if self.search_text.strip():
             needle = self.search_text.strip().lower()
-            for p in PROJECTS.values():
-                if needle in p["name"].lower() or needle in p.get("description", "").lower():
-                    items.append(p)
+            items = [
+                p for p in PROJECTS.values()
+                if needle in p["name"].lower()
+                or needle in p.get("description", "").lower()
+            ]
             items.sort(key=lambda p: p["name"].lower())
-        else:
-            items = projects_in_category(self.active_category)
-        return items
+            return items
+        if self.active_category == "ships":
+            # Civilian first (Scout/Transport/Outpost/Colony), then
+            # Military (Frigate→Dreadnought). Alphabetical within group.
+            civ = sorted(
+                (p for p in PROJECTS.values()
+                 if p.get("category") == "ships" and p.get("ship_kind") == "civilian"),
+                key=lambda p: p["name"].lower(),
+            )
+            mil = sorted(
+                (p for p in PROJECTS.values()
+                 if p.get("category") == "ships" and p.get("ship_kind") == "military"),
+                key=lambda p: p["name"].lower(),
+            )
+            return civ + mil
+        return projects_in_category(self.active_category)
 
     # ------------------------------------------------------------------ input
 
@@ -329,6 +347,8 @@ class BuildScene(Scene):
         bottom_margin = 60
         return pygame.Rect(24, top, left_w - 48, sh - top - bottom_margin)
 
+    SUBHEADER_H = 28
+
     def _draw_list(self, screen, build_state):
         area = self._list_area()
         prev_clip = screen.get_clip()
@@ -344,18 +364,57 @@ class BuildScene(Scene):
             screen.set_clip(prev_clip)
             return
 
-        # Clamp scroll to keep last row visible.
-        total_h = len(items) * self.ROW_H
+        # Build a render schedule: (kind, payload). For the Ships tab
+        # without an active search we insert subheaders before the first
+        # civilian and military ship; everything else is just a row.
+        searching = bool(self.search_text.strip())
+        schedule: list[tuple[str, object]] = []
+        if self.active_category == "ships" and not searching:
+            last_kind: str | None = None
+            for proj in items:
+                kind = proj.get("ship_kind", "military")
+                if kind != last_kind:
+                    label = "Civilian" if kind == "civilian" else "Military"
+                    schedule.append(("header", label))
+                    last_kind = kind
+                schedule.append(("row", proj))
+        else:
+            for proj in items:
+                schedule.append(("row", proj))
+
+        # Compute total height + clamp scroll.
+        total_h = 0
+        for kind, _ in schedule:
+            total_h += self.SUBHEADER_H if kind == "header" else self.ROW_H
         max_scroll = max(0, total_h - area.height)
         self._scroll_offset = max(0, min(self._scroll_offset, max_scroll))
 
-        for i, proj in enumerate(items):
-            row_top = area.y + i * self.ROW_H - self._scroll_offset
-            if row_top + self.ROW_H < area.y or row_top > area.bottom:
-                continue
-            self._draw_row(screen, proj, area, row_top, build_state, unlocked)
+        y_cursor = area.y - self._scroll_offset
+        for kind, payload in schedule:
+            h = self.SUBHEADER_H if kind == "header" else self.ROW_H
+            if y_cursor + h >= area.y and y_cursor <= area.bottom:
+                if kind == "header":
+                    self._draw_subheader(screen, area, y_cursor, payload)
+                else:
+                    self._draw_row(screen, payload, area, y_cursor, build_state, unlocked)
+            y_cursor += h
 
         screen.set_clip(prev_clip)
+
+    def _draw_subheader(self, screen, area, y, label):
+        # A thin colored band between groups.
+        rect = pygame.Rect(area.x, y, area.width, self.SUBHEADER_H - 6)
+        pygame.draw.rect(screen, (22, 26, 40), rect)
+        # Left underline tinted by the parent category accent.
+        accent = CATEGORY_COLOR.get(self.active_category, TEXT_COLOR)
+        pygame.draw.line(
+            screen, accent,
+            (rect.x + 8, rect.bottom - 2),
+            (rect.x + 8 + 80, rect.bottom - 2),
+            2,
+        )
+        text = self.header_font.render(label, True, accent)
+        screen.blit(text, (rect.x + 12, rect.y + 4))
 
     def _draw_row(self, screen, proj, area, row_top, build_state, unlocked):
         is_ship = proj.get("type") == "ship"

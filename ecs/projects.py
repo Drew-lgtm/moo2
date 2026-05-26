@@ -123,32 +123,82 @@ PROJECTS: dict[str, dict] = {
         "effects": {"max_pop": 3},
         "required_tech": "terraforming",
     },
+    # ---- Military (planetary defenses) ---------------------------------
+    # MOO2-style ground/orbital defense buildings. Effects are flat
+    # planet bonuses for now; ``defense`` value is reserved for the
+    # future combat-tick integration (planets with defense contribute
+    # attack/hull to friendly ships in their system).
+    "missile_base": {
+        "id": "missile_base", "name": "Missile Base", "category": "military",
+        "cost": 80, "description": "Ground-based interceptors. +2 defense.",
+        "effects": {"defense": 2},
+    },
+    "ground_batteries": {
+        "id": "ground_batteries", "name": "Ground Batteries", "category": "military",
+        "cost": 140, "description": "Heavy planet-side cannons. +4 defense.",
+        "effects": {"defense": 4},
+        "required_tech": "industrial_engineering",
+    },
+    "fighter_garrison": {
+        "id": "fighter_garrison", "name": "Fighter Garrison", "category": "military",
+        "cost": 160, "description": "Stationed fighter wing. +5 defense.",
+        "effects": {"defense": 5},
+        "required_tech": "industrial_engineering",
+    },
+    "star_base": {
+        "id": "star_base", "name": "Star Base", "category": "military",
+        "cost": 220, "description": "Orbital platform. +8 defense.",
+        "effects": {"defense": 8},
+        "required_tech": "advanced_construction",
+    },
+    "battlestation": {
+        "id": "battlestation", "name": "Battlestation", "category": "military",
+        "cost": 380, "description": "Upgraded orbital fortress. +14 defense.",
+        "effects": {"defense": 14},
+        "required_tech": "automated_factories",
+    },
+    "star_fortress": {
+        "id": "star_fortress", "name": "Star Fortress", "category": "military",
+        "cost": 600, "description": "Top-tier system stronghold. +24 defense.",
+        "effects": {"defense": 24},
+        "required_tech": "robo_miners",
+    },
 }
 
 
 # Display ordering of categories in the Build screen, plus a label
-# and accent colour for each. Ships go in "military" — assigned below
-# when we sythesise their projects from the SHIPS catalog.
+# and accent colour for each. Military now holds planetary defenses;
+# Ships hosts every vessel (civilian + military) for clarity.
 CATEGORIES = [
     ("economy",  "Economy",  (240, 200, 100)),
     ("farming",  "Farming",  (140, 220, 140)),
     ("science",  "Science",  (140, 180, 240)),
     ("military", "Military", (240, 130, 130)),
+    ("ships",    "Ships",    (200, 160, 240)),
 ]
 CATEGORY_LABEL = {key: label for key, label, _ in CATEGORIES}
 CATEGORY_COLOR = {key: color for key, _, color in CATEGORIES}
 
-# Inject ship projects from the SHIPS catalog so SystemView gets them
-# automatically. Each maps to a build project of type "ship", filed
-# under the Military category in the Build screen.
+# Inject ship projects from the SHIPS catalog so the Build screen gets
+# them automatically. Each maps to a build project of type "ship" filed
+# under the Ships category, tagged with the ship's kind (civilian /
+# military) so the BuildScene can group them.
 for _ship_id in SHIP_ORDER:
     _spec = SHIPS[_ship_id]
+    _kind = _spec.get("ship_class_kind", "military")
+    # Civilian ships (Scout, Transport, etc.) get a clearer description;
+    # military ones list their combat stats.
+    if _kind == "civilian":
+        _desc = _spec.get("description") or f"Speed {_spec['speed']}"
+    else:
+        _desc = f"Hull {_spec['hull']}  Attack {_spec['attack']}  Speed {_spec['speed']}"
     PROJECTS[f"ship_{_ship_id}"] = {
         "id": f"ship_{_ship_id}",
         "name": _spec["name"],
-        "category": "military",
+        "category": "ships",
+        "ship_kind": _kind,  # civilian | military
         "cost": _spec["cost"],
-        "description": f"Hull {_spec['hull']}  Attack {_spec['attack']}  Speed {_spec['speed']}",
+        "description": _desc,
         "type": "ship",
         "ship_class": _ship_id,
     }
@@ -176,6 +226,9 @@ BUILDING_ORDER = [
     "supercomputer", "galactic_cybernet", "soil_enrichment_b", "cloning_center",
     # Late game (tier-4 tech unlocks)
     "deep_core_mine", "vr_network", "positronic_brain", "terraforming",
+    # Planetary defenses
+    "missile_base", "ground_batteries", "fighter_garrison",
+    "star_base", "battlestation", "star_fortress",
 ]
 SHIP_PROJECT_ORDER = [f"ship_{s}" for s in SHIP_ORDER]
 PROJECT_ORDER = BUILDING_ORDER + SHIP_PROJECT_ORDER
