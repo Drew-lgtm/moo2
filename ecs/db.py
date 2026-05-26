@@ -185,6 +185,14 @@ def update_planet_workers(conn, planet_id, farmers, workers, scientists):
     )
 
 
+def update_planet_owner(conn, planet_id, owner_empire_id):
+    """Set or clear the planet's owner. Called when a Colony Ship lands."""
+    conn.execute(
+        "UPDATE planets SET owner_empire_id = ? WHERE id = ?",
+        (owner_empire_id, planet_id),
+    )
+
+
 def update_planet_population(conn, planet_id, current, max_population, growth_progress=0.0):
     conn.execute(
         "UPDATE planets SET population = ?, max_population = ?, growth_progress = ? WHERE id = ?",

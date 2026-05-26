@@ -19,6 +19,7 @@ from ecs.components import (
 from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS
 from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
+from ecs.colonization import can_colonize, colonize_planet
 from ecs.db import (
     get_connection, update_planet_workers,
 )
@@ -47,6 +48,7 @@ class ColonyScene(Scene):
         self._worker_widgets: list[tuple] = []  # (role, minus, plus)
         self._close_rect = pygame.Rect(0, 0, 0, 0)
         self._build_rect = pygame.Rect(0, 0, 0, 0)
+        self._colonize_rect = pygame.Rect(0, 0, 0, 0)
         self._planet_entity: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -76,6 +78,9 @@ class ColonyScene(Scene):
         # Build button sits to the left of Close so the player can jump
         # to the categorised build screen.
         self._build_rect = pygame.Rect(sw - 100 - 110, 16, 100, 32)
+        # Colonize button overlays the Build slot when the planet is
+        # uncolonized; only one of the two will be visible at a time.
+        self._colonize_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
 
         # Worker pickers across the upper third.
         self._worker_widgets.clear()
@@ -121,6 +126,16 @@ class ColonyScene(Scene):
     def _player_owns_this(self, owner) -> bool:
         return owner is not None and owner.empire_id == self._player_empire_id()
 
+    def _can_colonize_here(self) -> bool:
+        """True when the active planet is settleable by the player —
+        unowned, habitable, with a colony ship parked at its star."""
+        if self._planet_entity is None:
+            return False
+        empire_id = self._player_empire_id()
+        if empire_id is None:
+            return False
+        return can_colonize(self.game.component_mgr, self._planet_entity, empire_id)
+
     # ------------------------------------------------------------------ input
 
     def handle_event(self, event):
@@ -133,7 +148,18 @@ class ColonyScene(Scene):
         if self._close_rect.collidepoint(event.pos):
             self._return_to_galaxy()
             return
-        if self._build_rect.collidepoint(event.pos):
+        # Owned planets get a Build button; unowned habitable ones get
+        # a Colonize button instead (when the player has a colony ship
+        # parked at this star).
+        planet, _build_state, owner = self._planet_components()
+        if owner is None and self._can_colonize_here():
+            if self._colonize_rect.collidepoint(event.pos):
+                empire_id = self._player_empire_id()
+                if empire_id is not None and self._planet_entity is not None:
+                    colonize_planet(self.game, self._planet_entity, empire_id)
+                    self._return_to_system()
+                return
+        elif self._build_rect.collidepoint(event.pos):
             # Open the categorised build screen for this planet.
             self.game.scenes.replace("build")
             return
@@ -193,7 +219,10 @@ class ColonyScene(Scene):
         self._draw_pop_block(screen, pop, owner)
         self._draw_worker_widgets(screen, pop, owner)
         self._draw_build_summary(screen, build_state)
-        self._draw_build_button(screen, owner)
+        if owner is None:
+            self._draw_colonize_button(screen, planet)
+        else:
+            self._draw_build_button(screen, owner)
         self._draw_close_button(screen)
 
     def _draw_close_button(self, screen):
@@ -212,6 +241,34 @@ class ColonyScene(Scene):
         pygame.draw.rect(screen, border, self._build_rect, 1)
         label = self.body_font.render("Build", True, fg)
         screen.blit(label, label.get_rect(center=self._build_rect.center))
+
+    def _draw_colonize_button(self, screen, planet):
+        """Visible on uncolonized planets. Active when the player has a
+        Colony Ship parked at this star and the planet is habitable."""
+        able = self._can_colonize_here()
+        if able:
+            bg, border, fg = (60, 100, 60), (180, 220, 180), TEXT_COLOR
+        elif planet is not None and not planet.colonizable:
+            bg, border, fg = (40, 44, 56), (90, 90, 110), (130, 130, 150)
+        else:
+            # Habitable but no colony ship here — hint the player by
+            # rendering the button in a "ghost" style.
+            bg, border, fg = (40, 44, 56), (120, 120, 140), (160, 160, 170)
+        pygame.draw.rect(screen, bg, self._colonize_rect)
+        pygame.draw.rect(screen, border, self._colonize_rect, 1)
+        label = self.body_font.render("Colonize", True, fg)
+        screen.blit(label, label.get_rect(center=self._colonize_rect.center))
+        if not able:
+            # One-line reason underneath so the player knows what's
+            # missing.
+            if planet is not None and not planet.colonizable:
+                hint = "Not habitable"
+            else:
+                hint = "Need Colony Ship here"
+            hint_surf = self.body_font.render(hint, True, HINT_COLOR)
+            screen.blit(hint_surf, hint_surf.get_rect(midtop=(
+                self._colonize_rect.centerx, self._colonize_rect.bottom + 4,
+            )))
 
     def _draw_header(self, screen, planet, owner):
         cm = self.game.component_mgr
