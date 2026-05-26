@@ -159,8 +159,9 @@ class BuildScene(Scene):
             items.sort(key=lambda p: p["name"].lower())
             return items
         if self.active_category == "ships":
-            # Civilian first (Scout/Transport/Outpost/Colony), then
-            # Military (Frigate→Dreadnought). Alphabetical within group.
+            # Civilian first (Scout/Freighter/Outpost/Colony), then
+            # Military (Troop Transport + Frigate→Dreadnought).
+            # Alphabetical within each group.
             civ = sorted(
                 (p for p in PROJECTS.values()
                  if p.get("category") == "ships" and p.get("ship_kind") == "civilian"),

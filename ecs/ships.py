@@ -21,20 +21,22 @@ from __future__ import annotations
 
 SHIPS: dict[str, dict] = {
     # ---- Civilian ships --------------------------------------------------
-    # Cheap, no-attack utility hulls. Scout extends visibility; Transport
-    # ferries population (when colonization lands); Outpost claims empty
-    # systems; Colony Ship founds new colonies.
+    # No-attack utility hulls. Each plays a different logistic role:
+    # Scout extends visibility; Freighter hauls food + colonists between
+    # colonies (MOO2's freighter pool, to be wired into the economy);
+    # Outpost Ship claims empty systems; Colony Ship founds new colonies.
     "scout": {
         "id": "scout", "name": "Scout", "ship_class_kind": "civilian",
         "cost": 20, "speed": 3, "attack": 0, "hull": 1,
         "image": "ships/frigate.png",
         "description": "Dedicated recon hull. +1 speed over the line.",
     },
-    "transport": {
-        "id": "transport", "name": "Transport", "ship_class_kind": "civilian",
+    "freighter": {
+        "id": "freighter", "name": "Freighter", "ship_class_kind": "civilian",
         "cost": 50, "speed": 2, "attack": 0, "hull": 4,
         "image": "ships/carrier.png",
-        "description": "Carries population between colonies.",
+        "description": "Hauls colonists and food between worlds. "
+                       "Required for inter-colony food redistribution.",
     },
     "outpost_ship": {
         "id": "outpost_ship", "name": "Outpost Ship", "ship_class_kind": "civilian",
@@ -54,6 +56,12 @@ SHIPS: dict[str, dict] = {
     # the same amount, so warship size doesn't compromise strategic
     # mobility — only acceleration in tactical combat would, and we
     # don't model that yet.
+    "troop_transport": {
+        "id": "troop_transport", "name": "Troop Transport", "ship_class_kind": "military",
+        "cost": 70, "speed": 2, "attack": 1, "hull": 5,
+        "image": "ships/carrier.png",
+        "description": "Carries marines to invade enemy planets.",
+    },
     "frigate": {
         "id": "frigate", "name": "Frigate", "ship_class_kind": "military",
         "cost": 30, "speed": 2, "attack": 1, "hull": 2,
@@ -89,8 +97,8 @@ SHIPS: dict[str, dict] = {
 # Order ships appear in the Build screen: civilians first (smaller to
 # bigger commitment), then military (smaller to bigger).
 SHIP_ORDER = [
-    "scout", "transport", "outpost_ship", "colony_ship",
-    "frigate", "carrier", "cruiser", "battleship", "dreadnought",
+    "scout", "freighter", "outpost_ship", "colony_ship",
+    "troop_transport", "frigate", "carrier", "cruiser", "battleship", "dreadnought",
 ]
 
 CIVILIAN_SHIPS = [s for s, spec in SHIPS.items() if spec.get("ship_class_kind") == "civilian"]

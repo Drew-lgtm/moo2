@@ -186,8 +186,8 @@ CATEGORY_COLOR = {key: color for key, _, color in CATEGORIES}
 for _ship_id in SHIP_ORDER:
     _spec = SHIPS[_ship_id]
     _kind = _spec.get("ship_class_kind", "military")
-    # Civilian ships (Scout, Transport, etc.) get a clearer description;
-    # military ones list their combat stats.
+    # Civilian ships (Scout, Freighter, Outpost, Colony) get a clearer
+    # description; military ones list their combat stats.
     if _kind == "civilian":
         _desc = _spec.get("description") or f"Speed {_spec['speed']}"
     else:
