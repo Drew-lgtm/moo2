@@ -57,21 +57,30 @@ class Game:
         # (game, new_turn). Future systems (production, research) register here.
         self.turn_callbacks: list = []
 
-    # Galaxy view reserves this many pixels on the right for the MOO2
-    # status / hover / picker panel.
-    GALAXY_RIGHT_PANEL_WIDTH = 280
+    # Galaxy view reserves this many pixels at the top for the slim
+    # status strip (empire summary + per-turn stats + turn).
+    GALAXY_TOP_BAR_HEIGHT = 36
+    # Legacy alias — some saves/scenes may still reference the old
+    # right-panel constant. Kept at 0 so any consumer treats the right
+    # edge as free space now.
+    GALAXY_RIGHT_PANEL_WIDTH = 0
 
     @property
     def play_area_height(self) -> int:
-        """Vertical room above the bottom UI bar — used by star
-        generation and panel scenes so nothing renders under the bar."""
-        return self.screen_height - BottomUIBar.BAR_HEIGHT
+        """Vertical room between the top status bar and the bottom UI
+        bar — used by star generation so nothing renders under either."""
+        return self.screen_height - BottomUIBar.BAR_HEIGHT - self.GALAXY_TOP_BAR_HEIGHT
+
+    @property
+    def play_area_top(self) -> int:
+        """First pixel below the top status bar — stars are placed at y
+        coordinates >= this value."""
+        return self.GALAXY_TOP_BAR_HEIGHT
 
     @property
     def play_area_width(self) -> int:
-        """Horizontal room left of the galaxy right panel — star
-        generation stays inside this so nothing sits behind the panel."""
-        return self.screen_width - self.GALAXY_RIGHT_PANEL_WIDTH
+        """Full screen width is now the map's horizontal room."""
+        return self.screen_width
 
     def _load_background(self):
         bg = load_random_background()
@@ -95,6 +104,7 @@ class Game:
             self.entity_mgr, self.component_mgr,
             self.play_area_width, self.play_area_height,
             num_stars=self.num_stars,
+            y_offset=self.play_area_top,
         )
         self.galaxy.generate(
             num_empires=num_empires, player_empire=player_empire,
@@ -107,6 +117,7 @@ class Game:
         self.galaxy = GalaxyGenerator(
             self.entity_mgr, self.component_mgr,
             self.play_area_width, self.play_area_height,
+            y_offset=self.play_area_top,
         )
         self.galaxy.load_from_db()
         self._bind_game_ui()

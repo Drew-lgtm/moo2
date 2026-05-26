@@ -18,12 +18,15 @@ from ecs.projects import PROJECTS
 
 
 SIZE_RADIUS = {
-    "Tiny": 4,
-    "Small": 6,
-    "Medium": 9,
-    "Large": 12,
-    "Huge": 15,
+    "Tiny":   10,
+    "Small":  18,
+    "Medium": 28,
+    "Large":  38,
+    "Huge":   50,
 }
+STAR_RADIUS = 36         # central star disc — was 12
+ORBIT_BASE = 110         # innermost orbit radius — was 60
+ORBIT_STEP = 80          # additional radius per orbit — was 40
 
 
 class SystemView:
@@ -60,9 +63,9 @@ class SystemView:
             planet = component_mgr.get_component(entity_id, Planet)
             if planet is None:
                 continue
-            orbit_radius = 60 + i * 40
+            orbit_radius = ORBIT_BASE + i * ORBIT_STEP
             pos = (center[0] + orbit_radius, center[1])
-            radius = SIZE_RADIUS.get(planet.size, 8)
+            radius = SIZE_RADIUS.get(planet.size, 20)
             self.planet_layout.append((entity_id, planet, pos, radius))
             i += 1
 
@@ -91,8 +94,9 @@ class SystemView:
         overlay.fill((0, 0, 0, 200))
 
         center = (self.logical_w // 2, self.logical_h // 2)
-        # Star at center.
-        pygame.draw.circle(overlay, (255, 230, 120), center, 12)
+        # Star at center, with a soft outer glow for presence.
+        pygame.draw.circle(overlay, (255, 200, 90), center, STAR_RADIUS + 8, 2)
+        pygame.draw.circle(overlay, (255, 230, 120), center, STAR_RADIUS)
 
         for entity_id, planet, pos, radius in self.planet_layout:
             # Orbit ring.
@@ -123,7 +127,10 @@ class SystemView:
 
     def _draw_planet_labels(self, overlay, font, entity_id, planet, pos):
         x, y = pos
-        line_y = y + 14
+        # Labels start just below the planet's lower edge — scales with
+        # SIZE_RADIUS so big planets don't overlap their captions.
+        radius = SIZE_RADIUS.get(planet.size, 20)
+        line_y = y + radius + 6
         # Line 1: type + size shorthand, with richness/gravity glyphs.
         # Glyphs are MOO2-style shorthand so the system view stays scannable.
         rich_glyph = {"Ultra Poor": "--", "Poor": "-", "Abundant": "",

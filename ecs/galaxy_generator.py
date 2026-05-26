@@ -81,11 +81,14 @@ def choose_star_class():
 
 
 class GalaxyGenerator:
-    def __init__(self, entity_mgr, component_mgr, width, height, num_stars=20):
+    def __init__(self, entity_mgr, component_mgr, width, height, num_stars=20, y_offset=0):
         self.entity_mgr = entity_mgr
         self.component_mgr = component_mgr
         self.width = width
         self.height = height
+        # Stars are placed at y in [y_offset + 50, y_offset + height - 50]
+        # so they don't sit behind the top status bar.
+        self.y_offset = y_offset
         self.num_stars = num_stars
         self.turn = 1
         self.seed = None
@@ -141,7 +144,7 @@ class GalaxyGenerator:
         for _ in range(self.num_stars):
             for _attempt in range(100):
                 x = random.randint(50, self.width - 50)
-                y = random.randint(50, self.height - 50)
+                y = random.randint(self.y_offset + 50, self.y_offset + self.height - 50)
                 if all(((x - px) ** 2 + (y - py) ** 2) ** 0.5 >= MIN_STAR_DISTANCE for px, py in placed_positions):
                     placed_positions.append((x, y))
                     break
