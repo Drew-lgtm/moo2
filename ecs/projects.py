@@ -23,154 +23,147 @@ from ecs.ships import SHIPS, SHIP_ORDER
 
 PROJECTS: dict[str, dict] = {
     "factory": {
-        "id": "factory",
-        "name": "Factory",
-        "cost": 60,
-        "description": "+2 BC per turn",
+        "id": "factory", "name": "Factory", "category": "economy",
+        "cost": 60, "description": "+2 BC per turn",
         "effects": {"bc": 2},
     },
     "granary": {
-        "id": "granary",
-        "name": "Granary",
-        "cost": 60,
-        "description": "Population grows faster",
+        "id": "granary", "name": "Granary", "category": "farming",
+        "cost": 60, "description": "Population grows faster",
         "effects": {"growth_rate": 0.2},
     },
     "research_lab": {
-        "id": "research_lab",
-        "name": "Research Lab",
-        "cost": 60,
-        "description": "+3 Research per turn",
+        "id": "research_lab", "name": "Research Lab", "category": "science",
+        "cost": 60, "description": "+3 Research per turn",
         "effects": {"research": 3},
         "required_tech": "computer_science",
     },
     "hydroponics": {
-        "id": "hydroponics",
-        "name": "Hydroponics",
-        "cost": 80,
-        "description": "+2 max population",
+        "id": "hydroponics", "name": "Hydroponics", "category": "farming",
+        "cost": 80, "description": "+2 max population",
         "effects": {"max_pop": 2},
         "required_tech": "agriculture",
     },
     "marketplace": {
-        "id": "marketplace",
-        "name": "Marketplace",
-        "cost": 80,
-        "description": "+3 BC, faster growth",
+        "id": "marketplace", "name": "Marketplace", "category": "economy",
+        "cost": 80, "description": "+3 BC, faster growth",
         "effects": {"bc": 3, "growth_rate": 0.1},
         "required_tech": "trade",
     },
     "capital": {
-        "id": "capital",
-        "name": "Capital",
-        "cost": 120,
-        "description": "+2 BC, +2 Research, +1 max pop",
+        "id": "capital", "name": "Capital", "category": "economy",
+        "cost": 120, "description": "+2 BC, +2 Research, +1 max pop",
         "effects": {"bc": 2, "research": 2, "max_pop": 1},
         "required_tech": "governance",
     },
     "atmospheric_renewer": {
-        "id": "atmospheric_renewer",
-        "name": "Atmospheric Renewer",
-        "cost": 180,
-        "description": "+2 max pop, faster growth",
+        "id": "atmospheric_renewer", "name": "Atmospheric Renewer", "category": "farming",
+        "cost": 180, "description": "+2 max pop, faster growth",
         "effects": {"max_pop": 2, "growth_rate": 0.1},
         "required_tech": "advanced_construction",
     },
     "automated_factory": {
-        "id": "automated_factory",
-        "name": "Automated Factory",
-        "cost": 250,
-        "description": "+5 BC per turn",
+        "id": "automated_factory", "name": "Automated Factory", "category": "economy",
+        "cost": 250, "description": "+5 BC per turn",
         "effects": {"bc": 5},
         "required_tech": "automated_factories",
     },
     "stock_exchange": {
-        "id": "stock_exchange",
-        "name": "Stock Exchange",
-        "cost": 180,
-        "description": "+5 BC, faster growth",
+        "id": "stock_exchange", "name": "Stock Exchange", "category": "economy",
+        "cost": 180, "description": "+5 BC, faster growth",
         "effects": {"bc": 5, "growth_rate": 0.1},
         "required_tech": "financial_planning",
     },
     "supercomputer": {
-        "id": "supercomputer",
-        "name": "Supercomputer",
-        "cost": 200,
-        "description": "+6 Research per turn",
+        "id": "supercomputer", "name": "Supercomputer", "category": "science",
+        "cost": 200, "description": "+6 Research per turn",
         "effects": {"research": 6},
         "required_tech": "advanced_computers",
     },
     "galactic_cybernet": {
-        "id": "galactic_cybernet",
-        "name": "Galactic Cybernet",
-        "cost": 350,
-        "description": "+12 Research per turn",
+        "id": "galactic_cybernet", "name": "Galactic Cybernet", "category": "science",
+        "cost": 350, "description": "+12 Research per turn",
         "effects": {"research": 12},
         "required_tech": "galactic_networks",
     },
     "soil_enrichment_b": {
-        "id": "soil_enrichment_b",
-        "name": "Soil Enrichment",
-        "cost": 200,
-        "description": "+1 max pop, faster growth",
+        "id": "soil_enrichment_b", "name": "Soil Enrichment", "category": "farming",
+        "cost": 200, "description": "+1 max pop, faster growth",
         "effects": {"max_pop": 1, "growth_rate": 0.2},
         "required_tech": "soil_enrichment",
     },
     "cloning_center": {
-        "id": "cloning_center",
-        "name": "Cloning Center",
-        "cost": 250,
-        "description": "+1 max pop, much faster growth",
+        "id": "cloning_center", "name": "Cloning Center", "category": "farming",
+        "cost": 250, "description": "+1 max pop, much faster growth",
         "effects": {"max_pop": 1, "growth_rate": 0.3},
         "required_tech": "cloning",
     },
-    # ---- Tier 4 expansions (added with the physics field overhaul) ----
+    # ---- Tier 4 expansions ----
     "deep_core_mine": {
-        "id": "deep_core_mine",
-        "name": "Deep Core Mine",
-        "cost": 300,
-        "description": "+8 BC per turn",
+        "id": "deep_core_mine", "name": "Deep Core Mine", "category": "economy",
+        "cost": 300, "description": "+8 BC per turn",
         "effects": {"bc": 8},
         "required_tech": "robo_miners",
     },
     "vr_network": {
-        "id": "vr_network",
-        "name": "VR Network",
-        "cost": 280,
-        "description": "+4 Research, faster growth",
+        "id": "vr_network", "name": "VR Network", "category": "science",
+        "cost": 280, "description": "+4 Research, faster growth",
         "effects": {"research": 4, "growth_rate": 0.15},
         "required_tech": "virtual_reality_network",
     },
     "positronic_brain": {
-        "id": "positronic_brain",
-        "name": "Positronic Brain",
-        "cost": 400,
-        "description": "+15 Research per turn",
+        "id": "positronic_brain", "name": "Positronic Brain", "category": "science",
+        "cost": 400, "description": "+15 Research per turn",
         "effects": {"research": 15},
         "required_tech": "positronic_computers",
     },
     "terraforming": {
-        "id": "terraforming",
-        "name": "Terraforming",
-        "cost": 350,
-        "description": "+3 max pop",
+        "id": "terraforming", "name": "Terraforming", "category": "farming",
+        "cost": 350, "description": "+3 max pop",
         "effects": {"max_pop": 3},
         "required_tech": "terraforming",
     },
 }
 
+
+# Display ordering of categories in the Build screen, plus a label
+# and accent colour for each. Ships go in "military" — assigned below
+# when we sythesise their projects from the SHIPS catalog.
+CATEGORIES = [
+    ("economy",  "Economy",  (240, 200, 100)),
+    ("farming",  "Farming",  (140, 220, 140)),
+    ("science",  "Science",  (140, 180, 240)),
+    ("military", "Military", (240, 130, 130)),
+]
+CATEGORY_LABEL = {key: label for key, label, _ in CATEGORIES}
+CATEGORY_COLOR = {key: color for key, _, color in CATEGORIES}
+
 # Inject ship projects from the SHIPS catalog so SystemView gets them
-# automatically. Each maps to a build project of type "ship".
+# automatically. Each maps to a build project of type "ship", filed
+# under the Military category in the Build screen.
 for _ship_id in SHIP_ORDER:
     _spec = SHIPS[_ship_id]
     PROJECTS[f"ship_{_ship_id}"] = {
         "id": f"ship_{_ship_id}",
         "name": _spec["name"],
+        "category": "military",
         "cost": _spec["cost"],
         "description": f"Hull {_spec['hull']}  Attack {_spec['attack']}  Speed {_spec['speed']}",
         "type": "ship",
         "ship_class": _ship_id,
     }
+
+
+def projects_in_category(category: str, unlocked_techs=None) -> list[dict]:
+    """Return projects tagged with ``category``, alphabetical by name.
+
+    If ``unlocked_techs`` is given, the result includes locked items
+    too — callers (BuildScene) display them dimmed so the player can
+    see what's coming.
+    """
+    out = [p for p in PROJECTS.values() if p.get("category") == category]
+    out.sort(key=lambda p: p["name"].lower())
+    return out
 
 
 # Display order in pickers. Two rows of buildings now that the tech

@@ -13,16 +13,14 @@ import pygame
 
 from ecs.scene import Scene
 from ecs.components import (
-    Planet, Orbiting, Position, Population, BuildState, Owner, Empire, TechState,
+    Planet, Orbiting, Position, Population, BuildState, Owner, Empire,
     Name, StarVisual,
 )
 from ecs.palette import planet_color, empire_color
-from ecs.projects import PROJECTS, BUILDING_ORDER, SHIP_PROJECT_ORDER, project_is_available
-from ecs.techs import TECHS
+from ecs.projects import PROJECTS
 from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
 from ecs.db import (
-    get_connection, update_planet_build, update_planet_workers,
-    save_planet_build_queue,
+    get_connection, update_planet_workers,
 )
 
 
@@ -35,8 +33,6 @@ SELECTED_RING = (255, 230, 120)
 
 
 class ColonyScene(Scene):
-    PROJECT_BTN_SIZE = (170, 56)
-    PROJECT_BTN_GAP = 12
     WORKER_BTN_SIZE = (32, 32)
     WORKER_ROLES = [("farmers", "Farmers"), ("workers", "Workers"), ("scientists", "Scientists")]
 
@@ -49,8 +45,8 @@ class ColonyScene(Scene):
 
         # Hit rects rebuilt on layout.
         self._worker_widgets: list[tuple] = []  # (role, minus, plus)
-        self._project_button_rects: list[tuple[str, pygame.Rect]] = []
         self._close_rect = pygame.Rect(0, 0, 0, 0)
+        self._build_rect = pygame.Rect(0, 0, 0, 0)
         self._planet_entity: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -77,6 +73,9 @@ class ColonyScene(Scene):
     def _layout(self):
         sw, sh = self.game.screen_width, self.game.screen_height
         self._close_rect = pygame.Rect(sw - 100, 16, 80, 32)
+        # Build button sits to the left of Close so the player can jump
+        # to the categorised build screen.
+        self._build_rect = pygame.Rect(sw - 100 - 110, 16, 100, 32)
 
         # Worker pickers across the upper third.
         self._worker_widgets.clear()
@@ -91,24 +90,6 @@ class ColonyScene(Scene):
             minus_rect = pygame.Rect(cluster_x + 40, y, btn_w, btn_h)
             plus_rect = pygame.Rect(cluster_x + cluster_w - 40 - btn_w, y, btn_w, btn_h)
             self._worker_widgets.append((role, minus_rect, plus_rect))
-
-        # Project picker — ships on top row, buildings beneath, at bottom.
-        self._project_button_rects.clear()
-        pb_w, pb_h = self.PROJECT_BTN_SIZE
-        gap = self.PROJECT_BTN_GAP
-
-        def _row(ids, y_):
-            row_w = len(ids) * pb_w + (len(ids) - 1) * gap
-            sx = (sw - row_w) // 2
-            for k, pid in enumerate(ids):
-                self._project_button_rects.append(
-                    (pid, pygame.Rect(sx + k * (pb_w + gap), y_, pb_w, pb_h))
-                )
-
-        buildings_y = sh - pb_h - 24
-        ships_y = buildings_y - pb_h - 8
-        _row(SHIP_PROJECT_ORDER, ships_y)
-        _row(BUILDING_ORDER, buildings_y)
 
     # ------------------------------------------------------------------ helpers
 
@@ -140,15 +121,6 @@ class ColonyScene(Scene):
     def _player_owns_this(self, owner) -> bool:
         return owner is not None and owner.empire_id == self._player_empire_id()
 
-    def _player_unlocked_techs(self) -> set[str]:
-        player_id = self._player_empire_id()
-        if player_id is None:
-            return set()
-        for _eid, tech in self.game.component_mgr.get_all(TechState):
-            if tech.empire_id == player_id:
-                return set(tech.unlocked)
-        return set()
-
     # ------------------------------------------------------------------ input
 
     def handle_event(self, event):
@@ -161,6 +133,10 @@ class ColonyScene(Scene):
         if self._close_rect.collidepoint(event.pos):
             self._return_to_galaxy()
             return
+        if self._build_rect.collidepoint(event.pos):
+            # Open the categorised build screen for this planet.
+            self.game.scenes.replace("build")
+            return
 
         # Worker +/- buttons
         for role, minus_rect, plus_rect in self._worker_widgets:
@@ -169,12 +145,6 @@ class ColonyScene(Scene):
                 return
             if plus_rect.collidepoint(event.pos):
                 self._try_shift_worker(role, +1)
-                return
-
-        # Project buttons
-        for project_id, rect in self._project_button_rects:
-            if rect.collidepoint(event.pos):
-                self._try_set_project(project_id)
                 return
 
     def _try_shift_worker(self, role: str, delta: int):
@@ -203,44 +173,7 @@ class ColonyScene(Scene):
                 update_planet_workers(conn, planet.id, pop.farmers, pop.workers, pop.scientists)
                 conn.commit()
 
-    def _try_set_project(self, project_id: str):
-        planet, _pop, build_state, owner = self._planet_components()
-        if planet is None or build_state is None or not self._player_owns_this(owner):
-            return
-        if project_id in build_state.completed:
-            return
-        if not project_is_available(project_id, self._player_unlocked_techs()):
-            return
-
-        is_ship = PROJECTS.get(project_id, {}).get("type") == "ship"
-        if not is_ship and build_state.current_project == project_id:
-            return
-
-        queue_changed = False
-        current_changed = False
-        if is_ship:
-            if build_state.current_project is None:
-                build_state.current_project = project_id
-                current_changed = True
-            else:
-                build_state.queue.append(project_id)
-                queue_changed = True
-        elif project_id in build_state.queue:
-            build_state.queue.remove(project_id)
-            queue_changed = True
-        elif build_state.current_project is None:
-            build_state.current_project = project_id
-            current_changed = True
-        else:
-            build_state.queue.append(project_id)
-            queue_changed = True
-
-        with get_connection() as conn:
-            if current_changed:
-                update_planet_build(conn, planet.id, build_state.current_project, build_state.progress)
-            if queue_changed:
-                save_planet_build_queue(conn, planet.id, list(build_state.queue))
-            conn.commit()
+    # Project selection moved to BuildScene (reached via Build button).
 
     # ------------------------------------------------------------------ draw
 
@@ -260,7 +193,7 @@ class ColonyScene(Scene):
         self._draw_pop_block(screen, pop, owner)
         self._draw_worker_widgets(screen, pop, owner)
         self._draw_build_summary(screen, build_state)
-        self._draw_project_picker(screen, planet, pop, build_state, owner)
+        self._draw_build_button(screen, owner)
         self._draw_close_button(screen)
 
     def _draw_close_button(self, screen):
@@ -268,6 +201,17 @@ class ColonyScene(Scene):
         pygame.draw.rect(screen, (240, 240, 240), self._close_rect, 1)
         label = self.body_font.render("Close", True, (240, 240, 240))
         screen.blit(label, label.get_rect(center=self._close_rect.center))
+
+    def _draw_build_button(self, screen, owner):
+        # Disabled if the player doesn't own this colony.
+        owns = self._player_owns_this(owner)
+        bg = (60, 100, 60) if owns else (40, 44, 56)
+        border = (180, 220, 180) if owns else (90, 90, 110)
+        fg = TEXT_COLOR if owns else (130, 130, 150)
+        pygame.draw.rect(screen, bg, self._build_rect)
+        pygame.draw.rect(screen, border, self._build_rect, 1)
+        label = self.body_font.render("Build", True, fg)
+        screen.blit(label, label.get_rect(center=self._build_rect.center))
 
     def _draw_header(self, screen, planet, owner):
         cm = self.game.component_mgr
@@ -371,47 +315,3 @@ class ColonyScene(Scene):
             queue_str = "Queue: " + " > ".join(queue_names)
             screen.blit(self.body_font.render(queue_str, True, (120, 180, 255)), (x, y + 44))
 
-    def _draw_project_picker(self, screen, planet, pop, build_state, owner):
-        editable = self._player_owns_this(owner) and build_state is not None
-        unlocked = self._player_unlocked_techs() if editable else set()
-
-        for project_id, rect in self._project_button_rects:
-            proj = PROJECTS[project_id]
-            already_built = build_state is not None and project_id in build_state.completed
-            currently_building = build_state is not None and build_state.current_project == project_id
-            queued = build_state is not None and project_id in build_state.queue
-            tech_locked = not project_is_available(project_id, unlocked)
-            available = editable and not already_built and not tech_locked
-
-            bg = (60, 64, 96) if available else (40, 44, 60)
-            if currently_building:
-                border = SELECTED_RING
-            elif queued:
-                border = (120, 180, 255)
-            elif available:
-                border = (180, 180, 220)
-            else:
-                border = (90, 90, 110)
-            pygame.draw.rect(screen, bg, rect)
-            pygame.draw.rect(screen, border, rect, 2 if (currently_building or queued) else 1)
-
-            name_color = TEXT_COLOR if available else (130, 130, 150)
-            name = self.body_font.render(proj["name"], True, name_color)
-            screen.blit(name, (rect.x + 10, rect.y + 6))
-
-            if already_built:
-                cost_text = "BUILT"
-            elif currently_building:
-                cost_text = "BUILDING"
-            elif queued:
-                cost_text = "QUEUED"
-            elif tech_locked:
-                required = proj.get("required_tech")
-                cost_text = f"Locked: {TECHS.get(required, {}).get('name', required or '?')}"
-            else:
-                cost_text = f"Cost {proj['cost']}"
-            cost = self.body_font.render(cost_text, True, (180, 220, 255) if available else (130, 130, 150))
-            screen.blit(cost, (rect.x + 10, rect.y + 24))
-
-            desc = self.body_font.render(proj.get("description", ""), True, HINT_COLOR if not available else (200, 200, 220))
-            screen.blit(desc, (rect.x + 10, rect.y + 40))
