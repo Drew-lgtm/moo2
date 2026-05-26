@@ -13,10 +13,26 @@ import pygame
 
 from ecs.components import (
     Planet, Orbiting, Position, Population, BuildState, Owner, Empire,
-    Ship, ShipOwner, ShipAt,
+    Ship, ShipOwner, ShipAt, StarVisual,
 )
 from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS
+
+
+# Per spectral-class colours for the central star. Each entry is
+# (outer_halo, inner_halo, core_disc). Loosely matches the colours of
+# our star sprites on the galaxy map so the system view is consistent
+# with what the player just clicked.
+STAR_CLASS_COLORS: dict[str, tuple[tuple[int, int, int], ...]] = {
+    "O": ((60, 100, 30),   (140, 220, 80),  (180, 255, 130)),  # green
+    "B": ((40, 80, 180),   (130, 170, 230), (200, 220, 255)),  # blue-white
+    "A": ((130, 140, 160), (210, 220, 240), (240, 245, 255)),  # white
+    "F": ((160, 140, 80),  (240, 230, 160), (255, 250, 220)),  # pale yellow
+    "G": ((180, 130, 50),  (255, 200, 90),  (255, 230, 120)),  # warm yellow
+    "K": ((180, 90, 30),   (255, 160, 70),  (255, 200, 100)),  # orange
+    "M": ((160, 40, 20),   (220, 80, 50),   (255, 120, 80)),   # red
+}
+STAR_CLASS_COLORS_DEFAULT = STAR_CLASS_COLORS["G"]
 
 
 SIZE_RADIUS = {
@@ -97,6 +113,13 @@ class SystemView:
 
         self.close_button_rect = pygame.Rect(self.logical_w - 100, 20, 80, 30)
         self.star_pos = component_mgr.get_component(star_id, Position)
+        # Star colour comes from its spectral class so the system view
+        # matches the coloured sprite the player just clicked. Falls
+        # back to the warm-yellow G-class default if the class is
+        # missing or unrecognised.
+        visual = component_mgr.get_component(star_id, StarVisual)
+        cls = (visual.star_class if visual else None) or "G"
+        self.star_colors = STAR_CLASS_COLORS.get(cls, STAR_CLASS_COLORS_DEFAULT)
 
         # Star centred. Each planet on an elliptical orbit, with the
         # vertical squashed to mimic MOO2's perspective view of a tilted
@@ -162,9 +185,11 @@ class SystemView:
         # Star: layered discs build a soft halo that survives SCALED's
         # non-integer downscaling. Thin (1-2 px) strokes were vanishing
         # on laptop displays — every ring here is at least 3 px wide.
-        pygame.draw.circle(overlay, (180, 130, 50), center, STAR_RADIUS + 10, 3)
-        pygame.draw.circle(overlay, (255, 200, 90), center, STAR_RADIUS + 4, 3)
-        pygame.draw.circle(overlay, (255, 230, 120), center, STAR_RADIUS)
+        # Colours come from the star's spectral class (set in __init__).
+        outer, inner, core = self.star_colors
+        pygame.draw.circle(overlay, outer, center, STAR_RADIUS + 10, 3)
+        pygame.draw.circle(overlay, inner, center, STAR_RADIUS + 4, 3)
+        pygame.draw.circle(overlay, core, center, STAR_RADIUS)
 
         for entity_id, planet, pos, radius, _rx, _ry in self.planet_layout:
             # Planet body + a black ring just inside the white halo gives
