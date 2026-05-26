@@ -37,6 +37,14 @@ ORBIT_STEP_X = 90        # extra horizontal radius per outer orbit
 ORBIT_SQUASH = 0.45      # vertical radius = horizontal * this
 GOLDEN_ANGLE_DEG = 137.508  # rotation increment between planets
 
+# Per-orbit rotation per turn, in degrees. Inner orbits sweep faster
+# than outer (Kepler-flavoured, not physically accurate). Tuned so the
+# innermost planet drifts noticeably each turn but no planet completes
+# a full revolution in fewer than ~20 turns.
+def _orbit_speed_deg(orbit_index: int) -> float:
+    """Inner orbits move faster. Index 0..4 → ~14..6 deg/turn."""
+    return 30.0 / (orbit_index + 2.2)
+
 
 class SystemView:
     """Orbital map for one star.
@@ -48,12 +56,15 @@ class SystemView:
       that planet selected, then clears it.
     """
 
-    def __init__(self, screen, component_mgr, star_id, logical_size=None):
+    def __init__(self, screen, component_mgr, star_id, logical_size=None, turn=1):
         self.screen = screen
         self.component_mgr = component_mgr
         self.star_id = star_id
         self.is_open = True
         self.pending_planet_click: int | None = None
+        # Current turn drives orbital rotation. Stored so the planets
+        # are deterministically placed even if the layout is rebuilt.
+        self.turn = max(1, int(turn))
 
         if logical_size is None:
             logical_size = (screen.get_width(), screen.get_height())
@@ -82,7 +93,11 @@ class SystemView:
             # Golden-angle spread keeps successive planets from stacking
             # on the same side of the star. Offset by a deterministic
             # constant so the first planet doesn't always sit due-east.
-            angle_deg = (i * GOLDEN_ANGLE_DEG + 50.0) % 360.0
+            # Then add per-turn drift — inner orbits rotate faster (see
+            # _orbit_speed_deg) so the system feels alive between turns.
+            base_angle = (i * GOLDEN_ANGLE_DEG + 50.0)
+            drift = (self.turn - 1) * _orbit_speed_deg(i)
+            angle_deg = (base_angle + drift) % 360.0
             theta = math.radians(angle_deg)
             pos = (
                 int(center[0] + rx * math.cos(theta)),
