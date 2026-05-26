@@ -24,13 +24,17 @@ SIZE_RADIUS = {
     "Large":  38,
     "Huge":   50,
 }
-STAR_RADIUS = 36         # central star disc — was 12
+STAR_RADIUS = 36         # central star disc
 ORBIT_BASE = 110         # innermost orbit radius
-# Distance between adjacent orbits. Worst-case pair = two Huge planets
-# (r=50 each, so 100 px of combined planet) — at STEP=115 they sit 15 px
-# apart, plus another 6 px taken by their white rings → a 9 px visible
-# gap, enough that Large/Medium pairs no longer kiss.
-ORBIT_STEP = 115
+# Distance between adjacent orbits. Worst case is two Huge planets
+# (r=50 each, 100 px combined). At STEP=140 they sit 40 px apart with
+# plenty of breathing room between their white rings.
+ORBIT_STEP = 140
+
+# Star sits well to the left, MOO2-style, instead of centred. This
+# frees the full screen width for the orbit chain so a 5-planet system
+# with a Huge outer planet still fits comfortably.
+STAR_X_FRACTION = 0.18
 
 
 class SystemView:
@@ -58,7 +62,7 @@ class SystemView:
         self.star_pos = component_mgr.get_component(star_id, Position)
 
         # (entity_id, planet, center_pos, hit_radius) — fixed at construction.
-        center = (self.logical_w // 2, self.logical_h // 2)
+        center = (int(self.logical_w * STAR_X_FRACTION), self.logical_h // 2)
         self.planet_layout: list[tuple[int, Planet, tuple[int, int], int]] = []
         i = 0
         for entity_id, orbit in component_mgr.get_all(Orbiting):
@@ -97,8 +101,8 @@ class SystemView:
         overlay = pygame.Surface((self.logical_w, self.logical_h), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
 
-        center = (self.logical_w // 2, self.logical_h // 2)
-        # Star at center: layered discs build a soft halo that survives
+        center = (int(self.logical_w * STAR_X_FRACTION), self.logical_h // 2)
+        # Star to the left: layered discs build a soft halo that survives
         # SCALED's non-integer downscaling. Thin (1-2 px) strokes were
         # vanishing in places on laptop displays — every ring here is at
         # least 3 px wide so the outline reads cleanly.
