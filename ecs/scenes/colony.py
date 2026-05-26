@@ -20,6 +20,7 @@ from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS
 from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
 from ecs.colonization import can_colonize, colonize_planet
+from ecs.invasion import can_invade, invade_planet
 from ecs.db import (
     get_connection, update_planet_workers,
 )
@@ -49,6 +50,10 @@ class ColonyScene(Scene):
         self._close_rect = pygame.Rect(0, 0, 0, 0)
         self._build_rect = pygame.Rect(0, 0, 0, 0)
         self._colonize_rect = pygame.Rect(0, 0, 0, 0)
+        self._invade_rect = pygame.Rect(0, 0, 0, 0)
+        # Last invasion result for this entry into the scene — used so
+        # the player sees what happened after pressing Invade.
+        self._invasion_log: dict | None = None
         self._planet_entity: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -59,10 +64,12 @@ class ColonyScene(Scene):
         if self._planet_entity is None:
             self._return_to_system()
             return
+        self._invasion_log = None
         self._layout()
 
     def on_exit(self):
         self._planet_entity = None
+        self._invasion_log = None
 
     def _return_to_system(self):
         self.game.scenes.replace("system")
@@ -81,6 +88,9 @@ class ColonyScene(Scene):
         # Colonize button overlays the Build slot when the planet is
         # uncolonized; only one of the two will be visible at a time.
         self._colonize_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
+        # Invade button — shown on enemy planets when the player has
+        # Troop Transports parked at the star. Same slot as Colonize.
+        self._invade_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
 
         # Worker pickers across the upper third.
         self._worker_widgets.clear()
@@ -136,6 +146,16 @@ class ColonyScene(Scene):
             return False
         return can_colonize(self.game.component_mgr, self._planet_entity, empire_id)
 
+    def _can_invade_here(self) -> bool:
+        """True when the planet is enemy-owned and the player has at
+        least one Troop Transport parked at its star."""
+        if self._planet_entity is None:
+            return False
+        empire_id = self._player_empire_id()
+        if empire_id is None:
+            return False
+        return can_invade(self.game.component_mgr, self._planet_entity, empire_id)
+
     # ------------------------------------------------------------------ input
 
     def handle_event(self, event):
@@ -149,20 +169,29 @@ class ColonyScene(Scene):
             self._return_to_galaxy()
             return
         # Owned planets get a Build button; unowned habitable ones get
-        # a Colonize button instead (when the player has a colony ship
-        # parked at this star).
+        # Colonize; enemy-owned ones get Invade when the player has a
+        # Troop Transport parked at the star.
         planet, _build_state, owner = self._planet_components()
+        player_id = self._player_empire_id()
         if owner is None and self._can_colonize_here():
             if self._colonize_rect.collidepoint(event.pos):
-                empire_id = self._player_empire_id()
-                if empire_id is not None and self._planet_entity is not None:
-                    colonize_planet(self.game, self._planet_entity, empire_id)
+                if player_id is not None and self._planet_entity is not None:
+                    colonize_planet(self.game, self._planet_entity, player_id)
                     self._return_to_system()
                 return
-        elif self._build_rect.collidepoint(event.pos):
-            # Open the categorised build screen for this planet.
-            self.game.scenes.replace("build")
-            return
+        elif (owner is not None and player_id is not None
+              and owner.empire_id != player_id and self._can_invade_here()):
+            if self._invade_rect.collidepoint(event.pos):
+                if self._planet_entity is not None:
+                    self._invasion_log = invade_planet(
+                        self.game, self._planet_entity, player_id,
+                    )
+                return
+        elif owner is not None and player_id is not None and owner.empire_id == player_id:
+            if self._build_rect.collidepoint(event.pos):
+                # Open the categorised build screen for this planet.
+                self.game.scenes.replace("build")
+                return
 
         # Worker +/- buttons
         for role, minus_rect, plus_rect in self._worker_widgets:
@@ -219,11 +248,15 @@ class ColonyScene(Scene):
         self._draw_pop_block(screen, pop, owner)
         self._draw_worker_widgets(screen, pop, owner)
         self._draw_build_summary(screen, build_state)
+        player_id = self._player_empire_id()
         if owner is None:
             self._draw_colonize_button(screen, planet)
+        elif player_id is not None and owner.empire_id != player_id:
+            self._draw_invade_button(screen, planet)
         else:
             self._draw_build_button(screen, owner)
         self._draw_close_button(screen)
+        self._draw_invasion_log(screen)
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
@@ -241,6 +274,56 @@ class ColonyScene(Scene):
         pygame.draw.rect(screen, border, self._build_rect, 1)
         label = self.body_font.render("Build", True, fg)
         screen.blit(label, label.get_rect(center=self._build_rect.center))
+
+    def _draw_invade_button(self, screen, planet):
+        """Visible on enemy-owned planets when the player has Troop
+        Transports parked at this star. Red treatment to telegraph that
+        the action starts a fight."""
+        able = self._can_invade_here()
+        if able:
+            bg, border, fg = (110, 30, 30), (240, 140, 140), TEXT_COLOR
+        else:
+            bg, border, fg = (40, 44, 56), (120, 100, 100), (160, 130, 130)
+        pygame.draw.rect(screen, bg, self._invade_rect)
+        pygame.draw.rect(screen, border, self._invade_rect, 1)
+        label = self.body_font.render("Invade", True, fg)
+        screen.blit(label, label.get_rect(center=self._invade_rect.center))
+        if not able:
+            hint_surf = self.body_font.render(
+                "Need Troop Transport here", True, HINT_COLOR,
+            )
+            screen.blit(hint_surf, hint_surf.get_rect(midtop=(
+                self._invade_rect.centerx, self._invade_rect.bottom + 4,
+            )))
+
+    def _draw_invasion_log(self, screen):
+        """One-line summary of the last invasion result on this scene
+        entry — sits just under the descriptor chip row so the player
+        can see what happened. Cleared when the scene is exited."""
+        if self._invasion_log is None:
+            return
+        log = self._invasion_log
+        if log.get("success"):
+            text = (
+                f"Invasion succeeded — atk {log['attacker_strength']} "
+                f"vs def {log['defender_strength']}.  "
+                f"Lost {log['transports_lost']} transports, "
+                f"pop reduced by {log['pop_lost']}M."
+            )
+            color = (160, 220, 160)
+        elif log.get("reason"):
+            text = "Invasion failed: " + log["reason"].replace("_", " ")
+            color = (220, 160, 160)
+        else:
+            text = (
+                f"Invasion repelled — atk {log['attacker_strength']} "
+                f"vs def {log['defender_strength']}.  "
+                f"Lost {log['transports_lost']} transports; "
+                f"defenders took {log['pop_lost']}M casualties."
+            )
+            color = (220, 160, 160)
+        surf = self.body_font.render(text, True, color)
+        screen.blit(surf, (24, 144))
 
     def _draw_colonize_button(self, screen, planet):
         """Visible on uncolonized planets. Active when the player has a
