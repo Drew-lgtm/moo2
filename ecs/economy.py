@@ -35,6 +35,7 @@ from ecs.races import trait_count, traits_for_empire
 from ecs.planet_features import (
     RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT, feature_bonuses,
 )
+from ecs.ships import empire_freighter_capacity
 
 
 # ---- planet capacity (max population) ---------------------------------
@@ -299,6 +300,7 @@ def empire_per_turn(component_mgr, empire_id: int) -> dict[str, int]:
         "research": research_total,
         "industry": industry_total,
         "food_balance": food_produced - food_needed,
+        "freighter_capacity": empire_freighter_capacity(component_mgr, empire_id),
     }
 
 
@@ -323,7 +325,11 @@ def pop_growth_tick(game, new_turn: int):
 
     for empire_id, entity_ids in empire_planets.items():
         traits = traits_for_empire(cm, empire_id)
+        # Compute food production / need per planet so we can decide
+        # whether freighters can move surplus to shortage colonies.
+        per_planet: list[tuple[int, int, int]] = []  # (eid, produced, needed)
         food_produced = pop_total = 0
+        per_pop_need = 0.5 if "tolerant" in traits else 1.0
         for eid in entity_ids:
             planet = cm.get_component(eid, Planet)
             pop = cm.get_component(eid, Population)
@@ -331,17 +337,41 @@ def pop_growth_tick(game, new_turn: int):
             if planet is None or pop is None:
                 continue
             f, _i, _r, _b = planet_output(planet, pop, build_state, traits)
+            need = int(pop.current * per_pop_need + 0.999)  # ceil
+            per_planet.append((eid, f, need))
             food_produced += f
             pop_total += pop.current
 
         food_needed = pop_total // 2 if "tolerant" in traits else pop_total
         food_balance = food_produced - food_needed
 
-        if food_balance < 0:
-            # Pick the planet with the most pop to absorb starvation.
+        # Freighter logistics: even if the empire-wide balance is fine,
+        # food can only physically move up to ``capacity`` units per
+        # turn. The portion of the per-planet deficit that exceeds
+        # capacity is "unmoved" — those colonies starve.
+        per_planet_deficit = sum(max(0, n - f) for _, f, n in per_planet)
+        capacity = empire_freighter_capacity(cm, empire_id)
+        unmoved_deficit = max(0, per_planet_deficit - capacity)
+        # Real shortage and unmoved deficit both starve. We pick the
+        # bigger of the two — they describe different ways a planet can
+        # go hungry but never compound (if there's no food at all, the
+        # transport question is moot).
+        starvation = max(max(0, -food_balance), unmoved_deficit)
+
+        if starvation > 0:
+            # Pick the planet with the worst local food deficit (or the
+            # most pop if everyone is balanced) to absorb starvation.
+            def _deficit(eid):
+                p = next(((f, n) for e, f, n in per_planet if e == eid), None)
+                if p is None:
+                    return 0
+                return p[1] - p[0]  # need - prod, positive means short
             victim_eid = max(
                 entity_ids,
-                key=lambda e: getattr(cm.get_component(e, Population), "current", 0),
+                key=lambda e: (
+                    _deficit(e),
+                    getattr(cm.get_component(e, Population), "current", 0),
+                ),
             )
             victim_pop = cm.get_component(victim_eid, Population)
             if victim_pop is not None and victim_pop.current > 0:

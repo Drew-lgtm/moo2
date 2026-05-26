@@ -107,3 +107,30 @@ MILITARY_SHIPS = [s for s, spec in SHIPS.items() if spec.get("ship_class_kind") 
 
 def ship(ship_class: str) -> dict | None:
     return SHIPS.get(ship_class)
+
+
+# ---- Freighter (logistics) capacity ----------------------------------
+#
+# How much food the empire can physically move between colonies per
+# turn. A small baseline represents private shuttles + civilian
+# bureaucracy so a one-planet empire never needs a Freighter. Every
+# Freighter ship the empire owns adds the per-ship capacity. Used by
+# ``pop_growth_tick`` to gate inter-colony food transport.
+BASELINE_FREIGHTER_CAPACITY = 5
+FREIGHTER_FOOD_CAPACITY = 5
+
+
+def empire_freighter_capacity(component_mgr, empire_id: int) -> int:
+    """Total food units the empire can ship between colonies each turn.
+
+    Lazy-imported components so this module stays light (ships.py is
+    imported very early during scene setup)."""
+    from ecs.components import Ship, ShipOwner
+    count = 0
+    for ship_entity, owner in component_mgr.get_all(ShipOwner):
+        if owner.empire_id != empire_id:
+            continue
+        s = component_mgr.get_component(ship_entity, Ship)
+        if s is not None and s.ship_class == "freighter":
+            count += 1
+    return BASELINE_FREIGHTER_CAPACITY + count * FREIGHTER_FOOD_CAPACITY
