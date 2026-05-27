@@ -32,6 +32,10 @@ from ecs.invasion import (
     MARINES_PER_TRANSPORT, MILITIA_PER_MILLION_POP, _planet_defense_rating,
 )
 from ecs.races import traits_for_empire
+from ecs.diplomacy import (
+    NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE,
+    would_accept_treaty, empire_strength, TREATY_ACCEPT_THRESHOLD,
+)
 from ecs.db import (
     get_connection,
     update_planet_workers,
@@ -205,6 +209,10 @@ def ai_tick(game, new_turn: int):
         # them to the highest-value reachable star (score minus
         # distance penalty).
         _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus)
+
+        # Diplomacy: gang up on runaways, sign treaties with friends,
+        # declare war on hated rivals.
+        _ai_diplomacy(game, empire, personality, new_turn)
 
         if personality.get("aggressive"):
             # Send idle Troop Transports toward enemy planets, then
@@ -652,6 +660,74 @@ def _ai_dispatch_troop_transports(cm, empire):
                 best_dist, best = d2, star
         if best is not None:
             start_fleet_movement(cm, ships, src_star, best)
+
+
+def _ai_diplomacy(game, empire, personality, turn: int):
+    """Per-empire diplomacy: fear runaways, befriend the friendly, and
+    (if aggressive) declare war on weaker rivals it dislikes.
+
+    AI↔AI treaties auto-sign when both sides clear the attitude bar.
+    Treaties *with the player* are left for the player to propose; the
+    AI only declares/wages war on the player autonomously."""
+    import random as _random
+    cm = game.component_mgr
+    diplo = getattr(game, "diplomacy", None)
+    if diplo is None:
+        return
+    all_ids = [e.id for _e, e in cm.get_all(Empire)]
+    others = [e for e in all_ids if e != empire.id]
+    if not others:
+        return
+
+    my_strength = empire_strength(cm, empire.id)
+    player_id = next((e.id for _e, e in cm.get_all(Empire) if e.is_player), None)
+    aggressive = bool(personality.get("aggressive"))
+
+    for o in others:
+        o_strength = empire_strength(cm, o)
+        att = diplo.attitude(empire.id, o)
+
+        # Fear the runaway: a much stronger empire steadily loses our
+        # goodwill (this is the gang-up pressure).
+        if o_strength > my_strength * 1.8 and o_strength > 25:
+            diplo.adjust_attitude(empire.id, o, -2)
+
+        if diplo.at_war(empire.id, o):
+            # Sue for peace if no longer rock-bottom hostile, or if we're
+            # clearly the weaker side and bleeding.
+            losing = my_strength < o_strength * 0.6
+            if (att > -50 or losing) and _random.random() < 0.25:
+                diplo.make_peace(empire.id, o, turn)
+            continue
+
+        is_player = (o == player_id)
+
+        # Cooperative treaties — AI↔AI only (player proposes their own).
+        if not is_player:
+            for treaty in (NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE):
+                if diplo.has_treaty(empire.id, o, treaty):
+                    continue
+                # Both sides must want it.
+                if (would_accept_treaty(diplo, empire.id, o, treaty)
+                        and would_accept_treaty(diplo, o, empire.id, treaty)
+                        and _random.random() < 0.4):
+                    diplo.add_treaty(empire.id, o, treaty)
+                    diplo.log.append(
+                        f"T{turn}: Empire {empire.id} and {o} signed a "
+                        f"{treaty.replace('_', ' ')}."
+                    )
+                    break  # one treaty per pair per turn
+
+        # Aggression: declare war on a disliked, not-stronger rival when
+        # not bound by a peace treaty. Breaking a NAP is possible but the
+        # betrayal penalty (declare_war) makes the AI pay for it, so we
+        # only do it when *really* hostile.
+        if aggressive:
+            bound = diplo.has_peace_treaty(empire.id, o)
+            hostile_enough = att <= (-60 if bound else -30)
+            strong_enough = my_strength >= o_strength * 0.8
+            if hostile_enough and strong_enough and _random.random() < 0.3:
+                diplo.declare_war(empire.id, o, turn, all_ids)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):

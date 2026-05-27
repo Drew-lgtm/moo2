@@ -214,7 +214,11 @@ class Diplomacy:
         p = self._pair(a, b)
         if p["at_war"]:
             p["at_war"] = False
-            self.adjust_attitude(a, b, 15)
+            # Reset attitude toward neutral so the war doesn't instantly
+            # re-trigger — "we've settled our differences." Floors at -10
+            # so a freshly-ended war doesn't immediately clear the
+            # declare-war threshold (-30) next turn.
+            self.set_attitude(a, b, max(self.attitude(a, b), -10))
             self.log.append(f"T{turn}: Empire {a} and {b} signed a peace treaty.")
 
     def note_invasion(self, aggressor: int, target: int, turn: int,
@@ -289,9 +293,55 @@ class Diplomacy:
                 self.pending_cancel[(row["empire_a"], row["empire_b"], row["treaty"])] = row["ends_turn"]
 
 
+# Minimum attitude an AI requires before it will accept each treaty
+# when another empire proposes one. Alliance is the highest bar.
+TREATY_ACCEPT_THRESHOLD = {
+    NON_AGGRESSION: -20,
+    OPEN_BORDERS:   0,
+    TRADE:          5,
+    RESEARCH:       15,
+    DEFENSIVE_PACT: 30,
+    ALLIANCE:       45,
+}
+
+
+def would_accept_treaty(diplomacy: "Diplomacy", target: int, proposer: int, treaty: str) -> bool:
+    """Whether ``target`` (an AI) accepts ``treaty`` proposed by
+    ``proposer``. At war you must make peace first; otherwise it's a
+    pure attitude check against TREATY_ACCEPT_THRESHOLD."""
+    if diplomacy.at_war(target, proposer):
+        return False
+    if diplomacy.has_treaty(target, proposer, treaty):
+        return False
+    threshold = TREATY_ACCEPT_THRESHOLD.get(treaty, 0)
+    return diplomacy.attitude(target, proposer) >= threshold
+
+
+def would_accept_peace(diplomacy: "Diplomacy", target: int, proposer: int) -> bool:
+    """An AI accepts peace if it isn't winning badly — modelled simply
+    as attitude not being rock-bottom hostile."""
+    return diplomacy.attitude(target, proposer) > -70
+
+
 def all_empire_ids(component_mgr) -> list[int]:
     from ecs.components import Empire
     return [emp.id for _eid, emp in component_mgr.get_all(Empire)]
+
+
+def empire_strength(component_mgr, empire_id: int) -> int:
+    """Crude power rating = owned planets + total pop. Used for gang-up
+    logic and tribute decisions."""
+    from ecs.components import Owner, Population
+    planets = 0
+    pop = 0
+    for eid, owner in component_mgr.get_all(Owner):
+        if owner.empire_id != empire_id:
+            continue
+        planets += 1
+        p = component_mgr.get_component(eid, Population)
+        if p is not None:
+            pop += p.current
+    return planets * 3 + pop
 
 
 def diplomacy_tick(game, new_turn: int):
