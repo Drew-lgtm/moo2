@@ -9,6 +9,7 @@ from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
 from ecs.fleet import start_fleet_movement, turns_for, empire_speed_bonus
 from ecs.fuel import in_fuel_range, supply_stars
+from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from assets.loader import load_image
 
 
@@ -375,8 +376,8 @@ class GalaxyScene(Scene):
             if player is not None:
                 in_range = in_fuel_range(self.game, player.id, hovered_star)
 
-        # Green-gold dashed line when reachable, red when out of fuel range.
-        line_color = (255, 230, 120) if in_range else (230, 90, 90)
+        # Green dashed line when reachable, red when out of fuel range.
+        line_color = (90, 220, 110) if in_range else (230, 90, 90)
         self._draw_dashed_line(screen, line_color, (src_pos.x, src_pos.y), end_xy)
 
         if hovered_star is not None and not in_range:
@@ -389,7 +390,7 @@ class GalaxyScene(Scene):
             label = self._render_outlined(
                 self._label_font or self.game.font,
                 f"{eta} turn{'s' if eta != 1 else ''}",
-                (255, 230, 120),
+                (90, 220, 110),
             )
             mid_x = (src_pos.x + end_xy[0]) // 2
             mid_y = (src_pos.y + end_xy[1]) // 2 - 10
@@ -651,11 +652,37 @@ class GalaxyScene(Scene):
             return
         pygame.draw.circle(screen, (255, 230, 120), (pos.x, pos.y), visual.size // 2 + 6, 2)
 
+    # Relation path colours.
+    PATH_OWN = (90, 220, 110)       # green — your fleets
+    PATH_NEUTRAL = (235, 205, 90)   # yellow — peace / treaty empires
+    PATH_HOSTILE = (235, 95, 95)    # red — at war
+
+    def _relation_path_color(self, owner_empire_id, player):
+        if player is not None and owner_empire_id == player.id:
+            return self.PATH_OWN
+        diplo = getattr(self.game, "diplomacy", None)
+        if player is not None and diplo is not None and diplo.at_war(player.id, owner_empire_id):
+            return self.PATH_HOSTILE
+        return self.PATH_NEUTRAL
+
     def _draw_in_transit_ships(self, screen):
-        """Render a small empire-colored dot along each transit line at
-        progress = 1 - turns_remaining / total_turns."""
+        """Draw every in-transit fleet's remaining path + position dot.
+
+        - Your own fleets are always shown (green path).
+        - Other empires' fleets show only when *detected* by your
+          sensors (red if at war, yellow otherwise) — invisible until a
+          colony or ship picks them up on radar.
+        """
         cm = self.game.component_mgr
-        empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
+        player = self.game.player_empire()
+
+        # Player's sensor coverage (skip the work if there's no player).
+        if player is not None:
+            points = sensor_points(self.game, player.id)
+            sensor_r = empire_sensor_range_px(cm, player.id)
+        else:
+            points, sensor_r = [], 0.0
+
         for ship_entity, transit in cm.get_all(ShipInTransit):
             from_pos = cm.get_component(transit.from_star_entity, Position)
             to_pos = cm.get_component(transit.to_star_entity, Position)
@@ -664,11 +691,21 @@ class GalaxyScene(Scene):
                 continue
             total = max(1, transit.total_turns)
             progress = max(0.0, min(1.0, 1.0 - transit.turns_remaining / total))
-            px = int(from_pos.x + (to_pos.x - from_pos.x) * progress)
-            py = int(from_pos.y + (to_pos.y - from_pos.y) * progress)
-            rgb = empire_color(empire_colors_by_id.get(owner.empire_id, "blue"))
-            pygame.draw.circle(screen, rgb, (px, py), 4)
-            pygame.draw.circle(screen, (255, 255, 255), (px, py), 4, 1)
+            px = from_pos.x + (to_pos.x - from_pos.x) * progress
+            py = from_pos.y + (to_pos.y - from_pos.y) * progress
+
+            is_own = player is not None and owner.empire_id == player.id
+            if not is_own:
+                # Fog of war for fleets: only render detected ones.
+                if not is_detected(px, py, points, sensor_r):
+                    continue
+
+            color = self._relation_path_color(owner.empire_id, player)
+            # Remaining path: current position → destination.
+            self._draw_dashed_line(screen, color, (int(px), int(py)), (to_pos.x, to_pos.y),
+                                   dash_len=8, gap_len=6, width=2)
+            pygame.draw.circle(screen, color, (int(px), int(py)), 5)
+            pygame.draw.circle(screen, (255, 255, 255), (int(px), int(py)), 5, 1)
 
     def _draw_fleet_badges(self, screen):
         """Render per-empire ship counts under each star.

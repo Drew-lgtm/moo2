@@ -291,8 +291,9 @@ TECHS: dict[str, dict] = {
         "tier": 3,
         "cost": 400,
         "prereqs": ["phasors"],
-        "description": "Ships gain +1 hull",
+        "description": "+1 hull, long-range fleet detection",
         "hull_bonus": 1,
+        "sensor_range": 16,
     },
     "plasma_cannons": {
         "id": "plasma_cannons",
@@ -368,6 +369,21 @@ def empire_fuel_range(unlocked: set[str] | list) -> int:
     for tech_id, spec in TECHS.items():
         if tech_id in unlocked_set:
             best = max(best, spec.get("fuel_range", 0))
+    return best
+
+
+# Sensor range (parsecs) with no scanner tech — colonies + ships detect
+# enemy fleets passing this close. Scanner techs (Tachyon Scanner) push
+# it far out so you see incoming attacks earlier.
+BASE_SENSOR_RANGE = 6
+
+
+def empire_sensor_range(unlocked: set[str] | list) -> int:
+    unlocked_set = set(unlocked)
+    best = BASE_SENSOR_RANGE
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("sensor_range", 0))
     return best
 
 
