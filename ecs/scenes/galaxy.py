@@ -45,6 +45,12 @@ class GalaxyScene(Scene):
         if self._label_font_bold is None:
             self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
 
+    def update(self, dt):
+        # Hand off to the Galactic Council screen if a session convened
+        # at the end of the last turn.
+        if getattr(self.game, "pending_council", None) is not None:
+            self.game.scenes.replace("council")
+
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()
         for entity_id, visual in self.game.component_mgr.get_all(StarVisual):

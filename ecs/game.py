@@ -20,6 +20,7 @@ from ecs.ai import ai_tick
 from ecs.fleet import fleet_tick
 from ecs.combat import combat_tick
 from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
+from ecs.council import is_council_turn, tally_votes
 from assets.loader import load_random_background
 
 
@@ -50,6 +51,9 @@ class Game:
         # Inter-empire diplomacy. Created fresh on new game, loaded on
         # load_game. None until a game is running.
         self.diplomacy: Diplomacy | None = None
+        # Set by advance_turn when the Galactic Council convenes; the
+        # GalaxyScene picks it up and switches to the council screen.
+        self.pending_council: dict | None = None
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)
@@ -174,6 +178,11 @@ class Game:
         new_turn = self.galaxy.advance_turn()
         for cb in self.turn_callbacks:
             cb(self, new_turn)
+        # Galactic Council convenes on interval turns. Stash the result;
+        # the GalaxyScene transitions to the council screen on its next
+        # update so the vote is shown after the turn resolves.
+        if is_council_turn(new_turn):
+            self.pending_council = tally_votes(self)
         return new_turn
 
     def quit(self):
