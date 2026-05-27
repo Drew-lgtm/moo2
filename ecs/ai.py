@@ -793,24 +793,34 @@ def _ai_diplomacy(game, empire, personality, turn: int):
                     break  # one treaty per pair per turn
 
         # Aggression. When hostile to a rival it isn't outmatched by:
-        #   * bound by a peace treaty → don't break it (betrayal penalty).
-        #     Instead start the treaty's 5-turn cancellation clock and
-        #     pre-position a strike so the fleet lands the turn the pact
-        #     lapses — a clean, penalty-free sneak attack.
-        #   * already unbound → declare war outright.
+        #   * not bound by a pact → declare war outright.
+        #   * bound by a pact → two options:
+        #       (a) IMPATIENT: break it now and eat the betrayal penalty
+        #           (reputation hit, others sever their treaties). Chosen
+        #           when *really* hostile or with an overwhelming force
+        #           edge — strike before the target can prepare.
+        #       (b) PATIENT: cancel the pact (5-turn notice, no penalty)
+        #           and stage a strike for the turn it lapses.
         if aggressive and att <= -30 and my_strength >= o_strength * 0.8:
-            if diplo.has_peace_treaty(empire.id, o):
-                if not diplo.peace_cancellation_pending(empire.id, o):
+            if not diplo.has_peace_treaty(empire.id, o):
+                if _random.random() < 0.3:
+                    diplo.declare_war(empire.id, o, turn, all_ids)
+            else:
+                very_hostile = att <= -60
+                overwhelming = my_strength >= o_strength * 1.5
+                if (very_hostile or overwhelming) and _random.random() < 0.35:
+                    # Impatient — break the pact now (betrayal penalty).
+                    diplo.declare_war(empire.id, o, turn, all_ids)
+                    _ai_stage_strike(game, empire, o)
+                elif not diplo.peace_cancellation_pending(empire.id, o):
+                    # Patient — let the pact expire cleanly, then strike.
                     for t in (NON_AGGRESSION, ALLIANCE, DEFENSIVE_PACT):
                         if diplo.has_treaty(empire.id, o, t):
                             diplo.cancel_treaty(empire.id, o, t, turn)
                     diplo.log.append(
                         f"T{turn}: Empire {empire.id} quietly lets its pacts "
                         f"with {o} lapse — a strike is coming.")
-                    # March the fleet now so it arrives ~when peace ends.
                     _ai_stage_strike(game, empire, o)
-            elif _random.random() < 0.3:
-                diplo.declare_war(empire.id, o, turn, all_ids)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):

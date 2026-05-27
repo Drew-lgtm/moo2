@@ -203,8 +203,12 @@ class Diplomacy:
         broke_peace = self.has_peace_treaty(aggressor, target)
         p = self._pair(aggressor, target)
         p["at_war"] = True
-        # All peace/cooperation treaties between the two are void at once.
+        # Declaring war ends every treaty between the pair *immediately*
+        # — including any that were mid-cancellation-notice.
         p["treaties"].clear()
+        key = self._key(aggressor, target)
+        for pk in [k for k in self.pending_cancel if (k[0], k[1]) == key]:
+            self.pending_cancel.pop(pk, None)
         self.adjust_attitude(aggressor, target, DECLARE_WAR_HIT)
 
         if broke_peace:
