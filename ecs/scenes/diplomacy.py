@@ -14,14 +14,16 @@ from __future__ import annotations
 import pygame
 
 from ecs.scene import Scene
-from ecs.components import Empire
+from ecs.components import Empire, TechState
 from ecs.palette import empire_color
 from ecs.diplomacy import (
     TREATIES, TREATY_NAMES, NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE,
     DEFENSIVE_PACT, OPEN_BORDERS, attitude_level,
     would_accept_treaty, would_accept_peace, empire_strength,
+    would_accept_tech_trade,
 )
-from ecs.db import get_connection, update_empire_economy
+from ecs.techs import TECHS
+from ecs.db import get_connection, update_empire_economy, insert_empire_tech
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -151,6 +153,8 @@ class DiplomacyScene(Scene):
                 self._set_banner(f"Gifted {GIFT_AMOUNT} BC to {tlabel}. (+attitude)", True)
             else:
                 self._set_banner("Not enough BC to gift.", False)
+        elif action == "techtrade":
+            self._do_tech_trade(player, target, tlabel)
         elif action == "demand":
             # The AI pays if it's notably weaker AND not too hostile;
             # otherwise it refuses and resents the demand.
@@ -169,6 +173,52 @@ class DiplomacyScene(Scene):
                 self._set_banner(f"{tlabel} refused your demand.", False)
 
         diplo.save()
+
+    def _tech_state(self, empire_id):
+        for _e, t in self.game.component_mgr.get_all(TechState):
+            if t.empire_id == empire_id:
+                return t
+        return None
+
+    def _do_tech_trade(self, player, target, tlabel):
+        """Auto-matched fair swap: each side offers its highest-cost
+        tech the other lacks. The AI accepts based on attitude +
+        fairness (would_accept_tech_trade)."""
+        diplo = self.game.diplomacy
+        p_tech = self._tech_state(player.id)
+        t_tech = self._tech_state(target)
+        if p_tech is None or t_tech is None:
+            self._set_banner("No tech to trade.", False)
+            return
+        p_set, t_set = set(p_tech.unlocked), set(t_tech.unlocked)
+
+        def _best(offerer_set, lacker_set):
+            cands = [tid for tid in offerer_set if tid not in lacker_set and tid in TECHS]
+            if not cands:
+                return None
+            return max(cands, key=lambda tid: TECHS[tid]["cost"])
+
+        give = _best(p_set, t_set)   # player gives this to target
+        get = _best(t_set, p_set)    # player gets this from target
+        if give is None or get is None:
+            self._set_banner(f"No mutually useful techs to trade with {tlabel}.", False)
+            return
+
+        give_cost = TECHS[give]["cost"]
+        get_cost = TECHS[get]["cost"]
+        if would_accept_tech_trade(diplo, target, player.id, give_cost, get_cost):
+            p_tech.unlocked.append(get)
+            t_tech.unlocked.append(give)
+            with get_connection() as conn:
+                insert_empire_tech(conn, player.id, get)
+                insert_empire_tech(conn, target, give)
+                conn.commit()
+            diplo.adjust_attitude(player.id, target, 5)
+            self._set_banner(
+                f"Traded {TECHS[give]['name']} for {TECHS[get]['name']} with {tlabel}.", True)
+        else:
+            self._set_banner(
+                f"{tlabel} won't trade {TECHS[get]['name']} for {TECHS[give]['name']}.", False)
 
     def _persist_bc(self, *empires):
         with get_connection() as conn:
@@ -341,7 +391,8 @@ class DiplomacyScene(Scene):
             button(f"Gift {GIFT_AMOUNT} BC", "gift", "", 0, row)
             button(f"Demand Tribute", "demand", "", 1, row)
             row += 1
-            button("Declare War", "war", "", 0, row, color=(110, 40, 40))
+            button("Tech Exchange", "techtrade", "", 0, row)
+            button("Declare War", "war", "", 1, row, color=(110, 40, 40))
             row += 1
 
     def _draw_close(self, screen):

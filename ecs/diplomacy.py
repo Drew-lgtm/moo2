@@ -323,6 +323,19 @@ def would_accept_peace(diplomacy: "Diplomacy", target: int, proposer: int) -> bo
     return diplomacy.attitude(target, proposer) > -70
 
 
+def would_accept_tech_trade(diplomacy: "Diplomacy", target: int, proposer: int,
+                            give_cost: int, get_cost: int) -> bool:
+    """Whether ``target`` accepts a tech swap: it hands over a tech
+    worth ``get_cost`` (to the proposer) in return for one worth
+    ``give_cost``. Friendlier targets accept worse-for-them deals; at
+    war they never trade tech."""
+    if diplomacy.at_war(target, proposer):
+        return False
+    att = diplomacy.attitude(target, proposer)
+    # Effective value of what we receive, inflated by goodwill.
+    return give_cost * (1 + att / 200) >= get_cost * 0.9
+
+
 def all_empire_ids(component_mgr) -> list[int]:
     from ecs.components import Empire
     return [emp.id for _eid, emp in component_mgr.get_all(Empire)]
