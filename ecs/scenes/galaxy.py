@@ -654,24 +654,29 @@ class GalaxyScene(Scene):
 
     # Relation path colours.
     PATH_OWN = (90, 220, 110)       # green — your fleets
-    PATH_NEUTRAL = (235, 205, 90)   # yellow — peace / treaty empires
-    PATH_HOSTILE = (235, 95, 95)    # red — at war
+    PATH_FRIENDLY = (235, 205, 90)  # yellow — empires you have a treaty with
+    PATH_HOSTILE = (235, 95, 95)    # red — foreign empire, no friendly treaty
 
     def _relation_path_color(self, owner_empire_id, player):
         if player is not None and owner_empire_id == player.id:
             return self.PATH_OWN
         diplo = getattr(self.game, "diplomacy", None)
-        if player is not None and diplo is not None and diplo.at_war(player.id, owner_empire_id):
-            return self.PATH_HOSTILE
-        return self.PATH_NEUTRAL
+        # Yellow only when there's an active treaty and we're not at war;
+        # everything else (neutral with no treaty, or at war) is red.
+        if (player is not None and diplo is not None
+                and not diplo.at_war(player.id, owner_empire_id)
+                and diplo.treaties(player.id, owner_empire_id)):
+            return self.PATH_FRIENDLY
+        return self.PATH_HOSTILE
 
     def _draw_in_transit_ships(self, screen):
         """Draw every in-transit fleet's remaining path + position dot.
 
         - Your own fleets are always shown (green path).
         - Other empires' fleets show only when *detected* by your
-          sensors (red if at war, yellow otherwise) — invisible until a
-          colony or ship picks them up on radar.
+          sensors — yellow if you hold a treaty with them, red for any
+          foreign empire you have no friendly treaty with — invisible
+          until a colony or ship picks them up on radar.
         """
         cm = self.game.component_mgr
         player = self.game.player_empire()
