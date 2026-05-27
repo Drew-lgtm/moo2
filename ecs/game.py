@@ -20,6 +20,7 @@ from ecs.ai import ai_tick
 from ecs.fleet import fleet_tick
 from ecs.combat import combat_tick
 from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
+from ecs.exploration import Exploration, exploration_tick as _exploration_tick
 from ecs.council import is_council_turn, tally_votes
 from assets.loader import load_random_background
 
@@ -51,6 +52,8 @@ class Game:
         # Inter-empire diplomacy. Created fresh on new game, loaded on
         # load_game. None until a game is running.
         self.diplomacy: Diplomacy | None = None
+        # Per-empire star exploration (fog of war). None until a game runs.
+        self.exploration: Exploration | None = None
         # Set by advance_turn when the Galactic Council convenes; the
         # GalaxyScene picks it up and switches to the council screen.
         self.pending_council: dict | None = None
@@ -122,6 +125,10 @@ class Game:
         # the (empty) tables exist for the first save/load round-trip.
         self.diplomacy = Diplomacy()
         self.diplomacy.save()
+        # Reveal each empire's starting systems before the first render.
+        self.exploration = Exploration()
+        self.exploration.reveal_from_world(self.component_mgr)
+        self.exploration.save()
         self._bind_game_ui()
 
     def load_game(self):
@@ -134,6 +141,11 @@ class Game:
         self.galaxy.load_from_db()
         self.diplomacy = Diplomacy()
         self.diplomacy.load()
+        self.exploration = Exploration()
+        self.exploration.load()
+        # Cover saves made before exploration existed: reveal current
+        # holdings so the player isn't blind on a freshly-loaded game.
+        self.exploration.reveal_from_world(self.component_mgr)
         self._bind_game_ui()
 
     def _bind_game_ui(self):
@@ -162,7 +174,7 @@ class Game:
         # diplomacy so a fresh war's first battle resolves, then the
         # diplomacy tick ages treaties and decays attitudes.
         for cb in (ai_tick, pop_growth_tick, production_tick, fleet_tick,
-                   combat_tick, _diplomacy_tick):
+                   combat_tick, _exploration_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 

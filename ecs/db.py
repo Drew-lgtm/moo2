@@ -118,6 +118,12 @@ def init_db():
             ends_turn INTEGER NOT NULL,
             PRIMARY KEY(empire_a, empire_b, treaty)
         );
+
+        CREATE TABLE IF NOT EXISTS empire_explored (
+            empire_id INTEGER NOT NULL,
+            star_id INTEGER NOT NULL,
+            PRIMARY KEY(empire_id, star_id)
+        );
         """)
         _migrate_empires(conn)
         _migrate_planets(conn)
@@ -375,6 +381,6 @@ def clear_galaxy():
     with get_connection() as conn:
         for table in ("planet_build_queue", "planet_buildings", "ships",
                       "empire_techs", "planets", "empires", "stars", "meta",
-                      "diplomacy", "diplomacy_pending"):
+                      "diplomacy", "diplomacy_pending", "empire_explored"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

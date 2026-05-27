@@ -2,7 +2,7 @@ import pygame
 
 from ecs.scene import Scene
 from ecs.components import (
-    Position, Name, StarVisual, Ship, ShipOwner, ShipAt, ShipInTransit,
+    Position, Name, StarVisual, StarRef, Ship, ShipOwner, ShipAt, ShipInTransit,
     Empire, Owner, Orbiting,
 )
 from ecs.palette import empire_color
@@ -222,6 +222,13 @@ class GalaxyScene(Scene):
         surf.blit(base, (1, 1))
         return surf
 
+    def _draw_unexplored_label(self, screen, position):
+        font_norm = self._label_font or self.game.font
+        text = self._render_outlined(font_norm, "Unexplored", (150, 150, 165))
+        rect = text.get_rect(center=(position.x, position.y + 24))
+        rect.clamp_ip(screen.get_rect())
+        screen.blit(text, rect)
+
     def _draw_star_label(self, screen, name_str, star_class, position, ratios):
         """Bottom label under a star. White + non-bold for unowned stars;
         bold + per-letter empire colors when one or more empires hold
@@ -265,11 +272,21 @@ class GalaxyScene(Scene):
             x += surf.get_width()
         screen.blit(suffix_surface, (x, y))
 
+    def _player_explored(self) -> set[int] | None:
+        """Set of star DB ids the player has explored, or None when fog
+        of war isn't active (no exploration object → reveal everything)."""
+        expl = getattr(self.game, "exploration", None)
+        player = self.game.player_empire()
+        if expl is None or player is None:
+            return None
+        return expl.explored_stars(player.id)
+
     def draw(self, screen):
         cm = self.game.component_mgr
         font = self.game.font
         # Build owner ratios per star once per frame (O(planets) total).
         star_ownership = self._build_star_ownership()
+        explored = self._player_explored()
 
         for entity_id, position in cm.get_all(Position):
             visual = cm.get_component(entity_id, StarVisual)
@@ -277,12 +294,20 @@ class GalaxyScene(Scene):
             if visual and surface is not None:
                 screen.blit(surface, (position.x - visual.size // 2, position.y - visual.size // 2))
 
+            # Fog of war: only label + colour stars the player has
+            # explored. Unexplored stars still show their light, with a
+            # faint "Unexplored" tag so the player knows to scout them.
+            ref = cm.get_component(entity_id, StarRef)
+            is_explored = (explored is None or ref is None or ref.db_id in explored)
             name = cm.get_component(entity_id, Name)
             if name and visual:
-                self._draw_star_label(
-                    screen, name.value, visual.star_class, position,
-                    star_ownership.get(entity_id, []),
-                )
+                if is_explored:
+                    self._draw_star_label(
+                        screen, name.value, visual.star_class, position,
+                        star_ownership.get(entity_id, []),
+                    )
+                else:
+                    self._draw_unexplored_label(screen, position)
 
         self._draw_in_transit_ships(screen)
         self._draw_selection_ring(screen)
@@ -458,6 +483,16 @@ class GalaxyScene(Scene):
         name = cm.get_component(star, Name)
         visual = cm.get_component(star, StarVisual)
 
+        # Fog of war: an unexplored star shows only a "scout it" prompt.
+        explored = self._player_explored()
+        ref = cm.get_component(star, StarRef)
+        if explored is not None and ref is not None and ref.db_id not in explored:
+            self._draw_tooltip_box(screen, mouse_pos, [
+                (font_bold.render("Unexplored system", True, (200, 200, 215)), (200, 200, 215)),
+                (font.render("Send a ship to scout it.", True, (150, 150, 165)), (150, 150, 165)),
+            ])
+            return
+
         lines: list[tuple[pygame.Surface, tuple[int, int, int]]] = []
         title = (name.value if name else "?") + (f" ({visual.star_class})" if visual else "")
         lines.append((font_bold.render(title, True, (255, 230, 120)), (255, 230, 120)))
@@ -491,8 +526,13 @@ class GalaxyScene(Scene):
             ename, ecolor = empire_info.get(eid, (f"Empire {eid}", "blue"))
             lines.append((font.render(f"Fleet — {ename}: {count}", True, empire_color(ecolor)), empire_color(ecolor)))
 
-        # Render box sized to content. Anchored to cursor + offset; flip
-        # to the other side if it would clip off the screen.
+        self._draw_tooltip_box(screen, mouse_pos, lines)
+
+    def _draw_tooltip_box(self, screen, mouse_pos, lines):
+        """Render a content-sized tooltip box near the cursor, flipping
+        to the other side if it would clip off the screen."""
+        if not lines:
+            return
         pad = 8
         w = max(s.get_width() for s, _ in lines) + pad * 2
         h = sum(s.get_height() for s, _ in lines) + pad * 2 + 4 * (len(lines) - 1)
@@ -629,12 +669,19 @@ class GalaxyScene(Scene):
             return
 
         empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
+        explored = self._player_explored()
         font = self._label_font or self.game.font
         for star_entity, by_empire in per_star.items():
             pos = cm.get_component(star_entity, Position)
             visual = cm.get_component(star_entity, StarVisual)
             if pos is None or visual is None:
                 continue
+            # Fog of war: don't reveal fleets parked at stars the player
+            # hasn't explored.
+            if explored is not None:
+                ref = cm.get_component(star_entity, StarRef)
+                if ref is not None and ref.db_id not in explored:
+                    continue
             x = pos.x - 30
             y = pos.y + 42  # below the (now larger) name label
             for empire_id, count in sorted(by_empire.items()):

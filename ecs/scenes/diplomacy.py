@@ -155,6 +155,21 @@ class DiplomacyScene(Scene):
                 self._set_banner("Not enough BC to gift.", False)
         elif action == "techtrade":
             self._do_tech_trade(player, target, tlabel)
+        elif action == "charts":
+            expl = getattr(self.game, "exploration", None)
+            # Map-sharing is low-stakes; an AI agrees if it isn't hostile.
+            if expl is None:
+                self._set_banner("No star charts to share.", False)
+            elif diplo.attitude(target, player.id) >= -15:
+                before = len(expl.explored_stars(player.id))
+                expl.merge(player.id, target)
+                gained = len(expl.explored_stars(player.id)) - before
+                expl.save()
+                diplo.adjust_attitude(player.id, target, 4)
+                self._set_banner(
+                    f"Exchanged star charts with {tlabel}. Revealed {gained} new systems.", True)
+            else:
+                self._set_banner(f"{tlabel} won't share star charts.", False)
         elif action == "demand":
             # The AI pays if it's notably weaker AND not too hostile;
             # otherwise it refuses and resents the demand.
@@ -392,7 +407,9 @@ class DiplomacyScene(Scene):
             button(f"Demand Tribute", "demand", "", 1, row)
             row += 1
             button("Tech Exchange", "techtrade", "", 0, row)
-            button("Declare War", "war", "", 1, row, color=(110, 40, 40))
+            button("Share Star Charts", "charts", "", 1, row)
+            row += 1
+            button("Declare War", "war", "", 0, row, color=(110, 40, 40))
             row += 1
 
     def _draw_close(self, screen):
