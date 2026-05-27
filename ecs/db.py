@@ -138,6 +138,19 @@ def init_db():
             PRIMARY KEY(attacker, target, mission)
         );
 
+        CREATE TABLE IF NOT EXISTS leaders (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            category TEXT,
+            skill TEXT,
+            level INTEGER DEFAULT 1,
+            hire_cost INTEGER DEFAULT 0,
+            salary INTEGER DEFAULT 0,
+            owner_empire_id INTEGER,
+            assigned_planet_id INTEGER,
+            assigned_ship_id INTEGER
+        );
+
         -- Persistent hall of fame: NOT wiped by clear_galaxy, so it
         -- survives across games.
         CREATE TABLE IF NOT EXISTS hall_of_fame (
@@ -429,6 +442,6 @@ def clear_galaxy():
         for table in ("planet_build_queue", "planet_buildings", "ships",
                       "empire_techs", "planets", "empires", "stars", "meta",
                       "diplomacy", "diplomacy_pending", "empire_explored",
-                      "spies", "spy_missions"):
+                      "spies", "spy_missions", "leaders"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

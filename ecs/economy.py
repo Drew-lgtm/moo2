@@ -37,6 +37,24 @@ from ecs.planet_features import (
 )
 from ecs.ships import empire_freighter_capacity
 from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
+from ecs.leaders import colony_effect
+
+
+def _apply_colony_leader(leaders, planet_id, food, industry, research, bonus_bc):
+    """Scale a planet's outputs by its assigned colony leader (if any).
+    Returns the (possibly boosted) (food, industry, research, bonus_bc)."""
+    if leaders is None:
+        return food, industry, research, bonus_bc
+    leader = leaders.colony_leader_for_planet(planet_id)
+    if leader is None:
+        return food, industry, research, bonus_bc
+    fa, ia, ra, ba = colony_effect(leader)
+    return (
+        int(round(food * (1 + fa))),
+        int(round(industry * (1 + ia))),
+        int(round(research * (1 + ra))),
+        int(round(bonus_bc * (1 + ba))),
+    )
 
 
 # ---- planet capacity (max population) ---------------------------------
@@ -265,12 +283,14 @@ def planet_output(planet: Planet, population: Population | None,
 
 # ---- empire-level summaries (HUD + per-turn) --------------------------
 
-def empire_per_turn(component_mgr, empire_id: int) -> dict[str, int]:
+def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, int]:
     """Per-turn projection for HUD display.
 
     Returns dict with: bc, research, food_balance, industry.
     BC = sum across planets of (industry if idle else 0) + building bonus_bc.
     Food balance = produced - pop (halved for Tolerant races).
+    ``leaders`` (optional) folds in assigned colony-leader bonuses so the
+    HUD matches what production_tick will actually grant.
     """
     traits = traits_for_empire(component_mgr, empire_id)
     bc_total = research_total = industry_total = 0
@@ -285,6 +305,8 @@ def empire_per_turn(component_mgr, empire_id: int) -> dict[str, int]:
         pop = component_mgr.get_component(entity_id, Population)
         build_state = component_mgr.get_component(entity_id, BuildState)
         food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
+        food, industry, research, bonus_bc = _apply_colony_leader(
+            leaders, planet.id, food, industry, research, bonus_bc)
 
         food_produced += food
         if pop is not None:
@@ -477,6 +499,8 @@ def production_tick(game, new_turn: int):
         build_state = cm.get_component(entity_id, BuildState)
         traits = traits_by_empire.get(owner.empire_id, [])
         food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
+        food, industry, research, bonus_bc = _apply_colony_leader(
+            getattr(game, "leaders", None), planet.id, food, industry, research, bonus_bc)
 
         bc_to_empire = bonus_bc
         if build_state and build_state.current_project:

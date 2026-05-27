@@ -470,7 +470,8 @@ class GalaxyScene(Scene):
             screen.blit(label, label.get_rect(midleft=(12, bar_h // 2)))
             return
 
-        per_turn = empire_per_turn(self.game.component_mgr, player.id)
+        per_turn = empire_per_turn(self.game.component_mgr, player.id,
+                                   getattr(self.game, "leaders", None))
         food = per_turn["food_balance"]
 
         # Build a list of (label, value) cells. Empire identity sits on

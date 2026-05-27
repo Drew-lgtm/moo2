@@ -44,18 +44,22 @@ def _empire_bonuses(component_mgr, empire_id: int) -> tuple[int, int]:
     return trait_atk + tech_atk, trait_hull + tech_hull
 
 
-def _attack_of(component_mgr, ship_entity: int, attack_bonus: int = 0) -> int:
+def _attack_of(component_mgr, ship_entity: int, attack_bonus: int = 0,
+               leader_map: dict | None = None) -> int:
     ship = component_mgr.get_component(ship_entity, Ship)
     if ship is None:
         return 0
-    return SHIPS.get(ship.ship_class, {}).get("attack", 0) + attack_bonus
+    extra = leader_map.get(ship.id, (0, 0))[0] if leader_map else 0
+    return SHIPS.get(ship.ship_class, {}).get("attack", 0) + attack_bonus + extra
 
 
-def _hull_of(component_mgr, ship_entity: int, hull_bonus: int = 0) -> int:
+def _hull_of(component_mgr, ship_entity: int, hull_bonus: int = 0,
+             leader_map: dict | None = None) -> int:
     ship = component_mgr.get_component(ship_entity, Ship)
     if ship is None:
         return 0
-    return SHIPS.get(ship.ship_class, {}).get("hull", 0) + hull_bonus
+    extra = leader_map.get(ship.id, (0, 0))[1] if leader_map else 0
+    return SHIPS.get(ship.ship_class, {}).get("hull", 0) + hull_bonus + extra
 
 
 def _compute_losses(component_mgr, ships: list[int], damage: int) -> list[int]:
@@ -64,20 +68,21 @@ def _compute_losses(component_mgr, ships: list[int], damage: int) -> list[int]:
 
 
 def _compute_losses_with_bonus(component_mgr, ships: list[int], damage: int,
-                                hull_bonus: int) -> list[int]:
+                                hull_bonus: int, leader_map: dict | None = None) -> list[int]:
     """Return ship entities destroyed. Cheapest hull dies first; no
     partial-damage carry between turns. ``hull_bonus`` is added to every
     ship's hull (from Tachyon Scanner / Plasma Cannon / ship_hull race
-    trait) so tougher empires soak more damage before losing ships."""
+    trait) so tougher empires soak more damage before losing ships.
+    ``leader_map`` adds per-ship Battle Tactician hull on top."""
     if damage <= 0 or not ships:
         return []
     sorted_ships = sorted(
-        ships, key=lambda e: _hull_of(component_mgr, e, hull_bonus),
+        ships, key=lambda e: _hull_of(component_mgr, e, hull_bonus, leader_map),
     )
     losses: list[int] = []
     remaining = damage
     for ship_entity in sorted_ships:
-        hull = _hull_of(component_mgr, ship_entity, hull_bonus)
+        hull = _hull_of(component_mgr, ship_entity, hull_bonus, leader_map)
         if hull <= 0:
             continue
         if remaining >= hull:
@@ -101,6 +106,16 @@ def combat_tick(game, new_turn: int):
     share a star without fighting."""
     cm = game.component_mgr
     diplo = getattr(game, "diplomacy", None)
+
+    # Ship-leader combat bonuses: ship.id -> (attack, hull). Battle
+    # Tacticians / Weapons Masters assigned to a ship buff that hull.
+    leaders = getattr(game, "leaders", None)
+    leader_map: dict[int, tuple[int, int]] = {}
+    if leaders is not None:
+        from ecs.leaders import ship_effect
+        for l in leaders.leaders.values():
+            if l.category == "ship" and l.assigned_ship_id is not None:
+                leader_map[l.assigned_ship_id] = ship_effect(l)
 
     def _hostile(a: int, b: int) -> bool:
         # No diplomacy object (e.g. old save) → fall back to the old
@@ -162,7 +177,7 @@ def combat_tick(game, new_turn: int):
 
         # Attack = fleet firepower + stationary planetary defenses.
         side_attack = {
-            eid: sum(_attack_of(cm, e, _bonuses(eid)[0]) for e in ships_here.get(eid, []))
+            eid: sum(_attack_of(cm, e, _bonuses(eid)[0], leader_map) for e in ships_here.get(eid, []))
                  + def_here.get(eid, 0)
             for eid in participants
         }
@@ -175,7 +190,7 @@ def combat_tick(game, new_turn: int):
                 if other != eid and _hostile(eid, other)
             )
             side_losses[eid] = _compute_losses_with_bonus(
-                cm, ships_here.get(eid, []), damage, _bonuses(eid)[1],
+                cm, ships_here.get(eid, []), damage, _bonuses(eid)[1], leader_map,
             )
 
         # Record the engagement before mutating — rich enough for the

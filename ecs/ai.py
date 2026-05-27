@@ -45,6 +45,7 @@ from ecs.db import (
 )
 from ecs.personalities import get as get_personality
 from ecs.espionage import SPY_COST
+from ecs.leaders import MAX_LEADERS_PER_EMPIRE
 
 
 # Fleet caps. Ship projects never enter BuildState.completed, so without
@@ -219,6 +220,9 @@ def ai_tick(game, new_turn: int):
 
         # Espionage: train spies and point them at disliked rivals.
         _ai_espionage(game, empire, personality)
+
+        # Leaders: hire from the pool and assign idle heroes.
+        _ai_leaders(game, empire, personality)
 
         # Fuel range: stars this empire's fleets can actually reach
         # (within range of own/allied supply). Dispatch passes filter
@@ -883,6 +887,73 @@ def _ai_espionage(game, empire, personality):
     assign = max(0, esp.defense_count(empire.id) - 1)  # keep one defender
     if assign > 0:
         esp.adjust_mission(empire.id, target.id, mission, assign)
+
+
+# ---- Leaders -----------------------------------------------------------
+
+AI_LEADER_BUFFER_BC = 250
+
+
+def _ai_best_colony_planet_id(game, cm, empire_id):
+    """Planet id of the empire's biggest colony without a leader yet."""
+    mgr = game.leaders
+    best_id, best_pop = None, -1
+    for eid, owner in cm.get_all(Owner):
+        if owner.empire_id != empire_id:
+            continue
+        planet = cm.get_component(eid, Planet)
+        pop = cm.get_component(eid, Population)
+        if planet is None or pop is None:
+            continue
+        if mgr.colony_leader_for_planet(planet.id) is not None:
+            continue
+        if pop.current > best_pop:
+            best_pop, best_id = pop.current, planet.id
+    return best_id
+
+
+def _ai_uncaptained_warship_id(game, cm, empire_id):
+    """A warship id of the empire that has no ship leader yet."""
+    mgr = game.leaders
+    for ship_entity, owner in cm.get_all(ShipOwner):
+        if owner.empire_id != empire_id:
+            continue
+        ship = cm.get_component(ship_entity, Ship)
+        if ship is None or ship.ship_class not in WARSHIP_CLASSES:
+            continue
+        if mgr.ship_leader_for_ship(ship.id) is None:
+            return ship.id
+    return None
+
+
+def _ai_leaders(game, empire, personality):
+    """Hire a fitting candidate when affordable, then assign idle heroes
+    to the biggest colony / an uncaptained warship. BC spent is netted
+    out by production_tick; state persists via leaders_tick."""
+    import random as _random
+    mgr = getattr(game, "leaders", None)
+    if mgr is None:
+        return
+    cm = game.component_mgr
+
+    if mgr.count_for(empire.id) < MAX_LEADERS_PER_EMPIRE:
+        prefer = "ship" if personality.get("aggressive") else "colony"
+        pool = sorted(mgr.pool(), key=lambda l: (l.category != prefer, l.hire_cost))
+        for cand in pool:
+            if empire.bc >= AI_LEADER_BUFFER_BC + cand.hire_cost and _random.random() < 0.5:
+                if mgr.hire(cand.id, empire.id):
+                    empire.bc -= cand.hire_cost
+                break
+
+    for l in mgr.for_empire(empire.id):
+        if l.category == "colony" and l.assigned_planet_id is None:
+            pid = _ai_best_colony_planet_id(game, cm, empire.id)
+            if pid is not None:
+                mgr.assign_colony(l.id, pid)
+        elif l.category == "ship" and l.assigned_ship_id is None:
+            sid = _ai_uncaptained_warship_id(game, cm, empire.id)
+            if sid is not None:
+                mgr.assign_ship(l.id, sid)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
