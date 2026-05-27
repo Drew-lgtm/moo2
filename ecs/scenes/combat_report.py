@@ -94,7 +94,10 @@ class CombatReportScene(Scene):
         title = f"Battle at {self._star_name(report['star_entity'])}"
         screen.blit(self.title_font.render(title, True, TITLE_COLOR),
                     self.title_font.render(title, True, TITLE_COLOR).get_rect(center=(cx, 56)))
+        observed = report.get("observed")
         sub = f"Turn {report['turn']}   ·   Engagement {self.index + 1} of {len(self.reports)}"
+        if observed:
+            sub += "   ·   (observed by sensors)"
         screen.blit(self.small_font.render(sub, True, HINT_COLOR),
                     self.small_font.render(sub, True, HINT_COLOR).get_rect(center=(cx, 88)))
 
@@ -142,7 +145,14 @@ class CombatReportScene(Scene):
         iy += 36
 
         screen.blit(self.body_font.render(f"Attack power: {side['attack']}", True, (210, 210, 230)), (ix, iy))
-        iy += 28
+        iy += 24
+        defense = side.get("defense", 0)
+        if defense:
+            screen.blit(self.small_font.render(
+                f"  incl. planetary defenses +{defense}", True, (170, 200, 240)), (ix, iy))
+            iy += 22
+        else:
+            iy += 4
 
         # Ships committed, by class.
         screen.blit(self.small_font.render("Fleet:", True, HINT_COLOR), (ix, iy))
@@ -166,18 +176,23 @@ class CombatReportScene(Scene):
 
     def _draw_outcome(self, screen, report, cx, y):
         sides = report["sides"]
-        # Winner = most ships remaining; ties / mutual wipeout = stalemate.
-        sides_sorted = sorted(sides, key=lambda s: s["remaining"], reverse=True)
-        top = sides_sorted[0]
-        if top["remaining"] == 0:
-            text, color = "Mutual annihilation — no ships survived.", LOSS_COLOR
-        elif len(sides_sorted) > 1 and sides_sorted[1]["remaining"] == top["remaining"]:
-            text, color = "Stalemate — both fleets hold the field.", HINT_COLOR
+        # A side is still "present" if it has surviving ships or intact
+        # planetary defenses (structures persist through space combat).
+        present = [s for s in sides if s["remaining"] > 0 or s.get("defense", 0) > 0]
+        if not present:
+            text, color = "Mutual annihilation — nothing survived.", LOSS_COLOR
+        elif len(present) > 1:
+            text, color = "Contested — the fight continues next turn.", HINT_COLOR
         else:
+            top = present[0]
             emp = self._empire(top["empire_id"])
             name = emp.name if emp else f"Empire {top['empire_id']}"
             won = emp is not None and emp.is_player
-            text = f"{name} held the field."
+            held_by_defenses = top["remaining"] == 0 and top.get("defense", 0) > 0
+            text = f"{name} held the field"
+            if held_by_defenses:
+                text += " with orbital defenses"
+            text += "."
             color = WIN_COLOR if won else LOSS_COLOR
         surf = self.header_font.render(text, True, color)
         screen.blit(surf, surf.get_rect(center=(cx, y)))

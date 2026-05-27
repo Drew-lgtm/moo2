@@ -15,10 +15,15 @@ change.
 """
 from __future__ import annotations
 
-from ecs.components import Ship, ShipOwner, ShipAt, ShipInTransit, TechState
+from ecs.components import (
+    Ship, ShipOwner, ShipAt, ShipInTransit, TechState, Owner, Orbiting, Position,
+    BuildState,
+)
 from ecs.ships import SHIPS
 from ecs.races import trait_count, traits_for_empire
 from ecs.techs import empire_attack_bonus, empire_hull_bonus
+from ecs.invasion import _planet_defense_rating
+from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from ecs.db import get_connection, delete_ship
 
 
@@ -113,6 +118,21 @@ def combat_tick(game, new_turn: int):
             continue
         by_star.setdefault(at.star_entity, {}).setdefault(owner.empire_id, []).append(ship_entity)
 
+    # star_entity -> {empire_id: total planetary defense rating}. A
+    # fortified colony (Missile Base → Star Fortress) fires on hostile
+    # fleets in its system even with no defending ships present, and
+    # those structures can't be destroyed by space combat — only taken
+    # by ground invasion.
+    by_star_defense: dict[int, dict[int, int]] = {}
+    for planet_entity, owner in cm.get_all(Owner):
+        orbit = cm.get_component(planet_entity, Orbiting)
+        if orbit is None:
+            continue
+        rating = _planet_defense_rating(cm.get_component(planet_entity, BuildState))
+        if rating:
+            d = by_star_defense.setdefault(orbit.star_entity, {})
+            d[owner.empire_id] = d.get(owner.empire_id, 0) + rating
+
     log: list[dict] = []
     destroyed_ids: list[int] = []
     destroyed_entities: list[int] = []
@@ -126,44 +146,54 @@ def combat_tick(game, new_turn: int):
             bonus_by_empire[eid] = _empire_bonuses(cm, eid)
         return bonus_by_empire[eid]
 
-    for star_entity, by_owner in by_star.items():
-        if len(by_owner) < 2:
+    # Every star with ships and/or planetary defenses is a possible
+    # battlefield.
+    for star_entity in set(by_star) | set(by_star_defense):
+        ships_here = by_star.get(star_entity, {})
+        def_here = by_star_defense.get(star_entity, {})
+        participants = set(ships_here) | set(def_here)
+        if len(participants) < 2:
             continue
         # Skip stars where no two present empires are actually at war.
-        present = list(by_owner)
-        if not any(_hostile(present[i], present[j])
-                   for i in range(len(present)) for j in range(i + 1, len(present))):
+        plist = list(participants)
+        if not any(_hostile(plist[i], plist[j])
+                   for i in range(len(plist)) for j in range(i + 1, len(plist))):
             continue
 
+        # Attack = fleet firepower + stationary planetary defenses.
         side_attack = {
-            empire_id: sum(_attack_of(cm, e, _bonuses(empire_id)[0]) for e in ships)
-            for empire_id, ships in by_owner.items()
+            eid: sum(_attack_of(cm, e, _bonuses(eid)[0]) for e in ships_here.get(eid, []))
+                 + def_here.get(eid, 0)
+            for eid in participants
         }
         side_losses: dict[int, list[int]] = {}
-        for empire_id, ships in by_owner.items():
-            # Only take damage from empires we're at war with.
+        for eid in participants:
+            # Only take damage from empires we're at war with. Planetary
+            # defenses absorb nothing — only ships can be destroyed.
             damage = sum(
-                side_attack[other] for other in by_owner
-                if other != empire_id and _hostile(empire_id, other)
+                side_attack[other] for other in participants
+                if other != eid and _hostile(eid, other)
             )
-            side_losses[empire_id] = _compute_losses_with_bonus(
-                cm, ships, damage, _bonuses(empire_id)[1],
+            side_losses[eid] = _compute_losses_with_bonus(
+                cm, ships_here.get(eid, []), damage, _bonuses(eid)[1],
             )
 
         # Record the engagement before mutating — rich enough for the
         # combat-report screen: per side, ships by class, attack power,
-        # losses, survivors.
+        # defenses, losses, survivors.
         sides = []
-        for empire_id, ships in by_owner.items():
+        for eid in participants:
+            ships = ships_here.get(eid, [])
             by_class: dict[str, int] = {}
             for e in ships:
                 sc = cm.get_component(e, Ship)
                 if sc is not None:
                     by_class[sc.ship_class] = by_class.get(sc.ship_class, 0) + 1
-            lost = len(side_losses[empire_id])
+            lost = len(side_losses[eid])
             sides.append({
-                "empire_id": empire_id,
-                "attack": side_attack[empire_id],
+                "empire_id": eid,
+                "attack": side_attack[eid],
+                "defense": def_here.get(eid, 0),
                 "ships_before": by_class,
                 "total_before": len(ships),
                 "lost": lost,
@@ -181,7 +211,7 @@ def combat_tick(game, new_turn: int):
         }
         log.append(log_entry)
 
-        for empire_id, losses in side_losses.items():
+        for eid, losses in side_losses.items():
             for ship_entity in losses:
                 ship = cm.get_component(ship_entity, Ship)
                 if ship is None:
@@ -202,13 +232,24 @@ def combat_tick(game, new_turn: int):
         existing = getattr(game, "last_combats", [])
         # Keep at most the 20 most recent engagements.
         game.last_combats = (existing + log)[-20:]
-        # Surface battles the player fought in — the GalaxyScene pops up
-        # a report screen for these after the turn resolves.
+        # Surface battles the player fought in *and* nearby clashes the
+        # player's sensors picked up (AI-vs-AI within detection range).
+        # The GalaxyScene pops up a report for these after the turn.
         player = game.player_empire()
         if player is not None:
-            player_battles = [
-                r for r in log
-                if any(s["empire_id"] == player.id for s in r["sides"])
-            ]
-            if player_battles:
-                game.pending_combat_reports = player_battles
+            points = sensor_points(game, player.id)
+            sensor_r = empire_sensor_range_px(cm, player.id)
+            reports = []
+            for r in log:
+                involved = any(s["empire_id"] == player.id for s in r["sides"])
+                if involved:
+                    r["observed"] = False
+                    reports.append(r)
+                    continue
+                # Not involved — only report if a sensor source sees the star.
+                spos = cm.get_component(r["star_entity"], Position)
+                if spos is not None and is_detected(spos.x, spos.y, points, sensor_r):
+                    r["observed"] = True
+                    reports.append(r)
+            if reports:
+                game.pending_combat_reports = reports
