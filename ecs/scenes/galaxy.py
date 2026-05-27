@@ -53,12 +53,14 @@ class GalaxyScene(Scene):
             self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
 
     def update(self, dt):
-        # Show combat reports first (battles just fought), then hand off
-        # to the Galactic Council screen if a session convened.
+        # Start-of-turn attention flow (MOO2-style): resolve combat
+        # reports → Galactic Council → idle-colony review → free play.
         if getattr(self.game, "pending_combat_reports", None):
             self.game.scenes.replace("combat_report")
         elif getattr(self.game, "pending_council", None) is not None:
             self.game.scenes.replace("council")
+        elif getattr(self.game, "pending_idle_review", False):
+            self.game.scenes.replace("idle_colonies")
 
     def _preload_star_surfaces(self):
         self._star_surfaces.clear()

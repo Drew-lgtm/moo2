@@ -12,6 +12,7 @@ from ecs.scenes import (
     DiplomacyScene,
     CouncilScene,
     CombatReportScene,
+    IdleColoniesScene,
     PauseScene,
     EmpireSetupScene,
     ColoniesScene,
@@ -37,6 +38,7 @@ def main():
     game.scenes.register("diplomacy", DiplomacyScene(game))
     game.scenes.register("council", CouncilScene(game))
     game.scenes.register("combat_report", CombatReportScene(game))
+    game.scenes.register("idle_colonies", IdleColoniesScene(game))
     game.scenes.register("pause", PauseScene(game))
     game.scenes.register("colonies", ColoniesScene(game))
     game.scenes.register("planets", PlanetsScene(game))

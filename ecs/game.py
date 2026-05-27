@@ -14,7 +14,7 @@ from ecs.galaxy_generator import GalaxyGenerator
 from ecs.scene import SceneManager
 from ecs.ui_bar import BottomUIBar
 from ecs.db import clear_galaxy
-from ecs.components import Empire
+from ecs.components import Empire, Owner, Population, BuildState
 from ecs.economy import production_tick, pop_growth_tick
 from ecs.ai import ai_tick
 from ecs.fleet import fleet_tick
@@ -62,6 +62,9 @@ class Game:
         self.pending_combat_reports: list | None = None
         # Rolling record of recent battles for review.
         self.last_combats: list = []
+        # Start-of-turn flag: are there idle player colonies needing
+        # build orders? GalaxyScene shows the review screen if so.
+        self.pending_idle_review: bool = False
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)
@@ -189,6 +192,25 @@ class Game:
                 return emp
         return None
 
+    def idle_colonies(self) -> list[int]:
+        """Player colonies with population but no active build and an
+        empty queue — they're wasting industry and want orders."""
+        player = self.player_empire()
+        if player is None:
+            return []
+        cm = self.component_mgr
+        out: list[int] = []
+        for eid, owner in cm.get_all(Owner):
+            if owner.empire_id != player.id:
+                continue
+            pop = cm.get_component(eid, Population)
+            bs = cm.get_component(eid, BuildState)
+            if pop is None or pop.current <= 0 or bs is None:
+                continue
+            if not bs.current_project and not bs.queue:
+                out.append(eid)
+        return out
+
     def advance_turn(self):
         if self.galaxy is None:
             return None
@@ -200,6 +222,8 @@ class Game:
         # update so the vote is shown after the turn resolves.
         if is_council_turn(new_turn):
             self.pending_council = tally_votes(self)
+        # Flag idle colonies so the start-of-turn flow prompts for orders.
+        self.pending_idle_review = bool(self.idle_colonies())
         return new_turn
 
     def quit(self):
