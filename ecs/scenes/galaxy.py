@@ -35,6 +35,9 @@ class GalaxyScene(Scene):
         self._label_font_bold: pygame.font.Font | None = None
         # Transient message when a fleet move is rejected (out of fuel range).
         self._fuel_warning: str = ""
+        # Per-frame clickable fleet chips: (star_entity, rect) for the
+        # player's own parked fleets. Rebuilt every draw.
+        self._fleet_chip_hits: list[tuple[int, pygame.Rect]] = []
 
     def on_enter(self):
         self._preload_star_surfaces()
@@ -84,12 +87,32 @@ class GalaxyScene(Scene):
                         return
 
             star = self._star_at(event.pos)
-            if event.button == 1 and star is not None:
-                # Left-click: open System View as before.
-                self.game.selected_star = star
-                self.game.scenes.replace("system")
-            elif event.button == 3 and star is not None:
-                # Right-click: select/move fleet.
+            # A fleet chip resolves to its star for click purposes.
+            chip_star = next(
+                (se for se, rect in self._fleet_chip_hits if rect.collidepoint(event.pos)),
+                None,
+            )
+
+            if event.button == 1:
+                if self.selected_fleet_star is not None:
+                    # A fleet is in hand — clicking a fleet chip or a star
+                    # is a move order (clicking the source toggles it off).
+                    target = chip_star if chip_star is not None else star
+                    if target is not None:
+                        self._handle_fleet_click(target)
+                    return
+                # Nothing selected yet: a fleet chip grabs that fleet;
+                # the star body opens the System View.
+                if chip_star is not None:
+                    self._handle_fleet_click(chip_star)
+                    return
+                if star is not None:
+                    self.game.selected_star = star
+                    self.game.scenes.replace("system")
+                return
+
+            if event.button == 3 and star is not None:
+                # Right-click still works as a select/move shortcut.
                 self._handle_fleet_click(star)
 
     def _adjust_count(self, ship_class: str, delta: int):
@@ -719,6 +742,10 @@ class GalaxyScene(Scene):
         [color bar][count] tokens, one per owning empire.
         """
         cm = self.game.component_mgr
+        self._fleet_chip_hits = []
+        player = self.game.player_empire()
+        player_id = player.id if player is not None else None
+
         # star_entity -> {empire_id: count}
         per_star: dict[int, dict[int, int]] = {}
         for entity_id, at in cm.get_all(ShipAt):
@@ -733,7 +760,7 @@ class GalaxyScene(Scene):
 
         empire_colors_by_id = {emp.id: emp.color for _eid, emp in cm.get_all(Empire)}
         explored = self._player_explored()
-        font = self._label_font or self.game.font
+        font = self._picker_font_bold or self.game.font
         for star_entity, by_empire in per_star.items():
             pos = cm.get_component(star_entity, Position)
             visual = cm.get_component(star_entity, StarVisual)
@@ -745,14 +772,39 @@ class GalaxyScene(Scene):
                 ref = cm.get_component(star_entity, StarRef)
                 if ref is not None and ref.db_id not in explored:
                     continue
-            x = pos.x - 30
-            y = pos.y + 42  # below the (now larger) name label
-            for empire_id, count in sorted(by_empire.items()):
-                color_name = empire_colors_by_id.get(empire_id, "blue")
-                rgb = empire_color(color_name)
-                pygame.draw.rect(screen, rgb, pygame.Rect(x, y, 6, 16))
-                text = self._render_outlined(font, str(count), (240, 240, 240))
-                screen.blit(text, (x + 9, y - 2))
-                x += 9 + text.get_width() + 4
+
+            # Fleet chips stack down from the star's top-right corner.
+            chip_x = pos.x + visual.size // 2 + 2
+            chip_y = pos.y - visual.size // 2 - 2
+            # Player's own fleet first (the clickable one), then others.
+            order = sorted(by_empire, key=lambda e: (e != player_id, e))
+            for empire_id in order:
+                count = by_empire[empire_id]
+                is_own = empire_id == player_id
+                rgb = empire_color(empire_colors_by_id.get(empire_id, "blue"))
+                count_surf = self._render_outlined(font, str(count), (240, 240, 240))
+                chip_w = 22 + count_surf.get_width()
+                chip_h = 20
+                rect = pygame.Rect(chip_x, chip_y, chip_w, chip_h)
+
+                # Backing — brighter + ringed for the player's clickable
+                # chip, especially when this fleet is selected.
+                selected = is_own and star_entity == self.selected_fleet_star
+                bg = (28, 32, 48) if is_own else (20, 22, 34)
+                pygame.draw.rect(screen, bg, rect)
+                ring = (255, 230, 120) if selected else rgb
+                pygame.draw.rect(screen, ring, rect, 2 if (is_own or selected) else 1)
+
+                # Chevron (fleet glyph) in empire colour + the count.
+                cx0 = rect.x + 4
+                cy0 = rect.centery
+                pygame.draw.polygon(screen, rgb, [
+                    (cx0, cy0 - 5), (cx0, cy0 + 5), (cx0 + 9, cy0),
+                ])
+                screen.blit(count_surf, (cx0 + 13, rect.y + 1))
+
+                if is_own:
+                    self._fleet_chip_hits.append((star_entity, rect))
+                chip_y += chip_h + 3
 
     # (HUD moved into the right panel — see _draw_empire_summary.)
