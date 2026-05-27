@@ -22,6 +22,7 @@ from ecs.combat import combat_tick
 from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
 from ecs.exploration import Exploration, exploration_tick as _exploration_tick
 from ecs.council import is_council_turn, tally_votes
+from ecs.endgame import check_endgame
 from assets.loader import load_random_background
 
 
@@ -65,6 +66,9 @@ class Game:
         # Start-of-turn flag: are there idle player colonies needing
         # build orders? GalaxyScene shows the review screen if so.
         self.pending_idle_review: bool = False
+        # Set when a victory/defeat condition is met; routes to the
+        # game-over screen. {"result","mode","winner_id"}.
+        self.pending_endgame: dict | None = None
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)
@@ -222,6 +226,10 @@ class Game:
         # update so the vote is shown after the turn resolves.
         if is_council_turn(new_turn):
             self.pending_council = tally_votes(self)
+        # Conquest / elimination check (skip if a result is already
+        # pending, e.g. a diplomatic victory from the council).
+        if self.pending_endgame is None:
+            self.pending_endgame = check_endgame(self)
         # Flag idle colonies so the start-of-turn flow prompts for orders.
         self.pending_idle_review = bool(self.idle_colonies())
         return new_turn

@@ -53,6 +53,10 @@ class GalaxyScene(Scene):
             self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
 
     def update(self, dt):
+        # A decided victory/defeat trumps everything else.
+        if getattr(self.game, "pending_endgame", None) is not None:
+            self.game.scenes.replace("game_over")
+            return
         # Start-of-turn attention flow (MOO2-style): resolve combat
         # reports → Galactic Council → idle-colony review → free play.
         if getattr(self.game, "pending_combat_reports", None):

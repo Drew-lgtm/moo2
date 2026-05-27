@@ -124,6 +124,17 @@ def init_db():
             star_id INTEGER NOT NULL,
             PRIMARY KEY(empire_id, star_id)
         );
+
+        -- Persistent hall of fame: NOT wiped by clear_galaxy, so it
+        -- survives across games.
+        CREATE TABLE IF NOT EXISTS hall_of_fame (
+            id INTEGER PRIMARY KEY,
+            empire_name TEXT,
+            race TEXT,
+            score INTEGER DEFAULT 0,
+            outcome TEXT,
+            turn INTEGER
+        );
         """)
         _migrate_empires(conn)
         _migrate_planets(conn)
@@ -371,6 +382,22 @@ def set_meta(conn, key, value):
 def get_meta(conn, key, default=None):
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row["value"] if row is not None else default
+
+
+def insert_hall_of_fame(conn, empire_name, race, score, outcome, turn):
+    conn.execute(
+        "INSERT INTO hall_of_fame (empire_name, race, score, outcome, turn) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (empire_name, race, score, outcome, turn),
+    )
+
+
+def get_hall_of_fame(limit=12):
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM hall_of_fame ORDER BY score DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
 
 
 def clear_galaxy():

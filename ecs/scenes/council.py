@@ -83,8 +83,15 @@ class CouncilScene(Scene):
             defy_emperor(self.game, self.result or {})
             self.game.scenes.replace("galaxy")
         elif action in ("victory", "defeat"):
-            # End the game — back to the main menu.
-            self.game.scenes.replace("main_menu")
+            # Diplomatic decision — route through the game-over screen so
+            # the result is recorded to the hall of fame.
+            winner_id = (self.result or {}).get("winner")
+            self.game.pending_endgame = {
+                "result": "victory" if action == "victory" else "defeat",
+                "mode": "Diplomatic",
+                "winner_id": winner_id,
+            }
+            self.game.scenes.replace("game_over")
 
     # ------------------------------------------------------------------ draw
 
