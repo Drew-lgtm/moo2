@@ -8,6 +8,7 @@ from ecs.components import (
 from ecs.palette import empire_color
 from ecs.economy import empire_per_turn
 from ecs.fleet import start_fleet_movement, turns_for, empire_speed_bonus
+from ecs.fuel import in_fuel_range, supply_stars
 from assets.loader import load_image
 
 
@@ -31,6 +32,8 @@ class GalaxyScene(Scene):
         # so they read better against the busy background.
         self._label_font: pygame.font.Font | None = None
         self._label_font_bold: pygame.font.Font | None = None
+        # Transient message when a fleet move is rejected (out of fuel range).
+        self._fuel_warning: str = ""
 
     def on_enter(self):
         self._preload_star_surfaces()
@@ -134,6 +137,12 @@ class GalaxyScene(Scene):
             if owner is None or ship is None or owner.empire_id != player.id:
                 continue
             by_class.setdefault(ship.ship_class, []).append(ship_entity)
+
+        # Fuel range: refuse moves beyond reach of a supply system.
+        if not in_fuel_range(self.game, player.id, dest_star_entity):
+            self._fuel_warning = "Destination is out of fuel range."
+            return
+        self._fuel_warning = ""
 
         to_send: list[int] = []
         for class_id, count in self.selected_counts.items():
@@ -352,6 +361,8 @@ class GalaxyScene(Scene):
         mouse_pos = pygame.mouse.get_pos()
         hovered_star = self._star_at(mouse_pos)
 
+        player = self.game.player_empire()
+        in_range = True
         if hovered_star is None or hovered_star == self.selected_fleet_star:
             end_xy = mouse_pos
             eta = None
@@ -361,10 +372,20 @@ class GalaxyScene(Scene):
                 return
             end_xy = (dst_pos.x, dst_pos.y)
             eta = self._slowest_eta(src_pos, dst_pos)
+            if player is not None:
+                in_range = in_fuel_range(self.game, player.id, hovered_star)
 
-        self._draw_dashed_line(screen, (255, 230, 120), (src_pos.x, src_pos.y), end_xy)
+        # Green-gold dashed line when reachable, red when out of fuel range.
+        line_color = (255, 230, 120) if in_range else (230, 90, 90)
+        self._draw_dashed_line(screen, line_color, (src_pos.x, src_pos.y), end_xy)
 
-        if eta is not None:
+        if hovered_star is not None and not in_range:
+            label = self._render_outlined(
+                self._label_font or self.game.font, "Out of fuel range", (240, 120, 120))
+            mid_x = (src_pos.x + end_xy[0]) // 2
+            mid_y = (src_pos.y + end_xy[1]) // 2 - 10
+            screen.blit(label, label.get_rect(center=(mid_x, mid_y)))
+        elif eta is not None:
             label = self._render_outlined(
                 self._label_font or self.game.font,
                 f"{eta} turn{'s' if eta != 1 else ''}",

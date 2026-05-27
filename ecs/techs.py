@@ -100,8 +100,9 @@ TECHS: dict[str, dict] = {
         "tier": 1,
         "cost": 100,
         "prereqs": [],
-        "description": "Ships gain +1 speed",
+        "description": "+1 speed, 9 parsec fuel range",
         "speed_bonus": 1,
+        "fuel_range": 9,
     },
     "fusion_drives": {
         "id": "fusion_drives",
@@ -110,8 +111,9 @@ TECHS: dict[str, dict] = {
         "tier": 2,
         "cost": 200,
         "prereqs": ["nuclear_drives"],
-        "description": "Ships gain +2 speed (replaces Nuclear)",
+        "description": "+2 speed, 12 parsec fuel range",
         "speed_bonus": 2,
+        "fuel_range": 12,
     },
     "ion_drives": {
         "id": "ion_drives",
@@ -120,8 +122,9 @@ TECHS: dict[str, dict] = {
         "tier": 3,
         "cost": 350,
         "prereqs": ["fusion_drives"],
-        "description": "Ships gain +3 speed (replaces Fusion)",
+        "description": "+3 speed, 16 parsec fuel range",
         "speed_bonus": 3,
+        "fuel_range": 16,
     },
     "anti_matter_drives": {
         "id": "anti_matter_drives",
@@ -130,8 +133,9 @@ TECHS: dict[str, dict] = {
         "tier": 4,
         "cost": 500,
         "prereqs": ["ion_drives"],
-        "description": "Ships gain +4 speed",
+        "description": "+4 speed, 20 parsec fuel range",
         "speed_bonus": 4,
+        "fuel_range": 20,
     },
     "hyper_drives": {
         "id": "hyper_drives",
@@ -140,8 +144,9 @@ TECHS: dict[str, dict] = {
         "tier": 5,
         "cost": 800,
         "prereqs": ["anti_matter_drives"],
-        "description": "Ships gain +6 speed",
+        "description": "+6 speed, 28 parsec fuel range",
         "speed_bonus": 6,
+        "fuel_range": 28,
     },
 
     # ---- Sociology ---------------------------------------------------------
@@ -347,6 +352,22 @@ def empire_speed_bonus(unlocked: set[str] | list) -> int:
     for tech_id, spec in TECHS.items():
         if tech_id in unlocked_set:
             best = max(best, spec.get("speed_bonus", 0))
+    return best
+
+
+# Fuel range (in parsecs) with no drive tech at all. Every empire can
+# operate this far from a friendly supply system from turn 1.
+BASE_FUEL_RANGE = 6
+
+
+def empire_fuel_range(unlocked: set[str] | list) -> int:
+    """Best drive tech's fuel range, falling back to BASE_FUEL_RANGE.
+    Like speed, drives replace each other (max, not sum)."""
+    unlocked_set = set(unlocked)
+    best = BASE_FUEL_RANGE
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("fuel_range", 0))
     return best
 
 

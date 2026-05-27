@@ -23,6 +23,7 @@ from ecs.economy import FARMER_FOOD, planet_output
 from ecs.projects import PROJECTS, project_is_available
 from ecs.techs import TECHS, is_available
 from ecs.fleet import start_fleet_movement
+from ecs.fuel import reachable_stars
 from ecs.ships import empire_freighter_capacity
 from ecs.colonization import (
     COLONY_SHIP_CLASS, colonize_planet, can_colonize,
@@ -207,18 +208,24 @@ def ai_tick(game, new_turn: int):
 
         # Dispatch any colony ships still parked after settling — fly
         # them to the highest-value reachable star (score minus
-        # distance penalty).
-        _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus)
+        # distance penalty), limited to fuel range.
+        reachable = reachable_stars(game, empire.id)
+        _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus, reachable)
 
         # Diplomacy: gang up on runaways, sign treaties with friends,
         # declare war on hated rivals.
         _ai_diplomacy(game, empire, personality, new_turn)
 
+        # Fuel range: stars this empire's fleets can actually reach
+        # (within range of own/allied supply). Dispatch passes filter
+        # their targets to this set so ships aren't sent into the void.
+        reachable = reachable_stars(game, empire.id)
+
         if personality.get("aggressive"):
             # Send idle Troop Transports toward enemy planets, then
             # warships at the player's homeworld.
-            _ai_dispatch_troop_transports(cm, empire)
-            _ai_dispatch_ships(cm, empire)
+            _ai_dispatch_troop_transports(cm, empire, reachable)
+            _ai_dispatch_ships(cm, empire, reachable)
 
     if not pending_writes:
         return
@@ -476,10 +483,14 @@ def _ai_settle_arrived_colony_ships(game, empire, focus: str):
 _DISPATCH_DISTANCE_WEIGHT = 0.0001
 
 
-def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str):
+def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str,
+                              reachable: set[int] | None = None):
     """Send parked Colony Ships not currently at a candidate star to
     the star whose best planet has the highest score, minus a small
-    distance penalty. No-op if there are no candidates."""
+    distance penalty. Only targets within fuel range. No-op if there
+    are no reachable candidates."""
+    if reachable is not None:
+        candidate_stars = [s for s in candidate_stars if s in reachable]
     if not candidate_stars:
         return
     candidate_set = set(candidate_stars)
@@ -527,12 +538,10 @@ def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str
             start_fleet_movement(cm, ships, src_star, best)
 
 
-def _ai_dispatch_ships(cm, empire):
-    """Aggressive AI: send any parked ships at the player's homeworld.
-
-    Picks every parked ship not already at the target and dispatches.
-    Each ship handles its own transit time so faster hulls arrive first.
-    """
+def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None):
+    """Aggressive AI: send warships at the player's homeworld — but only
+    if it's within fuel range. Out-of-reach targets are left alone so
+    the AI doesn't strand fleets in the void."""
     # Locate the player empire + their home star entity.
     player = None
     for _eid, e in cm.get_all(Empire):
@@ -548,6 +557,8 @@ def _ai_dispatch_ships(cm, empire):
             break
     if target_star is None:
         return
+    if reachable is not None and target_star not in reachable:
+        return  # player's homeworld out of fuel range — hold position
 
     # Group this AI's parked WARSHIPS by their current star. Civilian
     # hulls (colony, freighter) and troop transports are handled by
@@ -625,9 +636,11 @@ def _ai_invade_with_transports(game, empire):
             invade_planet(game, target, empire.id)
 
 
-def _ai_dispatch_troop_transports(cm, empire):
-    """Send idle Troop Transports to the closest enemy-owned star."""
+def _ai_dispatch_troop_transports(cm, empire, reachable: set[int] | None = None):
+    """Send idle Troop Transports to the closest reachable enemy star."""
     enemy_stars = _enemy_owned_stars(cm, empire.id)
+    if reachable is not None:
+        enemy_stars = {s: v for s, v in enemy_stars.items() if s in reachable}
     if not enemy_stars:
         return
     enemy_star_set = set(enemy_stars)
