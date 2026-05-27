@@ -53,9 +53,11 @@ class GalaxyScene(Scene):
             self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
 
     def update(self, dt):
-        # Hand off to the Galactic Council screen if a session convened
-        # at the end of the last turn.
-        if getattr(self.game, "pending_council", None) is not None:
+        # Show combat reports first (battles just fought), then hand off
+        # to the Galactic Council screen if a session convened.
+        if getattr(self.game, "pending_combat_reports", None):
+            self.game.scenes.replace("combat_report")
+        elif getattr(self.game, "pending_council", None) is not None:
             self.game.scenes.replace("council")
 
     def _preload_star_surfaces(self):

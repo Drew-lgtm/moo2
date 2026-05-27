@@ -150,17 +150,36 @@ def combat_tick(game, new_turn: int):
                 cm, ships, damage, _bonuses(empire_id)[1],
             )
 
-        # Record the engagement before mutating.
+        # Record the engagement before mutating — rich enough for the
+        # combat-report screen: per side, ships by class, attack power,
+        # losses, survivors.
+        sides = []
+        for empire_id, ships in by_owner.items():
+            by_class: dict[str, int] = {}
+            for e in ships:
+                sc = cm.get_component(e, Ship)
+                if sc is not None:
+                    by_class[sc.ship_class] = by_class.get(sc.ship_class, 0) + 1
+            lost = len(side_losses[empire_id])
+            sides.append({
+                "empire_id": empire_id,
+                "attack": side_attack[empire_id],
+                "ships_before": by_class,
+                "total_before": len(ships),
+                "lost": lost,
+                "remaining": len(ships) - lost,
+            })
         log_entry = {
             "turn": new_turn,
             "star_entity": star_entity,
+            "sides": sides,
+            # Kept for backwards compatibility with any existing readers.
             "losses_by_empire": {
                 eid: len(losses) for eid, losses in side_losses.items() if losses
             },
             "attack_by_empire": dict(side_attack),
         }
-        if log_entry["losses_by_empire"]:
-            log.append(log_entry)
+        log.append(log_entry)
 
         for empire_id, losses in side_losses.items():
             for ship_entity in losses:
@@ -178,8 +197,18 @@ def combat_tick(game, new_turn: int):
         for ship_entity in destroyed_entities:
             _destroy_ship(game, ship_entity)
 
-    # Append to a rolling log on Game for future UI surfacing.
+    # Append to a rolling log on Game for review.
     if log:
         existing = getattr(game, "last_combats", [])
         # Keep at most the 20 most recent engagements.
         game.last_combats = (existing + log)[-20:]
+        # Surface battles the player fought in — the GalaxyScene pops up
+        # a report screen for these after the turn resolves.
+        player = game.player_empire()
+        if player is not None:
+            player_battles = [
+                r for r in log
+                if any(s["empire_id"] == player.id for s in r["sides"])
+            ]
+            if player_battles:
+                game.pending_combat_reports = player_battles

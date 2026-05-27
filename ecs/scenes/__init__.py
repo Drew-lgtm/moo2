@@ -6,6 +6,7 @@ from ecs.scenes.build import BuildScene
 from ecs.scenes.research import ResearchScene
 from ecs.scenes.diplomacy import DiplomacyScene
 from ecs.scenes.council import CouncilScene
+from ecs.scenes.combat_report import CombatReportScene
 from ecs.scenes.pause import PauseScene
 from ecs.scenes.empire_setup import EmpireSetupScene
 from ecs.scenes.panels import (
@@ -25,6 +26,7 @@ __all__ = [
     "ResearchScene",
     "DiplomacyScene",
     "CouncilScene",
+    "CombatReportScene",
     "PauseScene",
     "EmpireSetupScene",
     "ColoniesScene",

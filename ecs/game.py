@@ -57,6 +57,11 @@ class Game:
         # Set by advance_turn when the Galactic Council convenes; the
         # GalaxyScene picks it up and switches to the council screen.
         self.pending_council: dict | None = None
+        # Set by combat_tick to battle reports the player fought in; the
+        # GalaxyScene shows a combat report screen for them.
+        self.pending_combat_reports: list | None = None
+        # Rolling record of recent battles for review.
+        self.last_combats: list = []
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)
