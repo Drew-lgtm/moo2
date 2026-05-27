@@ -17,6 +17,7 @@ from ecs.scenes import (
     SaveSlotScene,
     PauseScene,
     EmpireSetupScene,
+    EspionageScene,
     ColoniesScene,
     PlanetsScene,
     LeadersScene,
@@ -32,6 +33,7 @@ def main():
     game = Game(screen_width=1200, screen_height=800, num_stars=40)
     game.scenes.register("main_menu", MainMenuScene(game))
     game.scenes.register("empire_setup", EmpireSetupScene(game))
+    game.scenes.register("espionage", EspionageScene(game))
     game.scenes.register("galaxy", GalaxyScene(game))
     game.scenes.register("system", SystemViewScene(game))
     game.scenes.register("colony", ColonyScene(game))

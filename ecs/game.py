@@ -21,6 +21,7 @@ from ecs.fleet import fleet_tick
 from ecs.combat import combat_tick
 from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
 from ecs.exploration import Exploration, exploration_tick as _exploration_tick
+from ecs.espionage import Espionage, espionage_tick as _espionage_tick
 from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
 from assets.loader import load_random_background
@@ -55,6 +56,8 @@ class Game:
         self.diplomacy: Diplomacy | None = None
         # Per-empire star exploration (fog of war). None until a game runs.
         self.exploration: Exploration | None = None
+        # Spies + counter-intelligence. None until a game is running.
+        self.espionage: Espionage | None = None
         # Set by advance_turn when the Galactic Council convenes; the
         # GalaxyScene picks it up and switches to the council screen.
         self.pending_council: dict | None = None
@@ -144,6 +147,9 @@ class Game:
         self.exploration = Exploration()
         self.exploration.reveal_from_world(self.component_mgr)
         self.exploration.save()
+        # Fresh espionage state — no spies trained yet.
+        self.espionage = Espionage()
+        self.espionage.save()
         self._bind_game_ui()
 
     def load_game(self):
@@ -161,6 +167,8 @@ class Game:
         # Cover saves made before exploration existed: reveal current
         # holdings so the player isn't blind on a freshly-loaded game.
         self.exploration.reveal_from_world(self.component_mgr)
+        self.espionage = Espionage()
+        self.espionage.load()
         self._bind_game_ui()
 
     def _bind_game_ui(self):
@@ -176,6 +184,7 @@ class Game:
             "diplomacy": "diplomacy",
             "leaders": "leaders",
             "races": "races",
+            "espionage": "espionage",
             "info": "info",
         }
         for button_name, scene_name in panel_targets.items():
@@ -189,7 +198,7 @@ class Game:
         # diplomacy so a fresh war's first battle resolves, then the
         # diplomacy tick ages treaties and decays attitudes.
         for cb in (ai_tick, pop_growth_tick, production_tick, fleet_tick,
-                   combat_tick, _exploration_tick, _diplomacy_tick):
+                   combat_tick, _exploration_tick, _espionage_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 
@@ -242,13 +251,14 @@ class Game:
 
     # Global keyboard shortcuts (only fire when an in-game scene is
     # active, never on the main menu / empire setup / pause).
-    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "research", "diplomacy", "leaders", "races", "info", "system", "colony"}
+    _SHORTCUT_SCENES = {"galaxy", "colonies", "planets", "research", "diplomacy", "leaders", "races", "espionage", "info", "system", "colony"}
     _SHORTCUT_SCENE_KEYS = {
         pygame.K_c: "colonies",
         pygame.K_p: "planets",
         pygame.K_r: "research",
         pygame.K_d: "diplomacy",
         pygame.K_l: "leaders",
+        pygame.K_e: "espionage",
         pygame.K_i: "info",
         pygame.K_g: "galaxy",
     }

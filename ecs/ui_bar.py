@@ -23,7 +23,7 @@ class BottomUIBar:
     BTN_BORDER      = (140, 150, 200)
     BTN_TEXT        = (240, 240, 240)
 
-    BUTTON_NAMES = ["colonies", "planets", "research", "diplomacy", "leaders", "races", "info", "turn"]
+    BUTTON_NAMES = ["colonies", "planets", "research", "diplomacy", "leaders", "races", "espionage", "info", "turn"]
     LABELS = {
         "colonies": "Colonies",
         "planets":  "Planets",
@@ -31,6 +31,7 @@ class BottomUIBar:
         "diplomacy": "Diplomacy",
         "leaders":  "Leaders",
         "races":    "Races",
+        "espionage": "Espionage",
         "info":     "Info",
         "turn":     "Turn",
     }

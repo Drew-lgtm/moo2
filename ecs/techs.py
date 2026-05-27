@@ -31,7 +31,7 @@ from __future__ import annotations
 
 
 # Fields the catalog covers (order = display order in Research scene).
-FIELDS = ["construction", "power", "sociology", "computers", "biology", "physics"]
+FIELDS = ["construction", "power", "sociology", "computers", "biology", "physics", "espionage"]
 
 FIELD_NAMES = {
     "construction": "Construction",
@@ -40,6 +40,7 @@ FIELD_NAMES = {
     "computers":    "Computers",
     "biology":      "Biology",
     "physics":      "Physics",
+    "espionage":    "Espionage",
 }
 
 # Display colours per field; used by the Research scene to tint columns.
@@ -50,6 +51,7 @@ FIELD_COLORS = {
     "computers":    (140, 180, 230),
     "biology":      (150, 220, 180),
     "physics":      (220, 140, 220),
+    "espionage":    (200, 110, 130),
 }
 
 
@@ -306,6 +308,52 @@ TECHS: dict[str, dict] = {
         "attack_bonus": 3,
         "hull_bonus": 1,
     },
+
+    # ---- Espionage (spies + counter-intelligence) --------------------------
+    "spy_network": {
+        "id": "spy_network",
+        "name": "Spy Network",
+        "field": "espionage",
+        "tier": 1,
+        "cost": 120,
+        "prereqs": [],
+        "description": "+1 spy skill & security",
+        "spy_offense": 1,
+        "spy_defense": 1,
+    },
+    "stealth_suit": {
+        "id": "stealth_suit",
+        "name": "Stealth Suit",
+        "field": "espionage",
+        "tier": 2,
+        "cost": 280,
+        "prereqs": ["spy_network"],
+        "description": "+2 spy skill; caught spies rarely identified",
+        "spy_offense": 2,
+        "stealth": True,
+    },
+    "mind_scan": {
+        "id": "mind_scan",
+        "name": "Mind Scan",
+        "field": "espionage",
+        "tier": 3,
+        "cost": 420,
+        "prereqs": ["spy_network"],
+        "description": "+3 security; always unmask caught spies",
+        "spy_defense": 3,
+        "mind_scan": True,
+    },
+    "neural_scrambler": {
+        "id": "neural_scrambler",
+        "name": "Neural Scrambler",
+        "field": "espionage",
+        "tier": 4,
+        "cost": 640,
+        "prereqs": ["stealth_suit", "mind_scan"],
+        "description": "+3 spy skill & security",
+        "spy_offense": 3,
+        "spy_defense": 3,
+    },
 }
 
 # Convenience: techs grouped by field, sorted by tier.
@@ -321,16 +369,16 @@ def techs_in_field(field: str) -> list[dict]:
 TECH_ORDER = [
     # Tier 1
     "industrial_engineering", "nuclear_drives", "trade", "computer_science",
-    "agriculture", "laser_cannons",
+    "agriculture", "laser_cannons", "spy_network",
     # Tier 2
     "advanced_construction", "fusion_drives", "governance", "advanced_computers",
-    "soil_enrichment", "phasors",
+    "soil_enrichment", "phasors", "stealth_suit",
     # Tier 3
     "automated_factories", "ion_drives", "financial_planning", "galactic_networks",
-    "cloning", "tachyon_scanner",
+    "cloning", "tachyon_scanner", "mind_scan",
     # Tier 4
     "robo_miners", "anti_matter_drives", "virtual_reality_network",
-    "positronic_computers", "terraforming", "plasma_cannons",
+    "positronic_computers", "terraforming", "plasma_cannons", "neural_scrambler",
     # Tier 5 (only Power goes this deep)
     "hyper_drives",
 ]
@@ -406,3 +454,33 @@ def empire_hull_bonus(unlocked: set[str] | list) -> int:
         if tech_id in unlocked_set:
             best = max(best, spec.get("hull_bonus", 0))
     return best
+
+
+def empire_spy_offense(unlocked: set[str] | list) -> int:
+    """Best espionage tech contributes this to offensive spy skill."""
+    unlocked_set = set(unlocked)
+    best = 0
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("spy_offense", 0))
+    return best
+
+
+def empire_spy_defense(unlocked: set[str] | list) -> int:
+    """Best espionage tech contributes this to internal security."""
+    unlocked_set = set(unlocked)
+    best = 0
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("spy_defense", 0))
+    return best
+
+
+def empire_has_stealth(unlocked: set[str] | list) -> bool:
+    """Stealth Suit: caught offensive spies are rarely identified."""
+    return any(TECHS.get(t, {}).get("stealth") for t in unlocked)
+
+
+def empire_has_mind_scan(unlocked: set[str] | list) -> bool:
+    """Mind Scan: caught enemy spies are always unmasked (defeats stealth)."""
+    return any(TECHS.get(t, {}).get("mind_scan") for t in unlocked)

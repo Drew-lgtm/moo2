@@ -12,6 +12,7 @@ from ecs.scenes.game_over import GameOverScene
 from ecs.scenes.saves import SaveSlotScene
 from ecs.scenes.pause import PauseScene
 from ecs.scenes.empire_setup import EmpireSetupScene
+from ecs.scenes.espionage import EspionageScene
 from ecs.scenes.panels import (
     ColoniesScene,
     PlanetsScene,
@@ -35,6 +36,7 @@ __all__ = [
     "SaveSlotScene",
     "PauseScene",
     "EmpireSetupScene",
+    "EspionageScene",
     "ColoniesScene",
     "PlanetsScene",
     "LeadersScene",

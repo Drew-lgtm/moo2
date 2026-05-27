@@ -125,6 +125,19 @@ def init_db():
             PRIMARY KEY(empire_id, star_id)
         );
 
+        CREATE TABLE IF NOT EXISTS spies (
+            empire_id INTEGER PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS spy_missions (
+            attacker INTEGER NOT NULL,
+            target INTEGER NOT NULL,
+            mission TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY(attacker, target, mission)
+        );
+
         -- Persistent hall of fame: NOT wiped by clear_galaxy, so it
         -- survives across games.
         CREATE TABLE IF NOT EXISTS hall_of_fame (
@@ -244,6 +257,13 @@ def update_planet_build(conn, planet_id, current_project, progress):
 def insert_planet_building(conn, planet_id, project_id):
     conn.execute(
         "INSERT OR IGNORE INTO planet_buildings (planet_id, project_id) VALUES (?, ?)",
+        (planet_id, project_id),
+    )
+
+
+def delete_planet_building(conn, planet_id, project_id):
+    conn.execute(
+        "DELETE FROM planet_buildings WHERE planet_id = ? AND project_id = ?",
         (planet_id, project_id),
     )
 
@@ -408,6 +428,7 @@ def clear_galaxy():
     with get_connection() as conn:
         for table in ("planet_build_queue", "planet_buildings", "ships",
                       "empire_techs", "planets", "empires", "stars", "meta",
-                      "diplomacy", "diplomacy_pending", "empire_explored"):
+                      "diplomacy", "diplomacy_pending", "empire_explored",
+                      "spies", "spy_missions"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

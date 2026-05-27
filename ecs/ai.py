@@ -44,6 +44,7 @@ from ecs.db import (
     update_empire_tech,
 )
 from ecs.personalities import get as get_personality
+from ecs.espionage import SPY_COST
 
 
 # Fleet caps. Ship projects never enter BuildState.completed, so without
@@ -215,6 +216,9 @@ def ai_tick(game, new_turn: int):
         # Diplomacy: gang up on runaways, sign treaties with friends,
         # declare war on hated rivals.
         _ai_diplomacy(game, empire, personality, new_turn)
+
+        # Espionage: train spies and point them at disliked rivals.
+        _ai_espionage(game, empire, personality)
 
         # Fuel range: stars this empire's fleets can actually reach
         # (within range of own/allied supply). Dispatch passes filter
@@ -821,6 +825,64 @@ def _ai_diplomacy(game, empire, personality, turn: int):
                         f"T{turn}: Empire {empire.id} quietly lets its pacts "
                         f"with {o} lapse — a strike is coming.")
                     _ai_stage_strike(game, empire, o)
+
+
+# ---- Espionage ---------------------------------------------------------
+
+# Keep this much BC in reserve before spending on spies.
+AI_SPY_BUFFER_BC = 150
+# Baseline spy ambition; grows with empire size + aggression.
+AI_BASE_SPY_TARGET = 2
+
+
+def _ai_espionage(game, empire, personality):
+    """Train spies up to a size/aggression-scaled target, then point the
+    free ones at the most-hated rival. At war / aggressive empires
+    sabotage; everyone else steals tech. One defender is always kept
+    home. Spy state is persisted by espionage_tick at end of turn; BC
+    spent on training is netted out by the later production_tick."""
+    import random as _random
+    esp = getattr(game, "espionage", None)
+    if esp is None:
+        return
+    diplo = getattr(game, "diplomacy", None)
+    cm = game.component_mgr
+
+    colonies = sum(1 for _e, o in cm.get_all(Owner) if o.empire_id == empire.id)
+    target_spies = AI_BASE_SPY_TARGET + colonies // 2
+    if personality.get("aggressive"):
+        target_spies += 1
+
+    # Train one spy this turn if under target and comfortably affordable.
+    if (esp.spy_count(empire.id) < target_spies
+            and empire.bc >= AI_SPY_BUFFER_BC + SPY_COST
+            and _random.random() < 0.5):
+        empire.bc -= SPY_COST
+        esp.train_spy(empire.id)
+
+    others = [e for _e, e in cm.get_all(Empire) if e.id != empire.id]
+    if not others:
+        return
+
+    def hostility(o):
+        if diplo is None:
+            return 0
+        h = -diplo.attitude(empire.id, o.id)
+        if diplo.at_war(empire.id, o.id):
+            h += 50
+        return h
+
+    target = max(others, key=hostility)
+    # Only run offensive operations against someone we dislike or fight.
+    if diplo is not None and not diplo.at_war(empire.id, target.id) \
+            and diplo.attitude(empire.id, target.id) > -10:
+        return
+
+    at_war = diplo is not None and diplo.at_war(empire.id, target.id)
+    mission = "sabotage" if (at_war or personality.get("aggressive")) else "steal"
+    assign = max(0, esp.defense_count(empire.id) - 1)  # keep one defender
+    if assign > 0:
+        esp.adjust_mission(empire.id, target.id, mission, assign)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
