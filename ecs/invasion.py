@@ -120,6 +120,15 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
     if planet is None or orbit is None or defender_owner is None:
         return {"success": False, "reason": "invalid"}
 
+    # Launching the assault is an act of war. If a peace/NAP was in
+    # force this also triggers the betrayal reputation penalty.
+    diplo = getattr(game, "diplomacy", None)
+    if diplo is not None:
+        from ecs.diplomacy import all_empire_ids
+        turn = getattr(getattr(game, "galaxy", None), "turn", 0)
+        diplo.note_invasion(empire_id, defender_owner.empire_id, turn,
+                            all_empire_ids(cm))
+
     transports = _troop_transports_at_star(cm, orbit.star_entity, empire_id)
     n_transports = len(transports)
     raw_attack = n_transports * MARINES_PER_TRANSPORT

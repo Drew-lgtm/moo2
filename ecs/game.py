@@ -19,6 +19,7 @@ from ecs.economy import production_tick, pop_growth_tick
 from ecs.ai import ai_tick
 from ecs.fleet import fleet_tick
 from ecs.combat import combat_tick
+from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
 from assets.loader import load_random_background
 
 
@@ -46,6 +47,9 @@ class Game:
         self.entity_mgr = EntityManager()
         self.component_mgr = ComponentManager()
         self.galaxy: GalaxyGenerator | None = None
+        # Inter-empire diplomacy. Created fresh on new game, loaded on
+        # load_game. None until a game is running.
+        self.diplomacy: Diplomacy | None = None
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)
@@ -110,6 +114,10 @@ class Game:
             num_empires=num_empires, player_empire=player_empire,
             difficulty=difficulty, galaxy_age=galaxy_age,
         )
+        # Fresh diplomacy — all empires neutral, no treaties. Persist so
+        # the (empty) tables exist for the first save/load round-trip.
+        self.diplomacy = Diplomacy()
+        self.diplomacy.save()
         self._bind_game_ui()
 
     def load_game(self):
@@ -120,6 +128,8 @@ class Game:
             y_offset=self.play_area_top,
         )
         self.galaxy.load_from_db()
+        self.diplomacy = Diplomacy()
+        self.diplomacy.load()
         self._bind_game_ui()
 
     def _bind_game_ui(self):
@@ -143,9 +153,11 @@ class Game:
         self.ui_bar.set_callback("turn", self.advance_turn)
 
         # Register per-turn systems. Order: AI -> growth -> production ->
-        # fleet movement -> combat. Combat runs last so ships that arrived
-        # this turn engage at the destination star.
-        for cb in (ai_tick, pop_growth_tick, production_tick, fleet_tick, combat_tick):
+        # fleet movement -> combat -> diplomacy. Combat runs before
+        # diplomacy so a fresh war's first battle resolves, then the
+        # diplomacy tick ages treaties and decays attitudes.
+        for cb in (ai_tick, pop_growth_tick, production_tick, fleet_tick,
+                   combat_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 

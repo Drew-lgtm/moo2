@@ -101,6 +101,23 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS diplomacy (
+            empire_a INTEGER NOT NULL,
+            empire_b INTEGER NOT NULL,
+            attitude INTEGER DEFAULT 0,
+            at_war INTEGER DEFAULT 0,
+            treaties TEXT DEFAULT '',
+            PRIMARY KEY(empire_a, empire_b)
+        );
+
+        CREATE TABLE IF NOT EXISTS diplomacy_pending (
+            empire_a INTEGER NOT NULL,
+            empire_b INTEGER NOT NULL,
+            treaty TEXT NOT NULL,
+            ends_turn INTEGER NOT NULL,
+            PRIMARY KEY(empire_a, empire_b, treaty)
+        );
         """)
         _migrate_empires(conn)
         _migrate_planets(conn)
@@ -357,6 +374,7 @@ def clear_galaxy():
     init_db()
     with get_connection() as conn:
         for table in ("planet_build_queue", "planet_buildings", "ships",
-                      "empire_techs", "planets", "empires", "stars", "meta"):
+                      "empire_techs", "planets", "empires", "stars", "meta",
+                      "diplomacy", "diplomacy_pending"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

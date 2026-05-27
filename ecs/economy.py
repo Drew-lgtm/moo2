@@ -36,6 +36,7 @@ from ecs.planet_features import (
     RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT, feature_bonuses,
 )
 from ecs.ships import empire_freighter_capacity
+from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 
 
 # ---- planet capacity (max population) ---------------------------------
@@ -537,6 +538,11 @@ def production_tick(game, new_turn: int):
 
     ai_mult = ai_output_multiplier(getattr(game.galaxy, "difficulty", "normal"))
 
+    # Diplomacy: trade / research treaties give each signatory a percent
+    # bonus to BC / research, stacking per active partner.
+    diplo = getattr(game, "diplomacy", None)
+    empire_ids = [e.id for _eid, e in cm.get_all(Empire)]
+
     for _eid, empire in cm.get_all(Empire):
         gain_bc, gain_res = empire_gains.get(empire.id, (0, 0))
         # AI empires get a flat cheating bonus per difficulty. The player's
@@ -544,6 +550,14 @@ def production_tick(game, new_turn: int):
         if not empire.is_player and ai_mult != 1.0:
             gain_bc = int(round(gain_bc * ai_mult))
             gain_res = int(round(gain_res * ai_mult))
+        # Treaty bonuses apply on top, for everyone.
+        if diplo is not None:
+            trade_pct = empire_trade_bonus_pct(diplo, empire.id, empire_ids)
+            research_pct = empire_research_bonus_pct(diplo, empire.id, empire_ids)
+            if trade_pct:
+                gain_bc = int(round(gain_bc * (1 + trade_pct / 100)))
+            if research_pct:
+                gain_res = int(round(gain_res * (1 + research_pct / 100)))
         if gain_bc:
             empire.bc += gain_bc
         if gain_res:

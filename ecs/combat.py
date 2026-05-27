@@ -91,8 +91,20 @@ def _destroy_ship(game, ship_entity: int):
 
 
 def combat_tick(game, new_turn: int):
-    """Resolve combat at every star where two or more empires have ships."""
+    """Resolve combat at every star where two or more *at-war* empires
+    have ships. Empires at peace (or under a non-aggression pact) can
+    share a star without fighting."""
     cm = game.component_mgr
+    diplo = getattr(game, "diplomacy", None)
+
+    def _hostile(a: int, b: int) -> bool:
+        # No diplomacy object (e.g. old save) → fall back to the old
+        # "everyone fights everyone" behaviour so nothing silently
+        # becomes invincible.
+        if diplo is None:
+            return True
+        return diplo.at_war(a, b)
+
     # star_entity -> {empire_id: [ship_entity]}
     by_star: dict[int, dict[int, list[int]]] = {}
     for ship_entity, at in cm.get_all(ShipAt):
@@ -117,6 +129,11 @@ def combat_tick(game, new_turn: int):
     for star_entity, by_owner in by_star.items():
         if len(by_owner) < 2:
             continue
+        # Skip stars where no two present empires are actually at war.
+        present = list(by_owner)
+        if not any(_hostile(present[i], present[j])
+                   for i in range(len(present)) for j in range(i + 1, len(present))):
+            continue
 
         side_attack = {
             empire_id: sum(_attack_of(cm, e, _bonuses(empire_id)[0]) for e in ships)
@@ -124,7 +141,11 @@ def combat_tick(game, new_turn: int):
         }
         side_losses: dict[int, list[int]] = {}
         for empire_id, ships in by_owner.items():
-            damage = sum(side_attack[other] for other in by_owner if other != empire_id)
+            # Only take damage from empires we're at war with.
+            damage = sum(
+                side_attack[other] for other in by_owner
+                if other != empire_id and _hostile(empire_id, other)
+            )
             side_losses[empire_id] = _compute_losses_with_bonus(
                 cm, ships, damage, _bonuses(empire_id)[1],
             )
