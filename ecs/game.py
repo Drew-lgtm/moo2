@@ -69,6 +69,9 @@ class Game:
         # Set when a victory/defeat condition is met; routes to the
         # game-over screen. {"result","mode","winner_id"}.
         self.pending_endgame: dict | None = None
+        # Save/Load slot screen state (set before switching to "saves").
+        self.save_screen_mode: str = "load"     # "load" | "save"
+        self.save_screen_return: str = "main_menu"
 
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(screen_width, screen_height)

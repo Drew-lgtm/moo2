@@ -14,6 +14,7 @@ from ecs.scenes import (
     CombatReportScene,
     IdleColoniesScene,
     GameOverScene,
+    SaveSlotScene,
     PauseScene,
     EmpireSetupScene,
     ColoniesScene,
@@ -41,6 +42,7 @@ def main():
     game.scenes.register("combat_report", CombatReportScene(game))
     game.scenes.register("idle_colonies", IdleColoniesScene(game))
     game.scenes.register("game_over", GameOverScene(game))
+    game.scenes.register("saves", SaveSlotScene(game))
     game.scenes.register("pause", PauseScene(game))
     game.scenes.register("colonies", ColoniesScene(game))
     game.scenes.register("planets", PlanetsScene(game))

@@ -12,8 +12,9 @@ class MainMenuScene(Scene):
         if result == "New Game":
             self.game.scenes.replace("empire_setup")
         elif result == "Load Game":
-            self.game.load_game()
-            self.game.scenes.replace("galaxy")
+            self.game.save_screen_mode = "load"
+            self.game.save_screen_return = "main_menu"
+            self.game.scenes.replace("saves")
         elif result == "Quit":
             self.game.quit()
 
