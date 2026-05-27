@@ -34,7 +34,7 @@ from ecs.invasion import (
 )
 from ecs.races import traits_for_empire
 from ecs.diplomacy import (
-    NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE,
+    NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE, DEFENSIVE_PACT,
     would_accept_treaty, empire_strength, TREATY_ACCEPT_THRESHOLD,
 )
 from ecs.db import (
@@ -612,8 +612,14 @@ def _weakest_enemy_planet_at_star(cm, planet_entities: list[int]) -> int | None:
 def _ai_invade_with_transports(game, empire):
     """Launch one ground assault per star where the empire has Troop
     Transports sitting on an enemy planet. Picks the weakest enemy
-    planet at each star for the best odds."""
+    planet at each star for the best odds.
+
+    Skips planets owned by an empire the AI still holds a peace treaty
+    with — invading would break the pact and trigger the betrayal
+    penalty. The AI waits for the (already-cancelled) treaty to lapse
+    instead; its transports sit in orbit until then."""
     cm = game.component_mgr
+    diplo = getattr(game, "diplomacy", None)
     enemy_stars = _enemy_owned_stars(cm, empire.id)
     if not enemy_stars:
         return
@@ -632,8 +638,63 @@ def _ai_invade_with_transports(game, empire):
         if star not in enemy_stars:
             continue
         target = _weakest_enemy_planet_at_star(cm, enemy_stars[star])
-        if target is not None and can_invade(cm, target, empire.id):
-            invade_planet(game, target, empire.id)
+        if target is None or not can_invade(cm, target, empire.id):
+            continue
+        owner = cm.get_component(target, Owner)
+        if (diplo is not None and owner is not None
+                and diplo.has_peace_treaty(empire.id, owner.empire_id)):
+            continue  # honour the pact; wait for it to expire
+        invade_planet(game, target, empire.id)
+
+
+def _ai_stage_strike(game, empire, target_empire_id: int):
+    """Pre-position parked warships + troop transports toward the
+    closest reachable system of ``target_empire_id`` — so the strike
+    fleet is in orbit roughly when a cancelled peace treaty lapses."""
+    cm = game.component_mgr
+    reachable = reachable_stars(game, empire.id)
+    if not reachable:
+        return
+
+    # Target's systems we can actually reach.
+    target_stars: list[int] = []
+    for planet_entity, owner in cm.get_all(Owner):
+        if owner.empire_id != target_empire_id:
+            continue
+        orbit = cm.get_component(planet_entity, Orbiting)
+        if orbit is not None and orbit.star_entity in reachable:
+            target_stars.append(orbit.star_entity)
+    if not target_stars:
+        return
+
+    # Group the empire's parked strike ships by their current star.
+    strike_classes = WARSHIP_CLASSES | {TROOP_TRANSPORT_CLASS}
+    by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class not in strike_classes:
+            continue
+        by_star.setdefault(at.star_entity, []).append(ship_entity)
+
+    for src_star, ships in by_star.items():
+        src_pos = cm.get_component(src_star, Position)
+        if src_pos is None:
+            continue
+        best, best_d2 = None, float("inf")
+        for ts in target_stars:
+            if ts == src_star:
+                continue
+            tp = cm.get_component(ts, Position)
+            if tp is None:
+                continue
+            d2 = (tp.x - src_pos.x) ** 2 + (tp.y - src_pos.y) ** 2
+            if d2 < best_d2:
+                best_d2, best = d2, ts
+        if best is not None:
+            start_fleet_movement(cm, ships, src_star, best)
 
 
 def _ai_dispatch_troop_transports(cm, empire, reachable: set[int] | None = None):
@@ -731,15 +792,24 @@ def _ai_diplomacy(game, empire, personality, turn: int):
                     )
                     break  # one treaty per pair per turn
 
-        # Aggression: declare war on a disliked, not-stronger rival when
-        # not bound by a peace treaty. Breaking a NAP is possible but the
-        # betrayal penalty (declare_war) makes the AI pay for it, so we
-        # only do it when *really* hostile.
-        if aggressive:
-            bound = diplo.has_peace_treaty(empire.id, o)
-            hostile_enough = att <= (-60 if bound else -30)
-            strong_enough = my_strength >= o_strength * 0.8
-            if hostile_enough and strong_enough and _random.random() < 0.3:
+        # Aggression. When hostile to a rival it isn't outmatched by:
+        #   * bound by a peace treaty → don't break it (betrayal penalty).
+        #     Instead start the treaty's 5-turn cancellation clock and
+        #     pre-position a strike so the fleet lands the turn the pact
+        #     lapses — a clean, penalty-free sneak attack.
+        #   * already unbound → declare war outright.
+        if aggressive and att <= -30 and my_strength >= o_strength * 0.8:
+            if diplo.has_peace_treaty(empire.id, o):
+                if not diplo.peace_cancellation_pending(empire.id, o):
+                    for t in (NON_AGGRESSION, ALLIANCE, DEFENSIVE_PACT):
+                        if diplo.has_treaty(empire.id, o, t):
+                            diplo.cancel_treaty(empire.id, o, t, turn)
+                    diplo.log.append(
+                        f"T{turn}: Empire {empire.id} quietly lets its pacts "
+                        f"with {o} lapse — a strike is coming.")
+                    # March the fleet now so it arrives ~when peace ends.
+                    _ai_stage_strike(game, empire, o)
+            elif _random.random() < 0.3:
                 diplo.declare_war(empire.id, o, turn, all_ids)
 
 

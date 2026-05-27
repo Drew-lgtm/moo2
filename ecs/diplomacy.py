@@ -135,6 +135,25 @@ class Diplomacy:
     def has_peace_treaty(self, a: int, b: int) -> bool:
         return bool(self._pair(a, b)["treaties"] & PEACE_TREATIES)
 
+    def peace_cancellation_pending(self, a: int, b: int) -> bool:
+        """True if a peace/NAP treaty between the pair is already inside
+        its cancellation notice window (winding down to expiry)."""
+        key = self._key(a, b)
+        return any(
+            (ka, kb) == key and treaty in PEACE_TREATIES
+            for (ka, kb, treaty) in self.pending_cancel
+        )
+
+    def peace_expiry_turn(self, a: int, b: int) -> int | None:
+        """Earliest turn a peace treaty between the pair finishes its
+        cancellation notice, or None if none is pending."""
+        key = self._key(a, b)
+        ends = [
+            end for (ka, kb, treaty), end in self.pending_cancel.items()
+            if (ka, kb) == key and treaty in PEACE_TREATIES
+        ]
+        return min(ends) if ends else None
+
     # -- mutations ------------------------------------------------------
 
     def adjust_attitude(self, a: int, b: int, delta: int):
