@@ -19,13 +19,19 @@ from ecs.components import (
     Empire, Owner, Planet, Population, BuildState, TechState,
     Ship, ShipOwner, ShipAt, ShipInTransit, StarRef, Orbiting, Position,
 )
-from ecs.economy import FARMER_FOOD
+from ecs.economy import FARMER_FOOD, planet_output
 from ecs.projects import PROJECTS, project_is_available
 from ecs.techs import TECHS, is_available
 from ecs.fleet import start_fleet_movement
+from ecs.ships import empire_freighter_capacity
 from ecs.colonization import (
     COLONY_SHIP_CLASS, colonize_planet, can_colonize,
 )
+from ecs.invasion import (
+    TROOP_TRANSPORT_CLASS, can_invade, invade_planet,
+    MARINES_PER_TRANSPORT, MILITIA_PER_MILLION_POP, _planet_defense_rating,
+)
+from ecs.races import traits_for_empire
 from ecs.db import (
     get_connection,
     update_planet_workers,
@@ -35,10 +41,18 @@ from ecs.db import (
 from ecs.personalities import get as get_personality
 
 
-# How many Colony Ships the AI lets pile up at once before pausing
-# colony-ship construction. Keeps it from spending all its BC on
-# transports it can't use.
-AI_MAX_PARKED_COLONY_SHIPS = 2
+# Fleet caps. Ship projects never enter BuildState.completed, so without
+# a cap a ship sitting in the build priority would be rebuilt forever and
+# block every lower-priority entry. These caps count ALL of an empire's
+# ships of a class (parked + in transit) so dispatching a fleet doesn't
+# reopen the build slot every turn.
+AI_MAX_COLONY_SHIPS = 2
+AI_MAX_TROOP_TRANSPORTS = 4
+AI_MAX_WARSHIPS_PER_CLASS = 3
+
+# Combat ships the AI sends to attack the player (excludes Troop
+# Transports, which have their own invasion logic, and civilian hulls).
+WARSHIP_CLASSES = {"frigate", "carrier", "cruiser", "battleship", "dreadnought"}
 
 
 # ---- Planet scoring for colonisation ----------------------------------
@@ -154,24 +168,34 @@ def ai_tick(game, new_turn: int):
         unlocked = set(tech_state.unlocked) if tech_state else set()
 
         focus = personality.get("colonization_focus", "balanced")
+        traits = traits_for_empire(cm, empire.id)
+        planet_ids = empire_planets.get(empire.id, [])
         # Settle planets first — a Colony Ship already at a habitable
         # target should be spent this turn (before production_tick
         # touches the new colony).
         _ai_settle_arrived_colony_ships(game, empire, focus)
 
-        # Pause queuing new colony ships when the AI has plenty parked
-        # or there's nowhere left to settle.
-        parked_colony_count = _count_parked_colony_ships(cm, empire.id)
-        suppress_colony = (
-            not candidate_stars
-            or parked_colony_count >= AI_MAX_PARKED_COLONY_SHIPS
-        )
+        # Aggressive AIs invade enemy worlds with their Troop
+        # Transports before doing anything else — settling first means a
+        # captured world joins the economy this turn.
+        if personality.get("aggressive"):
+            _ai_invade_with_transports(game, empire)
 
-        for entity_id in empire_planets.get(empire.id, []):
+        # If distant colonies are starving for lack of transport, build
+        # a Freighter on an idle planet before the regular build pass
+        # grabs every idle slot.
+        _ai_maybe_queue_freighter(cm, empire, planet_ids, traits, pending_writes)
+
+        # Decide which ship projects are wanted right now. A ship that
+        # isn't wanted is suppressed so the build loop skips past it to
+        # the next building instead of rebuilding the same hull forever.
+        suppress = _ai_suppressed_ships(cm, empire, personality, candidate_stars)
+
+        for entity_id in planet_ids:
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
             _ai_queue_building(
                 cm, entity_id, personality["build_priority"], unlocked,
-                pending_writes, suppress=("ship_colony_ship",) if suppress_colony else (),
+                pending_writes, suppress=suppress,
             )
 
         if tech_state is not None:
@@ -183,6 +207,9 @@ def ai_tick(game, new_turn: int):
         _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus)
 
         if personality.get("aggressive"):
+            # Send idle Troop Transports toward enemy planets, then
+            # warships at the player's homeworld.
+            _ai_dispatch_troop_transports(cm, empire)
             _ai_dispatch_ships(cm, empire)
 
     if not pending_writes:
@@ -269,21 +296,102 @@ def _unowned_habitable_stars(cm) -> list[int]:
     return list(seen)
 
 
-def _count_parked_colony_ships(cm, empire_id: int) -> int:
-    """Colony ships of ``empire_id`` currently parked (ShipAt). Ships in
-    transit don't count — they're already committed."""
+def _count_ships(cm, empire_id: int, ship_class: str) -> int:
+    """Total ships of ``empire_id`` + ``ship_class`` the empire owns,
+    counting both parked and in-transit hulls. Used for fleet caps so
+    dispatching a fleet (moving it from ShipAt to ShipInTransit) doesn't
+    reopen the build slot the next turn."""
     n = 0
-    for ship_entity, _at in cm.get_all(ShipAt):
-        ship = cm.get_component(ship_entity, Ship)
-        owner = cm.get_component(ship_entity, ShipOwner)
-        if ship is None or owner is None:
-            continue
+    for ship_entity, owner in cm.get_all(ShipOwner):
         if owner.empire_id != empire_id:
             continue
-        if ship.ship_class != COLONY_SHIP_CLASS:
-            continue
-        n += 1
+        ship = cm.get_component(ship_entity, Ship)
+        if ship is not None and ship.ship_class == ship_class:
+            n += 1
     return n
+
+
+def _ai_suppressed_ships(cm, empire, personality, candidate_stars) -> tuple:
+    """Ship project ids the AI should NOT build this turn. The build
+    loop skips suppressed entries, so an unwanted ship in the priority
+    list no longer blocks lower-priority buildings."""
+    suppress: set[str] = set()
+    aggressive = bool(personality.get("aggressive"))
+
+    # Freighters are queued by dedicated logic (survival need), never
+    # from the linear build priority.
+    suppress.add("ship_freighter")
+
+    # Colony ships: stop when there's nowhere to settle or we have
+    # enough in the pipeline.
+    if not candidate_stars or _count_ships(cm, empire.id, COLONY_SHIP_CLASS) >= AI_MAX_COLONY_SHIPS:
+        suppress.add("ship_colony_ship")
+
+    # Warships: cap per class for every AI so they don't get stuck
+    # rebuilding the cheapest hull. Non-aggressive AIs keep only a token
+    # defensive fleet (the cap still applies).
+    for cls in WARSHIP_CLASSES:
+        if _count_ships(cm, empire.id, cls) >= AI_MAX_WARSHIPS_PER_CLASS:
+            suppress.add(f"ship_{cls}")
+
+    # Troop transports: aggressive only, and only when there's an enemy
+    # world to invade.
+    if (not aggressive
+            or not _enemy_owned_stars(cm, empire.id)
+            or _count_ships(cm, empire.id, TROOP_TRANSPORT_CLASS) >= AI_MAX_TROOP_TRANSPORTS):
+        suppress.add("ship_troop_transport")
+
+    return tuple(suppress)
+
+
+# ---- Freighter logistics ----------------------------------------------
+
+def _ai_food_shortfall(cm, empire_id: int, traits: list[str], planet_ids: list[int]) -> int:
+    """Per-planet food deficit that the empire's freighter capacity
+    can't cover this turn. >0 means some colony is going hungry for
+    lack of transport, not lack of food."""
+    per_pop_need = 0.5 if "tolerant" in traits else 1.0
+    per_planet_deficit = 0
+    for eid in planet_ids:
+        planet = cm.get_component(eid, Planet)
+        pop = cm.get_component(eid, Population)
+        build_state = cm.get_component(eid, BuildState)
+        if planet is None or pop is None:
+            continue
+        f, _i, _r, _b = planet_output(planet, pop, build_state, traits)
+        need = int(pop.current * per_pop_need + 0.999)  # ceil
+        per_planet_deficit += max(0, need - f)
+    capacity = empire_freighter_capacity(cm, empire_id)
+    return max(0, per_planet_deficit - capacity)
+
+
+def _ai_maybe_queue_freighter(cm, empire, planet_ids, traits, pending_writes):
+    """Queue a Freighter on an idle planet when the empire's colonies
+    are starving for want of transport capacity. One at a time — the
+    next tick re-evaluates once it's built."""
+    # Already building / queuing a freighter somewhere? Don't pile up.
+    for eid in planet_ids:
+        bs = cm.get_component(eid, BuildState)
+        if bs is None:
+            continue
+        if bs.current_project == "ship_freighter" or "ship_freighter" in bs.queue:
+            return
+    # ``_ai_food_shortfall`` already nets out the capacity from
+    # freighters the empire owns, so we only build another when there's
+    # still an uncovered deficit.
+    if _ai_food_shortfall(cm, empire.id, traits, planet_ids) <= 0:
+        return
+    # Build on the first idle planet.
+    for eid in planet_ids:
+        bs = cm.get_component(eid, BuildState)
+        planet = cm.get_component(eid, Planet)
+        if bs is None or planet is None:
+            continue
+        if bs.current_project or bs.queue:
+            continue
+        bs.current_project = "ship_freighter"
+        pending_writes.append(("build", (planet.id, "ship_freighter", bs.progress)))
+        return
 
 
 def _candidate_planets_at_star(cm, star_entity: int) -> list[int]:
@@ -433,11 +541,17 @@ def _ai_dispatch_ships(cm, empire):
     if target_star is None:
         return
 
-    # Group this AI's parked ships by their current star.
+    # Group this AI's parked WARSHIPS by their current star. Civilian
+    # hulls (colony, freighter) and troop transports are handled by
+    # their own dispatch passes — only combat ships head for the
+    # player's homeworld.
     ships_by_star: dict[int, list[int]] = {}
     for ship_entity, at in cm.get_all(ShipAt):
         owner = cm.get_component(ship_entity, ShipOwner)
-        if owner is None or owner.empire_id != empire.id:
+        ship = cm.get_component(ship_entity, Ship)
+        if owner is None or ship is None or owner.empire_id != empire.id:
+            continue
+        if ship.ship_class not in WARSHIP_CLASSES:
             continue
         if at.star_entity == target_star:
             continue  # already at target — nothing to do
@@ -446,6 +560,98 @@ def _ai_dispatch_ships(cm, empire):
     for src_star, ships in ships_by_star.items():
         if ships:
             start_fleet_movement(cm, ships, src_star, target_star)
+
+
+# ---- Troop transport invasion -----------------------------------------
+
+def _enemy_owned_stars(cm, empire_id: int) -> dict[int, list[int]]:
+    """Map star_entity -> list of enemy-owned planet entities at that
+    star (owned by an empire other than ``empire_id``)."""
+    out: dict[int, list[int]] = {}
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        owner = cm.get_component(planet_entity, Owner)
+        if owner is None or owner.empire_id == empire_id:
+            continue
+        out.setdefault(orbit.star_entity, []).append(planet_entity)
+    return out
+
+
+def _weakest_enemy_planet_at_star(cm, planet_entities: list[int]) -> int | None:
+    """Pick the enemy planet at a star with the lowest defense
+    (militia + defense buildings) — best odds for the assault."""
+    best, best_def = None, None
+    for planet_entity in planet_entities:
+        pop = cm.get_component(planet_entity, Population)
+        build_state = cm.get_component(planet_entity, BuildState)
+        militia = (pop.current * MILITIA_PER_MILLION_POP) if pop else 0
+        defense = militia + _planet_defense_rating(build_state)
+        if best_def is None or defense < best_def:
+            best, best_def = planet_entity, defense
+    return best
+
+
+def _ai_invade_with_transports(game, empire):
+    """Launch one ground assault per star where the empire has Troop
+    Transports sitting on an enemy planet. Picks the weakest enemy
+    planet at each star for the best odds."""
+    cm = game.component_mgr
+    enemy_stars = _enemy_owned_stars(cm, empire.id)
+    if not enemy_stars:
+        return
+
+    # Stars where this empire has parked troop transports.
+    tt_stars: set[int] = set()
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id == empire.id and ship.ship_class == TROOP_TRANSPORT_CLASS:
+            tt_stars.add(at.star_entity)
+
+    for star in tt_stars:
+        if star not in enemy_stars:
+            continue
+        target = _weakest_enemy_planet_at_star(cm, enemy_stars[star])
+        if target is not None and can_invade(cm, target, empire.id):
+            invade_planet(game, target, empire.id)
+
+
+def _ai_dispatch_troop_transports(cm, empire):
+    """Send idle Troop Transports to the closest enemy-owned star."""
+    enemy_stars = _enemy_owned_stars(cm, empire.id)
+    if not enemy_stars:
+        return
+    enemy_star_set = set(enemy_stars)
+
+    ships_by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class != TROOP_TRANSPORT_CLASS:
+            continue
+        if at.star_entity in enemy_star_set:
+            continue  # already at an enemy star — invade pass handles it
+        ships_by_star.setdefault(at.star_entity, []).append(ship_entity)
+
+    for src_star, ships in ships_by_star.items():
+        src_pos = cm.get_component(src_star, Position)
+        if src_pos is None:
+            continue
+        best, best_dist = None, float("inf")
+        for star in enemy_stars:
+            if star == src_star:
+                continue
+            pos = cm.get_component(star, Position)
+            if pos is None:
+                continue
+            d2 = (pos.x - src_pos.x) ** 2 + (pos.y - src_pos.y) ** 2
+            if d2 < best_dist:
+                best_dist, best = d2, star
+        if best is not None:
+            start_fleet_movement(cm, ships, src_star, best)
 
 
 def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
