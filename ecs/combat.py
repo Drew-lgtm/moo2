@@ -25,7 +25,7 @@ from ecs.techs import empire_attack_bonus, empire_hull_bonus
 from ecs.invasion import _planet_defense_rating
 from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from ecs.db import get_connection, delete_ship
-from ecs.ship_design import compute_loadout
+from ecs.ship_design import stats_from_ship
 
 
 def _empire_bonuses(component_mgr, empire_id: int) -> tuple[int, int]:
@@ -76,20 +76,17 @@ def _compute_losses(component_mgr, ships: list[int], damage: int) -> list[int]:
 
 def _compute_losses_with_bonus(component_mgr, ships: list[int], damage: int,
                                 hull_bonus: int, leader_map: dict | None = None,
-                                loadout_hull_by_class: dict | None = None) -> list[int]:
+                                ship_loadout_hull=None) -> list[int]:
     """Return ship entities destroyed. Cheapest hull dies first; no
-    partial-damage carry between turns. ``hull_bonus`` is added to every
-    ship's hull (race trait), ``leader_map`` adds per-ship Battle
-    Tactician hull, and ``loadout_hull_by_class`` adds armor+shield
-    bonus for the empire's auto-fitted equipment."""
+    partial-damage carry between turns. ``hull_bonus`` is the race-trait
+    contribution, ``leader_map`` is per-ship Battle Tactician hull, and
+    ``ship_loadout_hull(ship_entity)`` adds the armor+shield+specials
+    captured on that specific hull at build time."""
     if damage <= 0 or not ships:
         return []
 
     def hull_of(ship_entity):
-        ship = component_mgr.get_component(ship_entity, Ship)
-        loadout_h = 0
-        if ship is not None and loadout_hull_by_class is not None:
-            loadout_h = loadout_hull_by_class.get(ship.ship_class, 0)
+        loadout_h = ship_loadout_hull(ship_entity) if ship_loadout_hull else 0
         return _hull_of(component_mgr, ship_entity, hull_bonus, leader_map, loadout_h)
 
     sorted_ships = sorted(ships, key=hull_of)
@@ -175,36 +172,31 @@ def combat_tick(game, new_turn: int):
             bonus_by_empire[eid] = _empire_bonuses(cm, eid)
         return bonus_by_empire[eid]
 
-    # Per-empire auto-loadout stats by ship_class. Built lazily because
-    # we don't want to walk SHIPS for empires not in this battle.
-    loadout_atk_cache: dict[int, dict[str, int]] = {}
-    loadout_hull_cache: dict[int, dict[str, int]] = {}
+    # Per-ship loadout stats — read from each ship's frozen equipment
+    # (armor + shield + weapon × count + specials, all snapshotted at
+    # build time). An old hull keeps its old gear when a newer tech
+    # later lands; only newly-built ships pack the upgrade.
+    ship_stats_cache: dict[int, tuple[int, int]] = {}
 
-    def _empire_unlocked(eid):
-        for _e, t in cm.get_all(TechState):
-            if t.empire_id == eid:
-                return set(t.unlocked)
-        return set()
-
-    def _loadout_for(eid: int, ship_class: str) -> tuple[int, int]:
-        """(attack, hull+defense) the empire's auto-design grants a ship
-        of this class. Cached per (empire, class)."""
-        if eid not in loadout_atk_cache:
-            loadout_atk_cache[eid] = {}
-            loadout_hull_cache[eid] = {}
-        if ship_class not in loadout_atk_cache[eid]:
-            lo = compute_loadout(ship_class, _empire_unlocked(eid))
-            s = lo["stats"]
-            loadout_atk_cache[eid][ship_class] = s["attack"]
-            # Fold shield defense into effective hull (no partial damage
-            # carry, so shields just soak damage like extra hull here).
-            loadout_hull_cache[eid][ship_class] = s["hull"] + s["defense"]
-        return (loadout_atk_cache[eid][ship_class],
-                loadout_hull_cache[eid][ship_class])
+    def _ship_loadout_stats(ship_entity: int) -> tuple[int, int]:
+        """(attack, hull+defense) from this ship's stored loadout."""
+        if ship_entity in ship_stats_cache:
+            return ship_stats_cache[ship_entity]
+        ship = cm.get_component(ship_entity, Ship)
+        if ship is None:
+            ship_stats_cache[ship_entity] = (0, 0)
+        else:
+            s = stats_from_ship(ship)
+            # Shields fold into hull for the loss pass (no partial-
+            # damage carry, so shields just soak like extra hull).
+            ship_stats_cache[ship_entity] = (s["attack"], s["hull"] + s["defense"])
+        return ship_stats_cache[ship_entity]
 
     def _ship_loadout_atk(eid: int, ship_entity: int) -> int:
-        ship = cm.get_component(ship_entity, Ship)
-        return _loadout_for(eid, ship.ship_class)[0] if ship else 0
+        return _ship_loadout_stats(ship_entity)[0]
+
+    def _ship_loadout_hull(ship_entity: int) -> int:
+        return _ship_loadout_stats(ship_entity)[1]
 
     # Every star with ships and/or planetary defenses is a possible
     # battlefield.
@@ -236,13 +228,9 @@ def combat_tick(game, new_turn: int):
                 side_attack[other] for other in participants
                 if other != eid and _hostile(eid, other)
             )
-            # Make sure the empire's loadout map is populated for every
-            # class present so _compute_losses_with_bonus can look it up.
-            for e in ships_here.get(eid, []):
-                _loadout_for(eid, cm.get_component(e, Ship).ship_class)
             side_losses[eid] = _compute_losses_with_bonus(
                 cm, ships_here.get(eid, []), damage, _bonuses(eid)[1], leader_map,
-                loadout_hull_cache.get(eid, {}),
+                _ship_loadout_hull,
             )
 
         # Record the engagement before mutating — rich enough for the

@@ -98,6 +98,11 @@ def init_db():
             current_star_id INTEGER,
             dest_star_id INTEGER,
             turns_remaining INTEGER DEFAULT 0,
+            armor_tech TEXT,
+            shield_tech TEXT,
+            weapon_tech TEXT,
+            weapon_count INTEGER DEFAULT 0,
+            specials TEXT DEFAULT '',
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id),
             FOREIGN KEY(current_star_id) REFERENCES stars(id),
             FOREIGN KEY(dest_star_id) REFERENCES stars(id)
@@ -170,6 +175,7 @@ def init_db():
         """)
         _migrate_empires(conn)
         _migrate_planets(conn)
+        _migrate_ships(conn)
         conn.commit()
 
 
@@ -190,6 +196,21 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN personality TEXT DEFAULT 'balanced'")
     if "custom_traits" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN custom_traits TEXT DEFAULT ''")
+
+
+def _migrate_ships(conn):
+    """Add loadout columns introduced after the initial schema."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(ships)")}
+    if "armor_tech" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN armor_tech TEXT")
+    if "shield_tech" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN shield_tech TEXT")
+    if "weapon_tech" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN weapon_tech TEXT")
+    if "weapon_count" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN weapon_count INTEGER DEFAULT 0")
+    if "specials" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN specials TEXT DEFAULT ''")
 
 
 def _migrate_planets(conn):
@@ -380,10 +401,18 @@ def get_empire_locked_techs(conn, empire_id):
     ]
 
 
-def insert_ship(conn, owner_empire_id, ship_class, current_star_id) -> int:
+def insert_ship(conn, owner_empire_id, ship_class, current_star_id, *,
+                armor_tech=None, shield_tech=None, weapon_tech=None,
+                weapon_count=0, specials="") -> int:
+    """Insert a ship with its frozen loadout. The loadout is captured at
+    construction time so older hulls don't auto-benefit from later
+    research — you have to actually build the new generation."""
     cursor = conn.execute(
-        "INSERT INTO ships (owner_empire_id, ship_class, current_star_id) VALUES (?, ?, ?)",
-        (owner_empire_id, ship_class, current_star_id),
+        "INSERT INTO ships (owner_empire_id, ship_class, current_star_id, "
+        "armor_tech, shield_tech, weapon_tech, weapon_count, specials) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (owner_empire_id, ship_class, current_star_id,
+         armor_tech, shield_tech, weapon_tech, weapon_count, specials),
     )
     result = cursor.lastrowid
     assert result is not None

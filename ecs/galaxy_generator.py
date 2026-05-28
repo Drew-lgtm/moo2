@@ -399,8 +399,20 @@ class GalaxyGenerator:
             # entity with Ship + ShipOwner + (ShipAt | ShipInTransit).
             for ship_row in get_ships(conn):
                 ship_entity = self.entity_mgr.create_entity()
+                # `specials` is comma-separated tech ids; missing on
+                # ships from older saves before the loadout migration.
+                specials_str = ship_row["specials"] if "specials" in ship_row.keys() else ""
+                specials_list = [s for s in (specials_str or "").split(",") if s]
                 self.component_mgr.add_component(
-                    ship_entity, Ship(id=ship_row["id"], ship_class=ship_row["ship_class"])
+                    ship_entity, Ship(
+                        id=ship_row["id"],
+                        ship_class=ship_row["ship_class"],
+                        armor_tech=ship_row["armor_tech"] if "armor_tech" in ship_row.keys() else None,
+                        shield_tech=ship_row["shield_tech"] if "shield_tech" in ship_row.keys() else None,
+                        weapon_tech=ship_row["weapon_tech"] if "weapon_tech" in ship_row.keys() else None,
+                        weapon_count=ship_row["weapon_count"] if "weapon_count" in ship_row.keys() else 0,
+                        specials=specials_list,
+                    )
                 )
                 self.component_mgr.add_component(
                     ship_entity, ShipOwner(empire_id=ship_row["owner_empire_id"])

@@ -184,6 +184,44 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     }
 
 
+def stats_from_ship(ship) -> dict:
+    """Decode a Ship component's frozen loadout into combat stats.
+
+    A ship with no stored loadout (e.g. spawned before this system
+    landed, or built in a save migrated from an older schema) returns
+    zeros — its base hull/attack from the ship class still apply, but
+    it gets no equipment bonuses until it's replaced.
+    """
+    atk = hull = defense = 0
+    armor = TECHS.get(ship.armor_tech, {}) if ship.armor_tech else {}
+    shield = TECHS.get(ship.shield_tech, {}) if ship.shield_tech else {}
+    weapon = TECHS.get(ship.weapon_tech, {}) if ship.weapon_tech else {}
+    if armor.get("equipment"):
+        hull += armor["equipment"].get("hull", 0)
+    if shield.get("equipment"):
+        defense += shield["equipment"].get("defense", 0)
+    if weapon.get("equipment"):
+        atk += weapon["equipment"].get("attack", 0) * (ship.weapon_count or 0)
+    for sp_id in (ship.specials or []):
+        eq = TECHS.get(sp_id, {}).get("equipment", {})
+        atk += eq.get("attack", 0)
+        hull += eq.get("hull", 0)
+        defense += eq.get("defense", 0)
+    return {"attack": atk, "hull": hull, "defense": defense}
+
+
+def loadout_to_ship_fields(loadout: dict) -> dict:
+    """Convert a computed loadout dict into kwargs accepted by
+    ``insert_ship`` / used to seed a Ship component."""
+    return {
+        "armor_tech": loadout.get("armor"),
+        "shield_tech": loadout.get("shield"),
+        "weapon_tech": loadout.get("weapon"),
+        "weapon_count": loadout.get("weapon_count", 0),
+        "specials": loadout.get("specials", []),
+    }
+
+
 def loadout_summary(ship_class: str, unlocked) -> str:
     """One-line text describing what a ship of this class will carry."""
     lo = compute_loadout(ship_class, unlocked)
@@ -201,3 +239,20 @@ def loadout_summary(ship_class: str, unlocked) -> str:
     s = lo["stats"]
     return (" · ".join(parts)
             + f"   [{s['space_used']}/{s['space_total']} space, +{s['attack']} atk / +{s['hull']} hull / +{s['defense']} def]")
+
+
+def stored_loadout_summary(ship) -> str:
+    """One-line description of an actual ship's frozen loadout."""
+    parts: list[str] = []
+    if ship.armor_tech:
+        parts.append(TECHS.get(ship.armor_tech, {}).get("name", ship.armor_tech))
+    if ship.shield_tech:
+        parts.append(TECHS.get(ship.shield_tech, {}).get("name", ship.shield_tech))
+    if ship.weapon_tech and ship.weapon_count:
+        wname = TECHS.get(ship.weapon_tech, {}).get("name", ship.weapon_tech)
+        parts.append(f"{ship.weapon_count}× {wname}")
+    for sp_id in (ship.specials or []):
+        parts.append(TECHS.get(sp_id, {}).get("name", sp_id))
+    if not parts:
+        return "(unequipped — built before refit tech)"
+    return " · ".join(parts)

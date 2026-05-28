@@ -665,11 +665,33 @@ def production_tick(game, new_turn: int):
 
         # Spawn new ships: insert DB row, then attach ECS entity. The
         # planet's owning empire is captured at spawn time so ownership
-        # can't shift mid-tick.
+        # can't shift mid-tick. The empire's best-researched loadout is
+        # *frozen onto the hull* here — already-built ships keep their
+        # old gear when newer tech later lands.
+        from ecs.ship_design import compute_loadout, loadout_to_ship_fields
         for owner_empire_id, ship_class, star_db_id, planet_entity, _owner in ship_spawns:
-            ship_id = insert_ship(conn, owner_empire_id, ship_class, star_db_id)
+            ts = tech_by_empire.get(owner_empire_id)
+            unlocked_now = set(ts.unlocked) if ts is not None else set()
+            loadout = compute_loadout(ship_class, unlocked_now)
+            fields = loadout_to_ship_fields(loadout)
+            specials_csv = ",".join(fields["specials"])
+            ship_id = insert_ship(
+                conn, owner_empire_id, ship_class, star_db_id,
+                armor_tech=fields["armor_tech"],
+                shield_tech=fields["shield_tech"],
+                weapon_tech=fields["weapon_tech"],
+                weapon_count=fields["weapon_count"],
+                specials=specials_csv,
+            )
             ship_entity = game.entity_mgr.create_entity()
-            cm.add_component(ship_entity, Ship(id=ship_id, ship_class=ship_class))
+            cm.add_component(ship_entity, Ship(
+                id=ship_id, ship_class=ship_class,
+                armor_tech=fields["armor_tech"],
+                shield_tech=fields["shield_tech"],
+                weapon_tech=fields["weapon_tech"],
+                weapon_count=fields["weapon_count"],
+                specials=list(fields["specials"]),
+            ))
             cm.add_component(ship_entity, ShipOwner(empire_id=owner_empire_id))
             orbit = cm.get_component(planet_entity, Orbiting)
             if orbit is not None:

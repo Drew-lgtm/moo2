@@ -126,9 +126,20 @@ class TechState:
 
 @dataclass
 class Ship:
-    """One ship of a given class. Persisted in the ``ships`` table."""
+    """One ship of a given class. Persisted in the ``ships`` table.
+
+    The loadout fields (armor / shield / weapon / weapon_count /
+    specials) are **frozen at construction** — the empire's best
+    research at build time. Researching a better tech afterwards does
+    NOT retrofit existing hulls; only newly-built ships get the upgrade.
+    """
     id: int
     ship_class: str
+    armor_tech: str | None = None
+    shield_tech: str | None = None
+    weapon_tech: str | None = None
+    weapon_count: int = 0
+    specials: list[str] = field(default_factory=list)
 
 
 @dataclass
