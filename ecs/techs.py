@@ -130,8 +130,8 @@ TECHS: dict[str, dict] = {
         "id": "battle_pods", "name": "Battle Pods",
         "field": "construction", "tier": 3, "tier_group": _t("construction", 3),
         "cost": 400, "prereqs": ["advanced_construction"],
-        "description": "Modular internal volume (+5 space per ship)",
-        "equipment": {"slot": "special", "size": 1, "space_bonus": 5},
+        "description": "Modular internal volume (+50% ship space)",
+        "equipment": {"slot": "special", "size": 1, "space_bonus_pct": 50},
     },
     "powered_armor": {
         "id": "powered_armor", "name": "Powered Armor",

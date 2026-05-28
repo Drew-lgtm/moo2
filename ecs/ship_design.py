@@ -32,7 +32,9 @@ from ecs.techs import TECHS
 def _special_priority(spec: dict) -> int:
     eq = spec.get("equipment", {})
     return (
-        eq.get("space_bonus", 0) * 10        # battle pods first — multiplies budget
+        # Battle Pods first — % bonus multiplies budget for the rest.
+        eq.get("space_bonus_pct", 0) * 2
+        + eq.get("space_bonus", 0) * 10
         + eq.get("attack", 0) * 3
         + eq.get("defense", 0) * 3
         + (1 if eq.get("cloak") else 0)
@@ -128,14 +130,20 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     fitted_specials: list[dict] = []
     extra_space = 0  # from Battle Pods etc.
 
-    # Battle Pods first — it expands the budget for everything that follows.
+    # Battle Pods first — it expands the budget for everything that
+    # follows. MOO2's Battle Pods adds +50% of the ship's base space, so
+    # bigger hulls get a much larger absolute bump (Frigate +3, Cruiser
+    # +10, Dreadnought +30) — exactly why it's the supreme tech.
     bp = next((s for s in specials_pool
-               if s["equipment"].get("space_bonus", 0) > 0), None)
+               if s["equipment"].get("space_bonus_pct", 0) > 0
+                  or s["equipment"].get("space_bonus", 0) > 0), None)
     if bp is not None:
-        bp_size = bp["equipment"].get("size", 1)
+        bp_eq = bp["equipment"]
+        bp_size = bp_eq.get("size", 1)
         if used + bp_size <= total_space:
             used += bp_size
-            extra_space += bp["equipment"]["space_bonus"]
+            extra_space += bp_eq.get("space_bonus", 0)
+            extra_space += int(round(total_space * bp_eq.get("space_bonus_pct", 0) / 100))
             fitted_specials.append(bp)
 
     budget = total_space + extra_space
