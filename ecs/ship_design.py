@@ -63,7 +63,7 @@ def _best_shield(unlocked) -> dict | None:
     items = _equip_specs(unlocked, "shield")
     if not items:
         return None
-    return max(items, key=lambda s: s["equipment"].get("defense", 0))
+    return max(items, key=lambda s: s["equipment"].get("capacity", 0))
 
 
 def _best_weapon(unlocked) -> dict | None:
@@ -99,8 +99,13 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
         "weapon": tech_id | None,
         "weapon_count": int,
         "stats": {"attack": A, "hull": H, "defense": D,
+                  "shield_capacity": C, "shield_regen": R,
                   "space_used": U, "space_total": T},
     }
+
+    Shields are an absorptive HP pool that regenerates between combat
+    rounds — see ``ecs.combat``. ``defense`` here only counts flat
+    bonuses from specials (Inertial Stabilizer etc.), not shields.
 
     Civilian hulls and non-combat ships don't fit weapons.
     """
@@ -161,7 +166,9 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     # Stats from the fitted equipment.
     atk = (weapon["equipment"].get("attack", 0) * weapon_count) if weapon else 0
     hull = fitted_armor["equipment"].get("hull", 0) if fitted_armor else 0
-    defense = fitted_shield["equipment"].get("defense", 0) if fitted_shield else 0
+    defense = 0  # flat evasion-style bonus from specials only
+    shield_capacity = fitted_shield["equipment"].get("capacity", 0) if fitted_shield else 0
+    shield_regen = fitted_shield["equipment"].get("regen", 0) if fitted_shield else 0
     for sp in fitted_specials:
         eq = sp["equipment"]
         atk += eq.get("attack", 0)
@@ -177,6 +184,8 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
         "stats": {
             "attack": atk,
             "hull": hull,
+            "shield_capacity": shield_capacity,
+            "shield_regen": shield_regen,
             "defense": defense,
             "space_used": used,
             "space_total": budget,
@@ -187,19 +196,26 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
 def stats_from_ship(ship) -> dict:
     """Decode a Ship component's frozen loadout into combat stats.
 
-    A ship with no stored loadout (e.g. spawned before this system
-    landed, or built in a save migrated from an older schema) returns
-    zeros — its base hull/attack from the ship class still apply, but
-    it gets no equipment bonuses until it's replaced.
+    Returns ``attack``, ``hull`` (armor + special hull contribution),
+    ``defense`` (flat evasion-style bonuses from specials only),
+    ``shield_capacity`` (HP pool the shield can absorb before failing),
+    and ``shield_regen`` (HP restored at the end of each combat round).
+
+    A ship with no stored loadout (built before this system, or freshly
+    migrated from an older save) returns zeros — its base ship-class
+    hull/attack still applies, but it gets no equipment bonuses until
+    it's replaced.
     """
     atk = hull = defense = 0
+    shield_capacity = shield_regen = 0
     armor = TECHS.get(ship.armor_tech, {}) if ship.armor_tech else {}
     shield = TECHS.get(ship.shield_tech, {}) if ship.shield_tech else {}
     weapon = TECHS.get(ship.weapon_tech, {}) if ship.weapon_tech else {}
     if armor.get("equipment"):
         hull += armor["equipment"].get("hull", 0)
     if shield.get("equipment"):
-        defense += shield["equipment"].get("defense", 0)
+        shield_capacity += shield["equipment"].get("capacity", 0)
+        shield_regen += shield["equipment"].get("regen", 0)
     if weapon.get("equipment"):
         atk += weapon["equipment"].get("attack", 0) * (ship.weapon_count or 0)
     for sp_id in (ship.specials or []):
@@ -207,7 +223,10 @@ def stats_from_ship(ship) -> dict:
         atk += eq.get("attack", 0)
         hull += eq.get("hull", 0)
         defense += eq.get("defense", 0)
-    return {"attack": atk, "hull": hull, "defense": defense}
+    return {
+        "attack": atk, "hull": hull, "defense": defense,
+        "shield_capacity": shield_capacity, "shield_regen": shield_regen,
+    }
 
 
 def loadout_to_ship_fields(loadout: dict) -> dict:
@@ -237,8 +256,12 @@ def loadout_summary(ship_class: str, unlocked) -> str:
     if not parts:
         return "(no equipment — research armor / weapons / shields)"
     s = lo["stats"]
+    shield_part = ""
+    if s.get("shield_capacity"):
+        shield_part = f" / shield {s['shield_capacity']}↺{s['shield_regen']}"
     return (" · ".join(parts)
-            + f"   [{s['space_used']}/{s['space_total']} space, +{s['attack']} atk / +{s['hull']} hull / +{s['defense']} def]")
+            + f"   [{s['space_used']}/{s['space_total']} space, "
+              f"+{s['attack']} atk / +{s['hull']} hull{shield_part}]")
 
 
 def stored_loadout_summary(ship) -> str:
