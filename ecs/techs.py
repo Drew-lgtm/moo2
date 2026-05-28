@@ -610,6 +610,13 @@ TECHS: dict[str, dict] = {
         "description": "Guided heavy missile (+5 attack/slot)",
         "equipment": {"slot": "weapon", "size": 4, "attack": 5},
     },
+    "mauler_device": {
+        "id": "mauler_device", "name": "Mauler Device",
+        "field": "physics", "tier": 5, "tier_group": _t("physics", 5),
+        "cost": 1000, "prereqs": ["plasma_cannons"],
+        "description": "Heavy directed-energy gun (+7 attack/slot, big)",
+        "equipment": {"slot": "weapon", "size": 4, "attack": 7},
+    },
     "phasing_cloak": {
         "id": "phasing_cloak", "name": "Phasing Cloak",
         "field": "physics", "tier": 5, "tier_group": _t("physics", 5),

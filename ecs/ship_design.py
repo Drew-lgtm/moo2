@@ -66,18 +66,25 @@ def _best_shield(unlocked) -> dict | None:
     return max(items, key=lambda s: s["equipment"].get("capacity", 0))
 
 
-def _best_weapon(unlocked) -> dict | None:
+def _best_weapon_fit(unlocked, available_space: int):
+    """Pick the weapon that maximises total attack for the *actual* room
+    left on a ship. Heavy weapons like Mauler Device or Stellar Converter
+    win on big hulls but don't even fit on a frigate — the frigate then
+    falls back to whatever lighter weapon it researched. Returns
+    ``(spec, count, total_attack)`` or ``(None, 0, 0)`` if no weapon
+    fits."""
     items = _equip_specs(unlocked, "weapon")
-    if not items:
-        return None
-    # Pick the weapon with the best attack-per-space ratio. Tied? prefer
-    # the higher raw attack so end-game weapons aren't squeezed out by
-    # cheap missiles.
-    def score(s):
-        eq = s["equipment"]
-        sz = max(1, eq.get("size", 1))
-        return (eq.get("attack", 0) / sz, eq.get("attack", 0))
-    return max(items, key=score)
+    best: tuple[dict | None, int, int] = (None, 0, 0)
+    for w in items:
+        eq = w["equipment"]
+        size = max(1, eq.get("size", 1))
+        if size > available_space:
+            continue
+        count = available_space // size
+        total = count * eq.get("attack", 0)
+        if total > best[2]:
+            best = (w, count, total)
+    return best
 
 
 def _useful_specials(unlocked) -> list[dict]:
@@ -116,7 +123,6 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     armor = _best_armor(unlocked)
     shield = _best_shield(unlocked)
     specials_pool = _useful_specials(unlocked)
-    weapon = _best_weapon(unlocked) if is_military else None
 
     used = 0
     fitted_specials: list[dict] = []
@@ -144,7 +150,25 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
         used += shield["equipment"].get("size", 1)
         fitted_shield = shield
 
-    # Up to 2 more useful specials (combat ones), skipping Battle Pods (already fitted).
+    # Weapons next — picked PER SHIP based on what fits in the leftover
+    # space, not per empire. A frigate with only 4 space left can't
+    # carry a Stellar Converter (size 8); it falls back to whatever
+    # gives the most total attack in 4 — usually a Mauler Device
+    # (size 4, +7) or two Phasors. A dreadnought picks the heaviest
+    # weapon that maximises total damage across its budget. Weapons get
+    # priority over specials so a small hull isn't unarmed by gear
+    # creep.
+    weapon = None
+    weapon_count = 0
+    if is_military:
+        remaining = budget - used
+        weapon, weapon_count, _atk = _best_weapon_fit(unlocked, remaining)
+        if weapon is not None:
+            used += weapon_count * weapon["equipment"].get("size", 1)
+
+    # Up to 2 more useful specials (Inertial Stabilizer, Achilles
+    # Targeting, etc.), skipping Battle Pods (already fitted). Fit only
+    # in space the weapons couldn't use.
     for sp in specials_pool:
         if sp is bp:
             continue
@@ -154,14 +178,6 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
         if used + sz <= budget:
             used += sz
             fitted_specials.append(sp)
-
-    # Fill the rest with copies of the best weapon.
-    weapon_count = 0
-    if weapon is not None:
-        wsz = max(1, weapon["equipment"].get("size", 1))
-        while used + wsz <= budget:
-            used += wsz
-            weapon_count += 1
 
     # Stats from the fitted equipment.
     atk = (weapon["equipment"].get("attack", 0) * weapon_count) if weapon else 0
@@ -258,8 +274,8 @@ def loadout_summary(ship_class: str, unlocked) -> str:
     s = lo["stats"]
     shield_part = ""
     if s.get("shield_capacity"):
-        shield_part = f" / shield {s['shield_capacity']}↺{s['shield_regen']}"
-    return (" · ".join(parts)
+        shield_part = f" / shield {s['shield_capacity']} +{s['shield_regen']}/r"
+    return (" - ".join(parts)
             + f"   [{s['space_used']}/{s['space_total']} space, "
               f"+{s['attack']} atk / +{s['hull']} hull{shield_part}]")
 
