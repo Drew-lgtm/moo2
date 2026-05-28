@@ -98,7 +98,8 @@ TECHS: dict[str, dict] = {
         "id": "anti_missile_rockets", "name": "Anti-Missile Rockets",
         "field": "construction", "tier": 1, "tier_group": _t("construction", 1),
         "cost": 80, "prereqs": [],
-        "description": "Point-defense interceptors", "effect_stub": True,
+        "description": "Point-defense interceptors (+1 defense per ship)",
+        "equipment": {"slot": "special", "size": 1, "defense": 1},
     },
     "advanced_construction": {
         "id": "advanced_construction", "name": "Advanced Construction",
@@ -111,13 +112,15 @@ TECHS: dict[str, dict] = {
         "id": "cold_fusion", "name": "Cold Fusion",
         "field": "construction", "tier": 2, "tier_group": _t("construction", 2),
         "cost": 200, "prereqs": ["industrial_engineering"],
-        "description": "Clean civilian power grid", "effect_stub": True,
+        "description": "Clean civilian grid (+1 production/worker)",
+        "industry_per_worker": 1,
     },
     "pollution_processor": {
         "id": "pollution_processor", "name": "Pollution Processor",
         "field": "construction", "tier": 2, "tier_group": _t("construction", 2),
         "cost": 200, "prereqs": ["industrial_engineering"],
-        "description": "Industrial waste reclamation", "effect_stub": True,
+        "description": "Waste reclamation (+1 production/worker)",
+        "industry_per_worker": 1,
     },
     "automated_factories": {
         "id": "automated_factories", "name": "Robotic Factories",
@@ -202,7 +205,8 @@ TECHS: dict[str, dict] = {
         "id": "chemical_fuel", "name": "Chemical Fuel Refinement",
         "field": "power", "tier": 1, "tier_group": _t("power", 1),
         "cost": 60, "prereqs": [],
-        "description": "Extra fuel range", "effect_stub": True,
+        "description": "Refined chemical fuel (+1 parsec range)",
+        "fuel_range": 1,
     },
     "fusion_drives": {
         "id": "fusion_drives", "name": "Fusion Drives",
@@ -254,13 +258,15 @@ TECHS: dict[str, dict] = {
         "id": "interphased_drive", "name": "Interphased Drive",
         "field": "power", "tier": 5, "tier_group": _t("power", 5),
         "cost": 750, "prereqs": ["anti_matter_drives"],
-        "description": "Ships phase-shift to dodge", "effect_stub": True,
+        "description": "Ships phase-shift to dodge (+2 defense per ship)",
+        "equipment": {"slot": "special", "size": 2, "defense": 2},
     },
     "transwarp_drive": {
         "id": "transwarp_drive", "name": "Transwarp Drives",
         "field": "power", "tier": 6, "tier_group": _t("power", 6),
         "cost": 1100, "prereqs": ["hyper_drives"],
-        "description": "Beyond hyperdrive speeds", "effect_stub": True,
+        "description": "+6 ship speed, fuel range 20 pc",
+        "speed_bonus": 6, "fuel_range": 20,
     },
 
     # ===================================================================
@@ -277,7 +283,8 @@ TECHS: dict[str, dict] = {
         "id": "deuterium_fuel", "name": "Deuterium Fuel Cells",
         "field": "chemistry", "tier": 1, "tier_group": _t("chemistry", 1),
         "cost": 80, "prereqs": [],
-        "description": "Compact reactor fuel", "effect_stub": True,
+        "description": "Compact reactor fuel (+1 parsec range)",
+        "fuel_range": 1,
     },
     "tritanium_armor": {
         "id": "tritanium_armor", "name": "Tritanium Armor",
@@ -290,13 +297,15 @@ TECHS: dict[str, dict] = {
         "id": "irridium_fuel", "name": "Irridium Fuel Cells",
         "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
         "cost": 200, "prereqs": ["titanium_armor"],
-        "description": "Longer-range fuel cells", "effect_stub": True,
+        "description": "Longer-range fuel cells (+2 parsec range)",
+        "fuel_range": 2,
     },
     "pulson_missile": {
         "id": "pulson_missile", "name": "Pulson Missile",
         "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
         "cost": 200, "prereqs": ["titanium_armor"],
-        "description": "Improved missile warhead", "effect_stub": True,
+        "description": "Improved missile warhead (+4 attack/slot)",
+        "equipment": {"slot": "weapon", "size": 3, "attack": 4},
     },
     "atmospheric_terraforming": {
         "id": "atmospheric_terraforming", "name": "Atmospheric Terraforming",
@@ -308,7 +317,8 @@ TECHS: dict[str, dict] = {
         "id": "merculite_missile", "name": "Merculite Missile",
         "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
         "cost": 400, "prereqs": ["tritanium_armor"],
-        "description": "Advanced missile guidance", "effect_stub": True,
+        "description": "Advanced missile guidance (+5 attack/slot)",
+        "equipment": {"slot": "weapon", "size": 3, "attack": 5},
     },
     "adamantium_chem": {
         "id": "adamantium_chem", "name": "Adamantium Chemistry",
@@ -351,7 +361,8 @@ TECHS: dict[str, dict] = {
         "id": "diplomatic_corps", "name": "Diplomatic Corps",
         "field": "sociology", "tier": 1, "tier_group": _t("sociology", 1),
         "cost": 60, "prereqs": [],
-        "description": "Goodwill across foreign empires", "effect_stub": True,
+        "description": "Goodwill abroad (+1 spy defense)",
+        "spy_defense": 1,
     },
     "governance": {
         "id": "governance", "name": "Governance",
@@ -363,7 +374,8 @@ TECHS: dict[str, dict] = {
         "id": "xeno_relations", "name": "Xeno Relations",
         "field": "sociology", "tier": 2, "tier_group": _t("sociology", 2),
         "cost": 200, "prereqs": ["trade"],
-        "description": "Insight into alien minds", "effect_stub": True,
+        "description": "Insight into alien minds (+1 spy offense)",
+        "spy_offense": 1,
     },
     "financial_planning": {
         "id": "financial_planning", "name": "Financial Planning",
@@ -399,7 +411,8 @@ TECHS: dict[str, dict] = {
         "id": "xeno_psychology", "name": "Xeno Psychology",
         "field": "sociology", "tier": 5, "tier_group": _t("sociology", 5),
         "cost": 800, "prereqs": ["virtual_reality_network"],
-        "description": "Read alien diplomatic intent", "effect_stub": True,
+        "description": "Read alien intent (+2 spy offense & defense)",
+        "spy_offense": 2, "spy_defense": 2,
     },
 
     # ===================================================================
@@ -415,7 +428,8 @@ TECHS: dict[str, dict] = {
         "id": "optronic_computer", "name": "Optronic Computer",
         "field": "computers", "tier": 1, "tier_group": _t("computers", 1),
         "cost": 80, "prereqs": [],
-        "description": "Light-based processors", "effect_stub": True,
+        "description": "Light-based processors (+1 research/scientist)",
+        "research_per_scientist": 1,
     },
     "advanced_computers": {
         "id": "advanced_computers", "name": "Advanced Computers",
@@ -428,7 +442,8 @@ TECHS: dict[str, dict] = {
         "id": "cyber_security_link", "name": "Cyber Security Link",
         "field": "computers", "tier": 2, "tier_group": _t("computers", 2),
         "cost": 200, "prereqs": ["computer_science"],
-        "description": "Hardened empire networks", "effect_stub": True,
+        "description": "Hardened networks (+2 spy defense)",
+        "spy_defense": 2,
     },
     "galactic_networks": {
         "id": "galactic_networks", "name": "Galactic Networks",
@@ -441,7 +456,8 @@ TECHS: dict[str, dict] = {
         "id": "holo_simulator", "name": "Holo Simulator",
         "field": "computers", "tier": 3, "tier_group": _t("computers", 3),
         "cost": 400, "prereqs": ["advanced_computers"],
-        "description": "Morale + training boost", "effect_stub": True,
+        "description": "Drill simulation (+1 attack per ship)",
+        "equipment": {"slot": "special", "size": 1, "attack": 1},
     },
     "positronic_computers": {
         "id": "positronic_computers", "name": "Positronic Computers",
@@ -460,7 +476,8 @@ TECHS: dict[str, dict] = {
         "id": "cybertronic_computer", "name": "Cybertronic Computer",
         "field": "computers", "tier": 5, "tier_group": _t("computers", 5),
         "cost": 1000, "prereqs": ["positronic_computers"],
-        "description": "Adaptive AI cores", "effect_stub": True,
+        "description": "Adaptive AI cores (+2 spy offense & defense)",
+        "spy_offense": 2, "spy_defense": 2,
     },
     "achilles_targeting": {
         "id": "achilles_targeting", "name": "Achilles Targeting",
@@ -484,7 +501,8 @@ TECHS: dict[str, dict] = {
         "id": "microbiotics", "name": "Microbiotics",
         "field": "biology", "tier": 1, "tier_group": _t("biology", 1),
         "cost": 80, "prereqs": [],
-        "description": "Longer lives, more pop", "effect_stub": True,
+        "description": "Longer lives (+1 food per farmer)",
+        "food_per_farmer": 1,
     },
     "soil_enrichment": {
         "id": "soil_enrichment", "name": "Soil Enrichment",
@@ -497,7 +515,8 @@ TECHS: dict[str, dict] = {
         "id": "heightened_intelligence", "name": "Heightened Intelligence",
         "field": "biology", "tier": 2, "tier_group": _t("biology", 2),
         "cost": 150, "prereqs": ["agriculture"],
-        "description": "Population research bonus", "effect_stub": True,
+        "description": "Smarter pop (+1 research/scientist)",
+        "research_per_scientist": 1,
     },
     "cloning": {
         "id": "cloning", "name": "Cloning",
@@ -510,7 +529,8 @@ TECHS: dict[str, dict] = {
         "id": "telepathic_training", "name": "Telepathic Training",
         "field": "biology", "tier": 3, "tier_group": _t("biology", 3),
         "cost": 300, "prereqs": ["soil_enrichment"],
-        "description": "Spy + diplomacy edge", "effect_stub": True,
+        "description": "Mind training (+1 spy offense & defense)",
+        "spy_offense": 1, "spy_defense": 1,
     },
     "bio_terminators": {
         "id": "bio_terminators", "name": "Bio Terminators",
@@ -672,7 +692,8 @@ TECHS: dict[str, dict] = {
         "id": "stasis_field", "name": "Stasis Field",
         "field": "force_fields", "tier": 3, "tier_group": _t("force_fields", 3),
         "cost": 450, "prereqs": ["class_iii_shield"],
-        "description": "Freeze enemy ship for a turn", "effect_stub": True,
+        "description": "Stasis emitter (+3 defense per ship)",
+        "equipment": {"slot": "special", "size": 2, "defense": 3},
     },
     "class_vii_shield": {
         "id": "class_vii_shield", "name": "Class VII Shield",
@@ -757,7 +778,8 @@ TECHS: dict[str, dict] = {
         "id": "deep_cover", "name": "Deep Cover",
         "field": "espionage", "tier": 4, "tier_group": _t("espionage", 4),
         "cost": 640, "prereqs": ["stealth_suit", "mind_scan"],
-        "description": "Long-term embedded agents", "effect_stub": True,
+        "description": "Sleeper agents (+1 spy offense, stealth)",
+        "spy_offense": 1, "stealth": True,
     },
 }
 

@@ -16,8 +16,10 @@ treasury — to be refined later.
 from __future__ import annotations
 
 from ecs.components import (
-    Empire, Owner, Population, Ship, ShipOwner, ShipAt, ShipInTransit,
+    Empire, Owner, Population, BuildState, TechState,
+    Ship, ShipOwner, ShipAt, ShipInTransit,
 )
+from ecs.ships import SHIPS
 from ecs.db import get_connection, delete_ship, insert_hall_of_fame
 
 
@@ -34,10 +36,24 @@ def living_empires(component_mgr) -> list[int]:
 
 
 def empire_score(game, empire_id: int) -> int:
-    """Placeholder score: colonies + population + a slice of treasury.
-    Refine once a proper scoring model lands."""
+    """Raw empire score across six MOO2-flavoured pillars.
+
+    The components, weighted so each contributes meaningfully in mid-
+    to-late game:
+
+    - **Population**   pop × 10           — the raw size of your people
+    - **Colonies**     colonies × 50      — geographic spread
+    - **Tech**         techs × 80         — knowledge accumulated
+    - **Buildings**    sum × 20           — built-up empire
+    - **Economy**      (BC + 2*RP) // 10  — banked resources & science
+    - **Military**     0.3 × Σ ship_cost  — investment in fleet
+
+    The result here is the *raw* civic score. ``record_result`` then
+    layers victory-mode bonus and a turn-speed multiplier on top before
+    writing to the Hall of Fame.
+    """
     cm = game.component_mgr
-    colonies = pop = 0
+    colonies = pop = buildings = 0
     for eid, owner in cm.get_all(Owner):
         if owner.empire_id != empire_id:
             continue
@@ -45,9 +61,61 @@ def empire_score(game, empire_id: int) -> int:
         p = cm.get_component(eid, Population)
         if p is not None:
             pop += p.current
+        bs = cm.get_component(eid, BuildState)
+        if bs is not None:
+            buildings += len(bs.completed)
+
     emp = next((e for _x, e in cm.get_all(Empire) if e.id == empire_id), None)
-    bank = (emp.bc + emp.research_points) if emp is not None else 0
-    return colonies * 1000 + pop * 100 + bank // 10
+    bc = emp.bc if emp else 0
+    rp = emp.research_points if emp else 0
+
+    techs = 0
+    for _x, ts in cm.get_all(TechState):
+        if ts.empire_id == empire_id:
+            techs = len(ts.unlocked)
+            break
+
+    fleet_value = 0
+    for ship_entity, owner in cm.get_all(ShipOwner):
+        if owner.empire_id != empire_id:
+            continue
+        ship = cm.get_component(ship_entity, Ship)
+        if ship is not None:
+            fleet_value += SHIPS.get(ship.ship_class, {}).get("cost", 0)
+
+    return (
+        pop * 10
+        + colonies * 50
+        + techs * 80
+        + buildings * 20
+        + (bc + rp * 2) // 10
+        + int(fleet_value * 0.3)
+    )
+
+
+# Outcome-specific bonuses applied to the raw score in ``record_result``.
+# Conquest is the hardest path so it pays best; diplomatic still rewards
+# play to the end; an accepted defeat preserves the run but doesn't
+# inflate it.
+SCORE_OUTCOME_BONUS = {
+    "Conquest":   1.5,
+    "Diplomatic": 1.3,
+    "Defeat":     1.0,
+}
+
+
+def _turn_speed_multiplier(turn: int) -> float:
+    """Faster wins score higher. Linear decay from 1.0 at turn 0 down to
+    a floor of 0.4 by turn 500 — so a long grind still counts."""
+    return max(0.4, 1.0 - turn / 1000.0)
+
+
+def final_score(game, empire_id: int, outcome: str) -> int:
+    """Hall-of-Fame score = raw × outcome bonus × speed multiplier."""
+    raw = empire_score(game, empire_id)
+    bonus = SCORE_OUTCOME_BONUS.get(outcome, 1.0)
+    speed = _turn_speed_multiplier(getattr(game.galaxy, "turn", 0))
+    return int(round(raw * bonus * speed))
 
 
 def _scrap_empire_ships(game, empire_id: int):
@@ -106,13 +174,24 @@ def check_endgame(game) -> dict | None:
 
 
 def record_result(game, winner_id: int, outcome: str):
-    """Write the winning empire to the persistent hall of fame."""
+    """Write the winning empire to the persistent Hall of Fame. If the
+    player lost (a non-player empire is the winner), also record the
+    player's run with the "Defeat" outcome so attempts accumulate even
+    when you lose."""
     cm = game.component_mgr
-    emp = next((e for _x, e in cm.get_all(Empire) if e.id == winner_id), None)
-    if emp is None:
-        return
-    score = empire_score(game, winner_id)
     turn = getattr(game.galaxy, "turn", 0)
+    rows: list[tuple[Empire, str]] = []
+
+    winner = next((e for _x, e in cm.get_all(Empire) if e.id == winner_id), None)
+    if winner is not None:
+        rows.append((winner, outcome))
+
+    player = game.player_empire()
+    if player is not None and (winner is None or player.id != winner.id):
+        rows.append((player, "Defeat"))
+
     with get_connection() as conn:
-        insert_hall_of_fame(conn, emp.name, emp.race_type, score, outcome, turn)
+        for emp, perspective in rows:
+            score = final_score(game, emp.id, perspective)
+            insert_hall_of_fame(conn, emp.name, emp.race_type, score, perspective, turn)
         conn.commit()
