@@ -206,7 +206,7 @@ def ai_tick(game, new_turn: int):
             )
 
         if tech_state is not None:
-            _ai_pick_research(tech_state, personality["research_priority"], pending_writes)
+            _ai_pick_research(game, empire, personality, traits, tech_state, pending_writes)
 
         # Dispatch any colony ships still parked after settling — fly
         # them to the highest-value reachable star (score minus
@@ -957,19 +957,145 @@ def _ai_leaders(game, empire, personality):
                 mgr.assign_ship(l.id, sid)
 
 
-def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
+def _score_tech(tech_id: str, empire, personality, traits, diplo,
+                unlocked: set[str]) -> float:
+    """Heuristic value of researching a tech given the empire's
+    personality, race traits, and current game state. Used as a fallback
+    when the personality's priority list is exhausted, and as a tie-
+    breaker among alternatives at a tier choice.
+
+    The score is roughly: ``tier * 5`` baseline (later tiers worth more)
+    plus personality / race / situational weights, minus a small cost
+    penalty so cheaper techs aren't ignored when they would unlock
+    something the empire desperately needs."""
+    tech = TECHS.get(tech_id)
+    if tech is None:
+        return float("-inf")
+
+    tier = tech.get("tier", 1)
+    field = tech.get("field")
+    eq = tech.get("equipment", {}) or {}
+    slot = eq.get("slot")
+    is_stub = bool(tech.get("effect_stub"))
+
+    score = tier * 5.0
+
+    # Personality bias.
+    aggressive = bool(personality.get("aggressive"))
+    focus = personality.get("colonization_focus", "balanced")
+    if aggressive:
+        if slot == "weapon":   score += 30
+        elif slot == "armor":  score += 20
+        elif slot == "shield": score += 15
+        if field == "power":   score += 10  # drives → reach
+    if focus == "science":
+        if "research_per_scientist" in tech: score += 30
+        if field == "computers": score += 20
+    if focus == "economy":
+        if "industry_per_worker" in tech: score += 20
+        if field == "sociology": score += 15
+    if focus == "industry":
+        if "industry_per_worker" in tech: score += 25
+        if field == "construction": score += 10
+
+    # Race traits — the empire leans into what they're already good at,
+    # and avoids doubling down where they already have an edge.
+    if "subterranean" in traits and tech_id == "terraforming":     score += 25
+    if "industry_bonus" in traits and "industry_per_worker" in tech: score += 10
+    if "ship_attack" in traits and slot == "weapon":               score += 15
+    if "ship_hull" in traits and slot == "armor":                  score += 10
+    if "research_bonus" in traits and field == "computers":        score += 10
+    if "food_bonus" in traits and "food_per_farmer" in tech:       score -= 5
+
+    # Catch-up: missing whole categories is a red flag. The AI grabs at
+    # least one armor / shield / weapon / drive / spy tech with priority.
+    def _has_slot(want_slot: str) -> bool:
+        return any(TECHS.get(t, {}).get("equipment", {}).get("slot") == want_slot
+                   for t in unlocked)
+    if slot == "armor" and not _has_slot("armor"):   score += 30
+    if slot == "shield" and not _has_slot("shield"): score += 30
+    if slot == "weapon" and not _has_slot("weapon"): score += 25
+    if field == "power" and not any(
+        TECHS.get(t, {}).get("speed_bonus") for t in unlocked
+    ): score += 15
+    if field == "espionage" and not any(
+        TECHS.get(t, {}).get("spy_offense") for t in unlocked
+    ): score += 10
+
+    # Battle Pods is the supreme tech — half the late-game power swing.
+    if eq.get("space_bonus_pct", 0) > 0:
+        score += 35
+
+    # Situation: at war? Combat gear jumps. The caller flags this on
+    # the empire object so _score_tech doesn't re-walk the diplomacy
+    # table per candidate.
+    if getattr(empire, "_ai_at_war", False):
+        if slot in ("weapon", "armor", "shield"):
+            score += 20
+
+    if is_stub:
+        score -= 15
+
+    # Cost: research time matters. A 100-cost tech is much cheaper than
+    # a 1000-cost one — apply a modest pull toward cheaper picks.
+    score -= tech.get("cost", 200) / 50.0
+    return score
+
+
+def _ai_pick_research(game, empire, personality, traits, tech_state,
+                      pending_writes):
+    """Hybrid tech picker.
+
+    1. Walk the personality's priority list and pick the first item
+       that's researchable. Familiar, predictable behaviour for the
+       early game.
+    2. If the priority list yields nothing, fall back to scoring every
+       available tech and picking the highest. Keeps the AI from
+       stalling once it exhausts its preferred line — especially with
+       the expanded MOO2 catalogue where most techs aren't on any
+       priority list.
+    """
     if tech_state.current_target:
         return
     unlocked = set(tech_state.unlocked)
     locked = set(tech_state.locked_out)
-    for tech_id in research_priority:
-        if tech_id in unlocked or tech_id in locked:
-            continue
-        if not is_available(tech_id, unlocked, locked):
-            continue
+
+    def _commit(tech_id: str):
         tech_state.current_target = tech_id
         pending_writes.append((
             "tech",
             (tech_state.empire_id, tech_id, tech_state.progress),
         ))
+
+    # 1. Priority list pass.
+    for tech_id in personality.get("research_priority", []):
+        if tech_id in unlocked or tech_id in locked:
+            continue
+        if not is_available(tech_id, unlocked, locked):
+            continue
+        _commit(tech_id)
         return
+
+    # 2. Scoring fallback over every researchable tech.
+    diplo = getattr(game, "diplomacy", None)
+    # Flag whether the empire is currently at war so _score_tech can
+    # weight combat gear without re-walking the diplomacy table per
+    # candidate.
+    empire._ai_at_war = False
+    if diplo is not None:
+        for _e, other in game.component_mgr.get_all(Empire):
+            if other.id != empire.id and diplo.at_war(empire.id, other.id):
+                empire._ai_at_war = True
+                break
+
+    best_id, best_score = None, float("-inf")
+    for tech_id, tech in TECHS.items():
+        if tech_id in unlocked or tech_id in locked:
+            continue
+        if not is_available(tech_id, unlocked, locked):
+            continue
+        s = _score_tech(tech_id, empire, personality, traits, diplo, unlocked)
+        if s > best_score:
+            best_score, best_id = s, tech_id
+    if best_id is not None:
+        _commit(best_id)
