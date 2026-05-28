@@ -35,22 +35,20 @@ def living_empires(component_mgr) -> list[int]:
     return [eid for eid, n in colony_counts(component_mgr).items() if n > 0]
 
 
-def empire_score(game, empire_id: int) -> int:
-    """Raw empire score across six MOO2-flavoured pillars.
+def score_breakdown(game, empire_id: int) -> dict:
+    """Return the empire's score split into its six MOO2-flavoured
+    pillars *plus* the raw total. Used both for tally and for the
+    game-over screen, which surfaces each pillar separately so the
+    player can see what drove their number.
 
-    The components, weighted so each contributes meaningfully in mid-
-    to-late game:
+    Pillar weights (raw values, before outcome / speed multipliers):
 
-    - **Population**   pop × 10           — the raw size of your people
-    - **Colonies**     colonies × 50      — geographic spread
-    - **Tech**         techs × 80         — knowledge accumulated
-    - **Buildings**    sum × 20           — built-up empire
-    - **Economy**      (BC + 2*RP) // 10  — banked resources & science
-    - **Military**     0.3 × Σ ship_cost  — investment in fleet
-
-    The result here is the *raw* civic score. ``record_result`` then
-    layers victory-mode bonus and a turn-speed multiplier on top before
-    writing to the Hall of Fame.
+    - **Population**  pop × 10           — the size of your people
+    - **Colonies**    colonies × 50      — geographic spread
+    - **Tech**        techs × 80         — accumulated knowledge
+    - **Buildings**   sum × 20           — built-up empire
+    - **Economy**     (BC + 2·RP) // 10  — banked resources & science
+    - **Military**    0.3 × Σ ship_cost  — fleet investment
     """
     cm = game.component_mgr
     colonies = pop = buildings = 0
@@ -83,14 +81,28 @@ def empire_score(game, empire_id: int) -> int:
         if ship is not None:
             fleet_value += SHIPS.get(ship.ship_class, {}).get("cost", 0)
 
-    return (
-        pop * 10
-        + colonies * 50
-        + techs * 80
-        + buildings * 20
-        + (bc + rp * 2) // 10
-        + int(fleet_value * 0.3)
-    )
+    pillars = {
+        "Population": pop * 10,
+        "Colonies":   colonies * 50,
+        "Tech":       techs * 80,
+        "Buildings":  buildings * 20,
+        "Economy":    (bc + rp * 2) // 10,
+        "Military":   int(fleet_value * 0.3),
+    }
+    raw = sum(pillars.values())
+    # Underlying counts the breakdown UI shows alongside the points.
+    counts = {
+        "Population": pop, "Colonies": colonies, "Tech": techs,
+        "Buildings": buildings, "Economy": f"{bc} BC, {rp} RP",
+        "Military": f"{fleet_value} BC value",
+    }
+    return {"pillars": pillars, "counts": counts, "raw": raw}
+
+
+def empire_score(game, empire_id: int) -> int:
+    """Raw civic score (sum of every pillar). See ``score_breakdown``
+    for the breakdown."""
+    return score_breakdown(game, empire_id)["raw"]
 
 
 # Outcome-specific bonuses applied to the raw score in ``record_result``.

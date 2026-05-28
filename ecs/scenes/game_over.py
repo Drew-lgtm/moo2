@@ -12,7 +12,10 @@ import pygame
 
 from ecs.scene import Scene
 from ecs.components import Empire
-from ecs.endgame import record_result
+from ecs.endgame import (
+    record_result, score_breakdown, final_score, SCORE_OUTCOME_BONUS,
+    _turn_speed_multiplier,
+)
 from ecs.db import get_hall_of_fame
 
 
@@ -65,6 +68,61 @@ class GameOverScene(Scene):
                 return emp
         return None
 
+    def _draw_score_panel(self, screen, won: bool, mode: str, cx: int):
+        """Two-column-ish breakdown: pillar name, count, raw points.
+        Below: outcome bonus + turn-speed multiplier => final score."""
+        player = self.game.player_empire()
+        if player is None:
+            return
+        # The score the player is being recorded with: Conquest /
+        # Diplomatic on a win, "Defeat" on a loss.
+        perspective = mode if won else "Defeat"
+        bd = score_breakdown(self.game, player.id)
+        pillars = bd["pillars"]
+        counts = bd["counts"]
+        raw = bd["raw"]
+        bonus = SCORE_OUTCOME_BONUS.get(perspective, 1.0)
+        speed = _turn_speed_multiplier(getattr(self.game.galaxy, "turn", 0))
+        final = int(round(raw * bonus * speed))
+
+        screen.blit(self.header_font.render("Your Score", True, HEADER_COLOR),
+                    (cx - 320, 160))
+
+        x_name, x_count, x_pts = cx - 320, cx - 130, cx + 60
+        screen.blit(self.small_font.render("Pillar", True, HINT_COLOR), (x_name, 188))
+        screen.blit(self.small_font.render("Count", True, HINT_COLOR), (x_count, 188))
+        screen.blit(self.small_font.render("Points", True, HINT_COLOR), (x_pts, 188))
+
+        y = 210
+        for name, pts in pillars.items():
+            screen.blit(self.body_font.render(name, True, TEXT_COLOR), (x_name, y))
+            screen.blit(self.body_font.render(str(counts.get(name, "")), True, TEXT_COLOR),
+                        (x_count, y))
+            screen.blit(self.body_font.render(str(pts), True, TEXT_COLOR),
+                        (x_pts, y))
+            y += 22
+
+        # Totals + multipliers.
+        y += 4
+        line = pygame.Rect(x_name, y, 660, 1)
+        pygame.draw.rect(screen, HINT_COLOR, line)
+        y += 6
+        screen.blit(self.body_font.render("Raw score", True, HINT_COLOR), (x_name, y))
+        screen.blit(self.body_font.render(str(raw), True, TEXT_COLOR), (x_pts, y))
+        y += 22
+        screen.blit(self.body_font.render(
+            f"× {perspective} bonus", True, HINT_COLOR), (x_name, y))
+        screen.blit(self.body_font.render(f"× {bonus:.2f}", True, TEXT_COLOR), (x_pts, y))
+        y += 22
+        screen.blit(self.body_font.render(
+            f"× speed (turn {getattr(self.game.galaxy, 'turn', 0)})",
+            True, HINT_COLOR), (x_name, y))
+        screen.blit(self.body_font.render(f"× {speed:.2f}", True, TEXT_COLOR), (x_pts, y))
+        y += 24
+        final_color = TITLE_WIN if won else TEXT_COLOR
+        screen.blit(self.header_font.render("Final Score", True, HEADER_COLOR), (x_name, y))
+        screen.blit(self.header_font.render(str(final), True, final_color), (x_pts, y))
+
     def draw(self, screen):
         sw, sh = self.game.screen_width, self.game.screen_height
         overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
@@ -90,14 +148,19 @@ class GameOverScene(Scene):
         screen.blit(self.header_font.render(sub, True, TEXT_COLOR),
                     self.header_font.render(sub, True, TEXT_COLOR).get_rect(center=(cx, 118)))
 
+        # Player's score breakdown — surfaces the six pillars so they
+        # can see what drove the number. Recorded into the Hall of Fame
+        # with the same maths via final_score().
+        self._draw_score_panel(screen, won, mode, cx)
+
         # Hall of Fame table.
-        screen.blit(self.header_font.render("Hall of Fame", True, HEADER_COLOR), (cx - 320, 170))
+        screen.blit(self.header_font.render("Hall of Fame", True, HEADER_COLOR), (cx - 320, 380))
         cols = [("#", cx - 320), ("Empire", cx - 290), ("Race", cx - 90),
                 ("Outcome", cx + 70), ("Turn", cx + 210), ("Score", cx + 280)]
         for label, x in cols:
-            screen.blit(self.small_font.render(label, True, HINT_COLOR), (x, 200))
+            screen.blit(self.small_font.render(label, True, HINT_COLOR), (x, 410))
 
-        y = 224
+        y = 434
         for i, row in enumerate(self._hof):
             rect = pygame.Rect(cx - 326, y, 660, 26)
             pygame.draw.rect(screen, ROW_BG_ALT if i % 2 else ROW_BG, rect)
