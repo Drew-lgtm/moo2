@@ -24,6 +24,7 @@ from ecs.projects import (
     projects_in_category, project_is_available,
 )
 from ecs.techs import TECHS
+from ecs.ship_design import loadout_summary
 from ecs.db import get_connection, update_planet_build, save_planet_build_queue
 
 
@@ -458,9 +459,16 @@ class BuildScene(Scene):
         name = self.header_font.render(proj["name"], True, name_color)
         screen.blit(name, (rect.x + 14, rect.y + 6))
 
-        # Description, lighter.
+        # Description, lighter. For ship projects, show the live auto-
+        # loadout summary based on the player's current tech — so the
+        # player sees what their ships will actually be equipped with.
         desc_color = HINT_COLOR if available else (120, 120, 140)
-        desc = self.small_font.render(proj.get("description", ""), True, desc_color)
+        desc_text = proj.get("description", "")
+        if proj.get("type") == "ship":
+            ship_class = proj.get("ship_class")
+            if ship_class:
+                desc_text = loadout_summary(ship_class, unlocked)
+        desc = self.small_font.render(desc_text, True, desc_color)
         screen.blit(desc, (rect.x + 14, rect.y + rect.height - desc.get_height() - 6))
 
         # Right side: cost / status pill. Cost is in production (industry

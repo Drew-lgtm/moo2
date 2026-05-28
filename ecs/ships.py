@@ -25,28 +25,33 @@ SHIPS: dict[str, dict] = {
     # Scout extends visibility; Freighter hauls food + colonists between
     # colonies (MOO2's freighter pool, to be wired into the economy);
     # Outpost Ship claims empty systems; Colony Ship founds new colonies.
+    #
+    # ``space`` is the equipment budget every ship of this class carries.
+    # Bigger hulls fit more (and bigger) gear: more weapons, thicker
+    # armor, better shields, more specials. Civilians get just enough
+    # room for armor + shield.
     "scout": {
         "id": "scout", "name": "Scout", "ship_class_kind": "civilian",
-        "cost": 20, "speed": 3, "attack": 0, "hull": 1,
+        "cost": 20, "speed": 3, "attack": 0, "hull": 1, "space": 4,
         "image": "ships/frigate.png",
         "description": "Dedicated recon hull. +1 speed over the line.",
     },
     "freighter": {
         "id": "freighter", "name": "Freighter", "ship_class_kind": "civilian",
-        "cost": 50, "speed": 2, "attack": 0, "hull": 4,
+        "cost": 50, "speed": 2, "attack": 0, "hull": 4, "space": 4,
         "image": "ships/carrier.png",
         "description": "Hauls colonists and food between worlds. "
                        "Required for inter-colony food redistribution.",
     },
     "outpost_ship": {
         "id": "outpost_ship", "name": "Outpost Ship", "ship_class_kind": "civilian",
-        "cost": 80, "speed": 2, "attack": 0, "hull": 3,
+        "cost": 80, "speed": 2, "attack": 0, "hull": 3, "space": 4,
         "image": "ships/frigate.png",
         "description": "Plants an outpost in an empty system.",
     },
     "colony_ship": {
         "id": "colony_ship", "name": "Colony Ship", "ship_class_kind": "civilian",
-        "cost": 120, "speed": 2, "attack": 0, "hull": 4,
+        "cost": 120, "speed": 2, "attack": 0, "hull": 4, "space": 6,
         "image": "ships/carrier.png",
         "description": "Founds a new colony on an unowned habitable planet.",
     },
@@ -58,37 +63,37 @@ SHIPS: dict[str, dict] = {
     # don't model that yet.
     "troop_transport": {
         "id": "troop_transport", "name": "Troop Transport", "ship_class_kind": "military",
-        "cost": 70, "speed": 2, "attack": 1, "hull": 5,
+        "cost": 70, "speed": 2, "attack": 1, "hull": 5, "space": 6,
         "image": "ships/carrier.png",
         "description": "Carries marines to invade enemy planets.",
     },
     "frigate": {
         "id": "frigate", "name": "Frigate", "ship_class_kind": "military",
-        "cost": 30, "speed": 2, "attack": 1, "hull": 2,
+        "cost": 30, "speed": 2, "attack": 1, "hull": 2, "space": 6,
         "image": "ships/frigate.png",
         "description": "Small skirmisher.",
     },
     "carrier": {
         "id": "carrier", "name": "Carrier", "ship_class_kind": "military",
-        "cost": 60, "speed": 2, "attack": 2, "hull": 4,
+        "cost": 60, "speed": 2, "attack": 2, "hull": 4, "space": 12,
         "image": "ships/carrier.png",
         "description": "Medium hull with fighter complement.",
     },
     "cruiser": {
         "id": "cruiser", "name": "Cruiser", "ship_class_kind": "military",
-        "cost": 80, "speed": 2, "attack": 3, "hull": 6,
+        "cost": 80, "speed": 2, "attack": 3, "hull": 6, "space": 20,
         "image": "ships/cruiser.png",
         "description": "Workhorse warship.",
     },
     "battleship": {
         "id": "battleship", "name": "Battleship", "ship_class_kind": "military",
-        "cost": 150, "speed": 2, "attack": 6, "hull": 12,
+        "cost": 150, "speed": 2, "attack": 6, "hull": 12, "space": 35,
         "image": "ships/battleship.png",
         "description": "Heavy line-of-battle vessel.",
     },
     "dreadnought": {
         "id": "dreadnought", "name": "Dreadnought", "ship_class_kind": "military",
-        "cost": 250, "speed": 2, "attack": 12, "hull": 20,
+        "cost": 250, "speed": 2, "attack": 12, "hull": 20, "space": 60,
         "image": "ships/dreadnought.png",
         "description": "Capital ship. Devastating in a fleet engagement.",
     },
