@@ -21,6 +21,7 @@ from ecs.projects import PROJECTS
 from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
 from ecs.colonization import can_colonize, colonize_planet
 from ecs.invasion import can_invade, invade_planet
+from ecs.refit import plan_refit, refit_ships_at_star
 from ecs.db import (
     get_connection, update_planet_workers,
 )
@@ -51,9 +52,12 @@ class ColonyScene(Scene):
         self._build_rect = pygame.Rect(0, 0, 0, 0)
         self._colonize_rect = pygame.Rect(0, 0, 0, 0)
         self._invade_rect = pygame.Rect(0, 0, 0, 0)
+        self._refit_rect = pygame.Rect(0, 0, 0, 0)
         # Last invasion result for this entry into the scene — used so
         # the player sees what happened after pressing Invade.
         self._invasion_log: dict | None = None
+        # Last refit outcome banner for this entry.
+        self._refit_result: dict | None = None
         self._planet_entity: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -65,6 +69,7 @@ class ColonyScene(Scene):
             self._return_to_system()
             return
         self._invasion_log = None
+        self._refit_result = None
         self._layout()
 
     def on_exit(self):
@@ -85,6 +90,10 @@ class ColonyScene(Scene):
         # Build button sits to the left of Close so the player can jump
         # to the categorised build screen.
         self._build_rect = pygame.Rect(sw - 100 - 110, 16, 100, 32)
+        # Refit button — to the left of Build, only shown on a player
+        # colony with at least one ship parked at the star that's not
+        # already running the empire's current best loadout.
+        self._refit_rect = pygame.Rect(sw - 100 - 110 - 140, 16, 130, 32)
         # Colonize button overlays the Build slot when the planet is
         # uncolonized; only one of the two will be visible at a time.
         self._colonize_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
@@ -156,6 +165,22 @@ class ColonyScene(Scene):
             return False
         return can_invade(self.game.component_mgr, self._planet_entity, empire_id)
 
+    def _star_entity(self) -> int | None:
+        if self._planet_entity is None:
+            return None
+        orbit = self.game.component_mgr.get_component(self._planet_entity, Orbiting)
+        return orbit.star_entity if orbit is not None else None
+
+    def _refit_plan(self) -> dict | None:
+        """Returns the refit summary for the player's ships parked at
+        this colony's star, or None if nothing applies (no star, no
+        player empire, no ships)."""
+        star = self._star_entity()
+        empire_id = self._player_empire_id()
+        if star is None or empire_id is None:
+            return None
+        return plan_refit(self.game.component_mgr, star, empire_id)
+
     # ------------------------------------------------------------------ input
 
     def handle_event(self, event):
@@ -191,6 +216,17 @@ class ColonyScene(Scene):
             if self._build_rect.collidepoint(event.pos):
                 # Open the categorised build screen for this planet.
                 self.game.scenes.replace("build")
+                return
+            # Refit fleet at this colony — applies the empire's current
+            # best loadout to every parked ship for a fraction of build cost.
+            plan = self._refit_plan()
+            if (plan is not None and plan["to_refit"] > 0
+                    and self._refit_rect.collidepoint(event.pos)):
+                star = self._star_entity()
+                if star is not None:
+                    self._refit_result = refit_ships_at_star(
+                        self.game, star, player_id,
+                    )
                 return
 
         # Worker +/- buttons
@@ -255,8 +291,10 @@ class ColonyScene(Scene):
             self._draw_invade_button(screen, planet)
         else:
             self._draw_build_button(screen, owner)
+            self._draw_refit_button(screen, owner)
         self._draw_close_button(screen)
         self._draw_invasion_log(screen)
+        self._draw_refit_banner(screen)
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
@@ -274,6 +312,33 @@ class ColonyScene(Scene):
         pygame.draw.rect(screen, border, self._build_rect, 1)
         label = self.body_font.render("Build", True, fg)
         screen.blit(label, label.get_rect(center=self._build_rect.center))
+
+    def _draw_refit_button(self, screen, owner):
+        """Visible only when the player owns this colony AND has at
+        least one ship parked at its star that's not already running the
+        empire's current best loadout. Shows the total BC cost on the
+        button; disabled when broke."""
+        if not self._player_owns_this(owner):
+            return
+        plan = self._refit_plan()
+        if plan is None or plan["to_refit"] <= 0:
+            return
+        cost = plan["total_cost"]
+        # Affordable?
+        affordable = False
+        for _eid, emp in self.game.component_mgr.get_all(Empire):
+            if emp.is_player:
+                affordable = emp.bc >= cost
+                break
+        if affordable:
+            bg, border, fg = (60, 70, 110), (160, 180, 230), TEXT_COLOR
+        else:
+            bg, border, fg = (40, 44, 56), (110, 110, 130), (150, 150, 165)
+        pygame.draw.rect(screen, bg, self._refit_rect)
+        pygame.draw.rect(screen, border, self._refit_rect, 1)
+        label = self.body_font.render(
+            f"Refit {plan['to_refit']} ({cost} BC)", True, fg)
+        screen.blit(label, label.get_rect(center=self._refit_rect.center))
 
     def _draw_invade_button(self, screen, planet):
         """Visible on enemy-owned planets when the player has Troop
@@ -322,6 +387,24 @@ class ColonyScene(Scene):
                 f"defenders took {log['pop_lost']}M casualties."
             )
             color = (220, 160, 160)
+        surf = self.body_font.render(text, True, color)
+        screen.blit(surf, (24, 144))
+
+    def _draw_refit_banner(self, screen):
+        """One-line outcome of the last refit on this scene entry."""
+        r = self._refit_result
+        if r is None:
+            return
+        status = r.get("status")
+        if status == "ok":
+            text = f"Refitted {r['refitted']} ship(s) for {r['spent']} BC."
+            color = (160, 220, 230)
+        elif status == "unaffordable":
+            text = (f"Refit needs {r['cost']} BC — you only have {r.get('bc', 0)}.")
+            color = (220, 160, 160)
+        else:
+            text = "All parked ships already carry the current best loadout."
+            color = (180, 180, 180)
         surf = self.body_font.render(text, True, color)
         screen.blit(surf, (24, 144))
 
