@@ -12,7 +12,7 @@ import pygame
 from ecs.scene import Scene
 from ecs.components import Planet, Orbiting, Name, Owner, Empire, StarVisual, Population, BuildState, TechState
 from ecs.palette import empire_color, planet_color
-from ecs.economy import planet_output
+from ecs.economy import planet_output, empire_tech_bonus
 from ecs.races import effective_traits
 from ecs.techs import TECHS, TECH_ORDER, is_available
 from ecs.db import get_connection, update_empire_tech
@@ -298,7 +298,8 @@ class ColoniesScene(PanelScene):
         screen.blit(font.render(fws_label, True, TEXT_COLOR), (x + self.COL_FWS, text_y))
 
         traits = effective_traits(empire.race_type, empire.custom_traits) if empire is not None else []
-        food, industry, research, bonus_bc = planet_output(planet, population, build_state, traits)
+        tb = empire_tech_bonus(self.game.component_mgr, empire.id) if empire is not None else None
+        food, industry, research, bonus_bc = planet_output(planet, population, build_state, traits, tb)
         # Industry diverts to project progress while building; otherwise it
         # becomes BC, on top of any flat building bonus.
         building = bool(build_state and build_state.current_project)

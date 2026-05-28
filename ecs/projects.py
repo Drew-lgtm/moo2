@@ -87,7 +87,7 @@ PROJECTS: dict[str, dict] = {
         "required_tech": "galactic_networks",
     },
     "soil_enrichment_b": {
-        "id": "soil_enrichment_b", "name": "Soil Enrichment", "category": "farming",
+        "id": "soil_enrichment_b", "name": "Enriched Soil", "category": "farming",
         "cost": 200, "description": "+1 max pop, faster growth",
         "effects": {"max_pop": 1, "growth_rate": 0.2},
         "required_tech": "soil_enrichment",

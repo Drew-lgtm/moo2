@@ -38,6 +38,24 @@ from ecs.planet_features import (
 from ecs.ships import empire_freighter_capacity
 from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 from ecs.leaders import colony_effect
+from ecs.techs import (
+    empire_industry_per_worker, empire_food_per_farmer, empire_research_per_scientist,
+)
+
+
+def empire_tech_bonus(component_mgr, empire_id: int) -> dict[str, int]:
+    """Per-worker output bonuses from the empire's unlocked Construction
+    / Biology / Computers techs. MAX semantics (later tier replaces
+    earlier). Keys: food, industry, research — each is added per
+    farmer / worker / scientist inside ``planet_output``."""
+    for _eid, tech in component_mgr.get_all(TechState):
+        if tech.empire_id == empire_id:
+            return {
+                "food": empire_food_per_farmer(tech.unlocked),
+                "industry": empire_industry_per_worker(tech.unlocked),
+                "research": empire_research_per_scientist(tech.unlocked),
+            }
+    return {"food": 0, "industry": 0, "research": 0}
 
 
 def _apply_colony_leader(leaders, planet_id, food, industry, research, bonus_bc):
@@ -222,13 +240,14 @@ def _building_bonuses(build_state: BuildState | None):
 
 def planet_output(planet: Planet, population: Population | None,
                   build_state: BuildState | None = None,
-                  traits=None) -> tuple[int, int, int, int]:
+                  traits=None, tech_bonus=None) -> tuple[int, int, int, int]:
     """Return (food, industry, research, bonus_bc) for one planet.
 
     - food / industry / research are per-pop outputs (farmers, workers,
       scientists respectively) + race trait bonuses (food_bonus,
-      industry_bonus, research_bonus) + building flat bonuses for the
-      same stat.
+      industry_bonus, research_bonus) + empire-wide ``tech_bonus``
+      (per-worker output from Construction / Biology / Computers techs)
+      + building flat bonuses for the same stat.
     - bonus_bc is BC contributed by buildings + bc_bonus race trait
       (per worker). Industry-as-BC happens in production_tick only when
       the planet has no active project.
@@ -238,16 +257,22 @@ def planet_output(planet: Planet, population: Population | None,
     if population is None or population.current <= 0:
         return 0, 0, 0, 0
     traits = traits or []
+    tb = tech_bonus or {}
     p_type = planet.planet_type
 
-    farm_per = FARMER_FOOD.get(p_type, 0) + trait_count(traits, "food_bonus")
+    farm_per = (FARMER_FOOD.get(p_type, 0)
+                + trait_count(traits, "food_bonus")
+                + tb.get("food", 0))
     work_industry_per = max(
         0,
         WORKER_INDUSTRY.get(p_type, 0)
         + trait_count(traits, "industry_bonus")
-        - trait_count(traits, "weak_industry"),
+        - trait_count(traits, "weak_industry")
+        + tb.get("industry", 0),
     )
-    sci_per = SCIENTIST_RESEARCH.get(p_type, 0) + trait_count(traits, "research_bonus")
+    sci_per = (SCIENTIST_RESEARCH.get(p_type, 0)
+               + trait_count(traits, "research_bonus")
+               + tb.get("research", 0))
 
     food = population.farmers * farm_per
     industry = population.workers * work_industry_per
@@ -293,6 +318,7 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, in
     HUD matches what production_tick will actually grant.
     """
     traits = traits_for_empire(component_mgr, empire_id)
+    tech_bonus = empire_tech_bonus(component_mgr, empire_id)
     bc_total = research_total = industry_total = 0
     food_produced = pop_total = 0
 
@@ -304,7 +330,8 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, in
             continue
         pop = component_mgr.get_component(entity_id, Population)
         build_state = component_mgr.get_component(entity_id, BuildState)
-        food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
+        food, industry, research, bonus_bc = planet_output(
+            planet, pop, build_state, traits, tech_bonus)
         food, industry, research, bonus_bc = _apply_colony_leader(
             leaders, planet.id, food, industry, research, bonus_bc)
 
@@ -348,6 +375,7 @@ def pop_growth_tick(game, new_turn: int):
 
     for empire_id, entity_ids in empire_planets.items():
         traits = traits_for_empire(cm, empire_id)
+        tech_bonus = empire_tech_bonus(cm, empire_id)
         # Compute food production / need per planet so we can decide
         # whether freighters can move surplus to shortage colonies.
         per_planet: list[tuple[int, int, int]] = []  # (eid, produced, needed)
@@ -359,7 +387,7 @@ def pop_growth_tick(game, new_turn: int):
             build_state = cm.get_component(eid, BuildState)
             if planet is None or pop is None:
                 continue
-            f, _i, _r, _b = planet_output(planet, pop, build_state, traits)
+            f, _i, _r, _b = planet_output(planet, pop, build_state, traits, tech_bonus)
             need = int(pop.current * per_pop_need + 0.999)  # ceil
             per_planet.append((eid, f, need))
             food_produced += f
@@ -434,7 +462,9 @@ def pop_growth_tick(game, new_turn: int):
                 pop.growth_progress += increment
 
                 grew = 0
-                farmer_food = FARMER_FOOD.get(planet.planet_type, 0) + trait_count(traits, "food_bonus")
+                farmer_food = (FARMER_FOOD.get(planet.planet_type, 0)
+                               + trait_count(traits, "food_bonus")
+                               + tech_bonus.get("food", 0))
                 pop_food_need = 0.5 if "tolerant" in traits else 1.0
                 while pop.growth_progress >= 1.0 and pop.current < pop.max:
                     pop.current += 1
@@ -477,10 +507,13 @@ def production_tick(game, new_turn: int):
     """Apply per-planet industry/research to empires; resolve project progress."""
     cm = game.component_mgr
 
-    # Cache trait lists per empire so we don't re-walk Empire components
-    # for every planet on big maps.
+    # Cache trait lists + tech bonuses per empire so we don't re-walk
+    # Empire / TechState components for every planet on big maps.
     traits_by_empire: dict[int, list[str]] = {
         emp.id: traits_for_empire(cm, emp.id) for _eid, emp in cm.get_all(Empire)
+    }
+    tech_bonus_by_empire: dict[int, dict] = {
+        emp.id: empire_tech_bonus(cm, emp.id) for _eid, emp in cm.get_all(Empire)
     }
 
     empire_gains: dict[int, tuple[int, int]] = {}  # empire_id -> (bc, research)
@@ -498,7 +531,8 @@ def production_tick(game, new_turn: int):
         pop = cm.get_component(entity_id, Population)
         build_state = cm.get_component(entity_id, BuildState)
         traits = traits_by_empire.get(owner.empire_id, [])
-        food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits)
+        tb = tech_bonus_by_empire.get(owner.empire_id, {"food": 0, "industry": 0, "research": 0})
+        food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits, tb)
         food, industry, research, bonus_bc = _apply_colony_leader(
             getattr(game, "leaders", None), planet.id, food, industry, research, bonus_bc)
 

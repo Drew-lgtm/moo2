@@ -64,7 +64,8 @@ TECHS: dict[str, dict] = {
         "tier": 1,
         "cost": 80,
         "prereqs": [],
-        "description": "Enables Factory",
+        "description": "Enables Factory; +1 production per worker",
+        "industry_per_worker": 1,
     },
     "advanced_construction": {
         "id": "advanced_construction",
@@ -73,25 +74,28 @@ TECHS: dict[str, dict] = {
         "tier": 2,
         "cost": 200,
         "prereqs": ["industrial_engineering"],
-        "description": "Enables Atmospheric Renewer",
+        "description": "Enables Atmospheric Renewer; +1 production per worker",
+        "industry_per_worker": 1,
     },
     "automated_factories": {
         "id": "automated_factories",
-        "name": "Automated Factories",
+        "name": "Robotic Factories",
         "field": "construction",
         "tier": 3,
         "cost": 400,
         "prereqs": ["advanced_construction"],
-        "description": "Enables Automated Factory",
+        "description": "Enables Automated Factory; +2 production per worker",
+        "industry_per_worker": 2,
     },
     "robo_miners": {
         "id": "robo_miners",
-        "name": "Robo-Miners",
+        "name": "Deep Core Mining",
         "field": "construction",
         "tier": 4,
         "cost": 700,
         "prereqs": ["automated_factories"],
-        "description": "Enables Deep Core Mine",
+        "description": "Enables Deep Core Mine; +3 production per worker",
+        "industry_per_worker": 3,
     },
 
     # ---- Power (drives) ----------------------------------------------------
@@ -206,7 +210,8 @@ TECHS: dict[str, dict] = {
         "tier": 2,
         "cost": 200,
         "prereqs": ["computer_science"],
-        "description": "Enables Supercomputer",
+        "description": "Enables Supercomputer; +1 research per scientist",
+        "research_per_scientist": 1,
     },
     "galactic_networks": {
         "id": "galactic_networks",
@@ -215,7 +220,8 @@ TECHS: dict[str, dict] = {
         "tier": 3,
         "cost": 400,
         "prereqs": ["advanced_computers"],
-        "description": "Enables Galactic Cybernet",
+        "description": "Enables Galactic Cybernet; +1 research per scientist",
+        "research_per_scientist": 1,
     },
     "positronic_computers": {
         "id": "positronic_computers",
@@ -224,7 +230,8 @@ TECHS: dict[str, dict] = {
         "tier": 4,
         "cost": 700,
         "prereqs": ["galactic_networks"],
-        "description": "Enables Positronic Brain",
+        "description": "Enables Positronic Brain; +2 research per scientist",
+        "research_per_scientist": 2,
     },
 
     # ---- Biology -----------------------------------------------------------
@@ -235,7 +242,8 @@ TECHS: dict[str, dict] = {
         "tier": 1,
         "cost": 80,
         "prereqs": [],
-        "description": "Enables Hydroponics",
+        "description": "Enables Hydroponics; +1 food per farmer",
+        "food_per_farmer": 1,
     },
     "soil_enrichment": {
         "id": "soil_enrichment",
@@ -244,7 +252,8 @@ TECHS: dict[str, dict] = {
         "tier": 2,
         "cost": 150,
         "prereqs": ["agriculture"],
-        "description": "Enables Soil Enrichment",
+        "description": "Enables Enriched Soil; +1 food per farmer",
+        "food_per_farmer": 1,
     },
     "cloning": {
         "id": "cloning",
@@ -253,7 +262,8 @@ TECHS: dict[str, dict] = {
         "tier": 3,
         "cost": 300,
         "prereqs": ["soil_enrichment"],
-        "description": "Enables Cloning Center",
+        "description": "Enables Cloning Center; +1 food per farmer",
+        "food_per_farmer": 1,
     },
     "terraforming": {
         "id": "terraforming",
@@ -262,7 +272,8 @@ TECHS: dict[str, dict] = {
         "tier": 4,
         "cost": 600,
         "prereqs": ["cloning"],
-        "description": "Enables Terraforming",
+        "description": "Enables Terraforming; +2 food per farmer",
+        "food_per_farmer": 2,
     },
 
     # ---- Physics (ship weapons + scanners) ---------------------------------
@@ -484,3 +495,34 @@ def empire_has_stealth(unlocked: set[str] | list) -> bool:
 def empire_has_mind_scan(unlocked: set[str] | list) -> bool:
     """Mind Scan: caught enemy spies are always unmasked (defeats stealth)."""
     return any(TECHS.get(t, {}).get("mind_scan") for t in unlocked)
+
+
+def empire_industry_per_worker(unlocked: set[str] | list) -> int:
+    """Best Construction tech contributes this to industry per worker.
+    MAX so tiers replace each other (later replaces earlier)."""
+    unlocked_set = set(unlocked)
+    best = 0
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("industry_per_worker", 0))
+    return best
+
+
+def empire_food_per_farmer(unlocked: set[str] | list) -> int:
+    """Best Biology tech contributes this to food per farmer. MAX."""
+    unlocked_set = set(unlocked)
+    best = 0
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("food_per_farmer", 0))
+    return best
+
+
+def empire_research_per_scientist(unlocked: set[str] | list) -> int:
+    """Best Computers tech contributes this to research per scientist. MAX."""
+    unlocked_set = set(unlocked)
+    best = 0
+    for tech_id, spec in TECHS.items():
+        if tech_id in unlocked_set:
+            best = max(best, spec.get("research_per_scientist", 0))
+    return best

@@ -19,7 +19,7 @@ from ecs.components import (
     Empire, Owner, Planet, Population, BuildState, TechState,
     Ship, ShipOwner, ShipAt, ShipInTransit, StarRef, Orbiting, Position,
 )
-from ecs.economy import FARMER_FOOD, planet_output
+from ecs.economy import FARMER_FOOD, planet_output, empire_tech_bonus
 from ecs.projects import PROJECTS, project_is_available
 from ecs.techs import TECHS, is_available
 from ecs.fleet import start_fleet_movement
@@ -375,13 +375,14 @@ def _ai_food_shortfall(cm, empire_id: int, traits: list[str], planet_ids: list[i
     lack of transport, not lack of food."""
     per_pop_need = 0.5 if "tolerant" in traits else 1.0
     per_planet_deficit = 0
+    tech_bonus = empire_tech_bonus(cm, empire_id)
     for eid in planet_ids:
         planet = cm.get_component(eid, Planet)
         pop = cm.get_component(eid, Population)
         build_state = cm.get_component(eid, BuildState)
         if planet is None or pop is None:
             continue
-        f, _i, _r, _b = planet_output(planet, pop, build_state, traits)
+        f, _i, _r, _b = planet_output(planet, pop, build_state, traits, tech_bonus)
         need = int(pop.current * per_pop_need + 0.999)  # ceil
         per_planet_deficit += max(0, need - f)
     capacity = empire_freighter_capacity(cm, empire_id)

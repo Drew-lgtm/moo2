@@ -463,7 +463,9 @@ class BuildScene(Scene):
         desc = self.small_font.render(proj.get("description", ""), True, desc_color)
         screen.blit(desc, (rect.x + 14, rect.y + rect.height - desc.get_height() - 6))
 
-        # Right side: cost / status pill.
+        # Right side: cost / status pill. Cost is in production (industry
+        # gathered by workers), NOT BC — the colony's workforce builds it
+        # over time.
         if already_built:
             status_text = "BUILT"
             status_color = (160, 220, 160)
@@ -479,7 +481,7 @@ class BuildScene(Scene):
             status_text = f"Needs {tech_name}"
             status_color = (160, 120, 120)
         else:
-            status_text = f"{proj['cost']} BC"
+            status_text = f"{proj['cost']} prod"
             status_color = (200, 220, 240)
         status = self.body_font.render(status_text, True, status_color)
         screen.blit(status, status.get_rect(midright=(rect.right - 12, rect.centery)))
