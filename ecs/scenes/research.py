@@ -28,10 +28,12 @@ TEXT_COLOR = (240, 240, 240)
 
 
 class ResearchScene(Scene):
-    # Slightly taller cards now that body font is 15pt; gap unchanged.
-    TIER_H = 110
-    GAP = 12
-    PADDING_X = 20
+    # Each tier slot stacks up to 3 alternative cards (MOO2 choice point).
+    TIER_H = 92            # vertical room per tier slot
+    ALT_H = 26             # each alternative inside a tier
+    ALT_GAP = 3
+    TIER_GAP = 8
+    PADDING_X = 16
     HEADER_H = 56
 
     def __init__(self, game):
@@ -112,6 +114,7 @@ class ResearchScene(Scene):
             return
 
         unlocked = set(tech_state.unlocked)
+        locked = set(tech_state.locked_out)
         current = tech_state.current_target
 
         # Current target line.
@@ -121,15 +124,15 @@ class ResearchScene(Scene):
             screen.blit(self.header_font.render(target_line, True, (220, 200, 120)),
                         (self.PADDING_X, 48))
         else:
-            screen.blit(self.header_font.render("No active research — click an available tech below.",
-                                                True, HINT_COLOR),
-                        (self.PADDING_X, 48))
+            screen.blit(self.header_font.render(
+                "No active research — pick a tech below (one per tier; the others get locked).",
+                True, HINT_COLOR), (self.PADDING_X, 48))
 
-        # 5 columns. Each col_w = total_w / 5 minus padding.
         col_area_w = sw - 2 * self.PADDING_X
         col_w = col_area_w // len(FIELDS)
-        top_y = self.HEADER_H + 40
+        top_y = self.HEADER_H + 36
 
+        # Group techs by (field, tier) for stacked alternatives.
         for col, field in enumerate(FIELDS):
             x = self.PADDING_X + col * col_w
             field_name = FIELD_NAMES.get(field, field.title())
@@ -137,66 +140,79 @@ class ResearchScene(Scene):
             label = self.header_font.render(field_name, True, field_color)
             screen.blit(label, (x + 6, top_y - 28))
 
-            # Tier columns: each tech laid out top-to-bottom by tier.
-            for tech in techs_in_field(field):
-                tier = tech.get("tier", 1)
-                rect = pygame.Rect(
-                    x + 4,
-                    top_y + (tier - 1) * (self.TIER_H + self.GAP),
-                    col_w - 8,
-                    self.TIER_H,
+            # Find all tiers present in this field.
+            tiers = sorted({t.get("tier", 1) for t in techs_in_field(field)})
+            for tier in tiers:
+                alts = [t for t in techs_in_field(field) if t.get("tier") == tier]
+                slot_y = top_y + (tier - 1) * (self.TIER_H + self.TIER_GAP)
+                self._draw_tier_slot(
+                    screen, x + 2, slot_y, col_w - 6, alts,
+                    tech_state, unlocked, locked, current, field_color,
                 )
-                is_unlocked = tech["id"] in unlocked
-                is_current = current == tech["id"]
-                available = is_available(tech["id"], unlocked) and not is_current
-
-                # State-driven colors.
-                if is_unlocked:
-                    fill = (28, 60, 36)
-                    border = (90, 200, 110)
-                    status_color = (160, 220, 160)
-                    status = "Unlocked"
-                elif is_current:
-                    fill = (60, 56, 24)
-                    border = (220, 200, 120)
-                    status_color = (220, 200, 120)
-                    status = f"Researching {tech_state.progress}/{tech['cost']}"
-                elif available:
-                    fill = (40, 44, 64)
-                    border = field_color
-                    status_color = (200, 220, 240)
-                    status = f"Cost {tech['cost']}"
-                else:
-                    fill = (24, 24, 36)
-                    border = (90, 90, 110)
-                    status_color = (130, 130, 150)
-                    missing = [TECHS[p]["name"] for p in tech["prereqs"] if p not in unlocked]
-                    status = "Needs " + ", ".join(missing) if missing else "Locked"
-
-                pygame.draw.rect(screen, fill, rect)
-                pygame.draw.rect(screen, border, rect, 2 if (is_unlocked or is_current) else 1)
-
-                name_color = TEXT_COLOR if (is_unlocked or is_current or available) else (140, 140, 160)
-                name_surf = self.body_font.render(tech["name"], True, name_color)
-                screen.blit(name_surf, (rect.x + 8, rect.y + 8))
-
-                # Description (wrap by hand to one line for now)
-                desc = tech.get("description", "")
-                desc_surf = self.cost_font.render(desc, True, name_color)
-                screen.blit(desc_surf, (rect.x + 8, rect.y + 32))
-
-                status_surf = self.cost_font.render(status, True, status_color)
-                screen.blit(status_surf, (rect.x + 8, rect.bottom - status_surf.get_height() - 8))
-
-                self._tech_hits.append((tech["id"], rect, available))
 
         self._draw_close_button(screen)
 
         hint = self.body_font.render(
-            "Click an available tech to set as research target.   Esc returns to galaxy.",
+            "Click an alternative to research it. Completing one locks the others (steal them later).   Esc returns.",
             True, HINT_COLOR,
         )
-        screen.blit(hint, (self.PADDING_X, sh - hint.get_height() - 12))
+        screen.blit(hint, (self.PADDING_X, sh - hint.get_height() - 10))
+
+    def _draw_tier_slot(self, screen, x, y, w, alts, tech_state, unlocked,
+                        locked, current, field_color):
+        """Render up to 3 alternative tech cards stacked inside one tier slot."""
+        # Vertically center if fewer than 3 alternatives.
+        used = len(alts) * self.ALT_H + (len(alts) - 1) * self.ALT_GAP
+        oy = (self.TIER_H - used) // 2
+        for i, tech in enumerate(alts):
+            rect = pygame.Rect(x, y + oy + i * (self.ALT_H + self.ALT_GAP),
+                               w, self.ALT_H)
+            self._draw_alt_card(screen, rect, tech, tech_state, unlocked,
+                                locked, current, field_color)
+
+    def _draw_alt_card(self, screen, rect, tech, tech_state, unlocked, locked,
+                       current, field_color):
+        tech_id = tech["id"]
+        is_unlocked = tech_id in unlocked
+        is_locked = tech_id in locked
+        is_current = current == tech_id
+        is_stub = bool(tech.get("effect_stub"))
+        available = (not is_unlocked and not is_locked and not is_current
+                     and is_available(tech_id, unlocked, locked))
+
+        if is_unlocked:
+            fill, border, name_color = (28, 60, 36), (90, 200, 110), (220, 240, 220)
+        elif is_current:
+            fill, border, name_color = (60, 56, 24), (220, 200, 120), (240, 230, 180)
+        elif is_locked:
+            fill, border, name_color = (50, 22, 26), (180, 90, 100), (200, 140, 150)
+        elif available:
+            fill, border, name_color = (32, 36, 56), field_color, (220, 230, 245)
+        else:
+            fill, border, name_color = (22, 24, 36), (70, 70, 90), (130, 130, 150)
+
+        pygame.draw.rect(screen, fill, rect)
+        pygame.draw.rect(screen, border, rect, 2 if is_current else 1)
+
+        name = tech["name"] + (" *" if is_stub else "")
+        name_surf = self.cost_font.render(name, True, name_color)
+        screen.blit(name_surf, (rect.x + 5, rect.y + 3))
+
+        # Status line at bottom-right of the small card.
+        if is_unlocked:
+            status, sc = "OK", (160, 220, 160)
+        elif is_current:
+            status, sc = f"{tech_state.progress}/{tech['cost']}", (220, 200, 120)
+        elif is_locked:
+            status, sc = "Lost", (220, 130, 140)
+        elif available:
+            status, sc = str(tech["cost"]), (180, 200, 240)
+        else:
+            status, sc = "—", (130, 130, 150)
+        status_surf = self.cost_font.render(status, True, sc)
+        screen.blit(status_surf, status_surf.get_rect(midright=(rect.right - 6, rect.centery)))
+
+        self._tech_hits.append((tech_id, rect, available))
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)

@@ -111,11 +111,17 @@ class TechState:
     Attached to the same entity as the Empire component. `current_target`
     is the tech id whose progress accumulates from per-turn research.
     Completed techs land in `unlocked`.
+
+    `locked_out` holds techs the empire passed on at a tier choice
+    (MOO2-style — picking one alternative excludes the others). Locked
+    techs can still be acquired by stealing from a rival who picked
+    differently.
     """
     empire_id: int
     current_target: str | None = None
     progress: int = 0
     unlocked: list[str] = field(default_factory=list)
+    locked_out: list[str] = field(default_factory=list)
 
 
 @dataclass

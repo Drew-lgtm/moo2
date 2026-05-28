@@ -30,6 +30,7 @@ from ecs.db import (
     get_planet_buildings,
     get_planet_build_queue,
     get_empire_techs,
+    get_empire_locked_techs,
     get_ships,
 )
 
@@ -389,6 +390,7 @@ class GalaxyGenerator:
                         current_target=emp["tech_target"],
                         progress=emp["tech_progress"] or 0,
                         unlocked=get_empire_techs(conn, emp["id"]),
+                        locked_out=get_empire_locked_techs(conn, emp["id"]),
                     ),
                 )
 

@@ -527,13 +527,14 @@ class InfoScene(PanelScene):
         y += 22
 
         unlocked = set(tech_state.unlocked)
+        locked = set(tech_state.locked_out)
         # ---- Tech list ----
         for tech_id in TECH_ORDER:
             tech = TECHS[tech_id]
             row_rect = pygame.Rect(rect.x, y, rect.width - 20, self.TECH_ROW_HEIGHT)
             is_unlocked = tech_id in unlocked
             is_current = tech_state.current_target == tech_id
-            available = (not is_unlocked) and is_available(tech_id, unlocked) and not is_current
+            available = (not is_unlocked) and (tech_id not in locked) and is_available(tech_id, unlocked, locked) and not is_current
 
             if is_unlocked:
                 marker = "✓"

@@ -961,10 +961,11 @@ def _ai_pick_research(tech_state: TechState, research_priority, pending_writes):
     if tech_state.current_target:
         return
     unlocked = set(tech_state.unlocked)
+    locked = set(tech_state.locked_out)
     for tech_id in research_priority:
-        if tech_id in unlocked:
+        if tech_id in unlocked or tech_id in locked:
             continue
-        if not is_available(tech_id, unlocked):
+        if not is_available(tech_id, unlocked, locked):
             continue
         tech_state.current_target = tech_id
         pending_writes.append((

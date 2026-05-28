@@ -590,6 +590,7 @@ def production_tick(game, new_turn: int):
     empire_updates: list[tuple[int, int, int]] = []
     tech_updates: list[tuple[int, str | None, int]] = []
     tech_unlocks: list[tuple[int, str]] = []
+    locked_tech_inserts: list[tuple[int, str]] = []
     tech_by_empire: dict[int, TechState] = {
         t.empire_id: t for _eid, t in cm.get_all(TechState)
     }
@@ -628,6 +629,16 @@ def production_tick(game, new_turn: int):
                     completed_tech = tech.current_target
                     tech.unlocked.append(completed_tech)
                     tech_unlocks.append((empire.id, completed_tech))
+                    # MOO2 choice rule: every other alternative at the
+                    # same tier slot is locked-out for this empire (still
+                    # acquirable by spy theft / tech trade).
+                    from ecs.techs import alternatives_in_group
+                    for alt in alternatives_in_group(completed_tech):
+                        if (alt != completed_tech
+                                and alt not in tech.unlocked
+                                and alt not in tech.locked_out):
+                            tech.locked_out.append(alt)
+                            locked_tech_inserts.append((empire.id, alt))
                     tech.current_target = None
                     tech.progress = 0
                 tech_updates.append((empire.id, tech.current_target, tech.progress))
@@ -640,6 +651,9 @@ def production_tick(game, new_turn: int):
             update_empire_tech(conn, empire_id, target, progress)
         for empire_id, tech_id in tech_unlocks:
             insert_empire_tech(conn, empire_id, tech_id)
+        for empire_id, tech_id in locked_tech_inserts:
+            from ecs.db import insert_empire_locked_tech
+            insert_empire_locked_tech(conn, empire_id, tech_id)
         for planet_id, current_project, progress in planet_build_updates:
             update_planet_build(conn, planet_id, current_project, progress)
         for planet_id, project_id in completed_inserts:

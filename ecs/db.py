@@ -48,6 +48,12 @@ def init_db():
             FOREIGN KEY(empire_id) REFERENCES empires(id)
         );
 
+        CREATE TABLE IF NOT EXISTS empire_locked_techs (
+            empire_id INTEGER NOT NULL,
+            tech_id TEXT NOT NULL,
+            PRIMARY KEY(empire_id, tech_id)
+        );
+
         CREATE TABLE IF NOT EXISTS planets (
             id INTEGER PRIMARY KEY,
             star_id INTEGER,
@@ -357,6 +363,23 @@ def get_empire_techs(conn, empire_id):
     ]
 
 
+def insert_empire_locked_tech(conn, empire_id, tech_id):
+    conn.execute(
+        "INSERT OR IGNORE INTO empire_locked_techs (empire_id, tech_id) VALUES (?, ?)",
+        (empire_id, tech_id),
+    )
+
+
+def get_empire_locked_techs(conn, empire_id):
+    return [
+        row["tech_id"]
+        for row in conn.execute(
+            "SELECT tech_id FROM empire_locked_techs WHERE empire_id = ?",
+            (empire_id,),
+        )
+    ]
+
+
 def insert_ship(conn, owner_empire_id, ship_class, current_star_id) -> int:
     cursor = conn.execute(
         "INSERT INTO ships (owner_empire_id, ship_class, current_star_id) VALUES (?, ?, ?)",
@@ -442,6 +465,6 @@ def clear_galaxy():
         for table in ("planet_build_queue", "planet_buildings", "ships",
                       "empire_techs", "planets", "empires", "stars", "meta",
                       "diplomacy", "diplomacy_pending", "empire_explored",
-                      "spies", "spy_missions", "leaders"):
+                      "spies", "spy_missions", "leaders", "empire_locked_techs"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

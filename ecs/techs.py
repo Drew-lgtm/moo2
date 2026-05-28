@@ -1,528 +1,875 @@
-"""Empire-level tech tree, organised MOO2-style by field and tier.
+"""Empire-level tech tree, MOO2-style.
 
-Six fields are represented:
+Nine fields × multiple tiers. At each tier the player picks **one of
+2-3 alternatives** — the others get locked out for that empire (MOO2's
+signature trade-off; they can still be acquired by spy theft or tech
+trade with a rival who chose differently).
 
-- **Construction** — heavy industry, factories, robo-miners
-- **Power** — ship drives (Nuclear → Fusion → Ion → Anti-Matter → Hyper)
-- **Sociology** — trade, government, finance, virtual networks
-- **Computers** — research throughput, networks, positronic brains
-- **Biology** — farming, growth, cloning, terraforming
-- **Physics** — ship weapons (Laser → Phasor → Plasma) + scanners
+Fields:
+
+- **Construction** — heavy industry, factories, armor frames
+- **Power** — ship drives, fuel, energy systems
+- **Chemistry** — armor materials, fuel cells, atmospheric work
+- **Sociology** — trade, government, diplomacy
+- **Computers** — research, networks, security
+- **Biology** — farming, growth, terraforming, genetics
+- **Physics** — ship weapons, scanners, exotic beams
+- **Force Fields** — shields, cloaking, planetary barriers
+- **Espionage** — spies, counter-intel (a modern addition)
 
 Each tech carries:
 
-- ``field``: which column it occupies in the Research scene.
-- ``tier``: row 1..N; higher tiers cost more and have prereqs.
-- ``cost``: research points to unlock.
-- ``prereqs``: tech ids that must already be unlocked.
-- ``description``: brief summary shown in tooltips / panels.
-- optional ``speed_bonus``: drive techs contribute this to the
-  empire's ship speed (MAX across unlocked, not additive — Fusion
-  replaces Nuclear, etc.).
-- optional ``attack_bonus`` / ``hull_bonus``: weapon and scanner
-  techs contribute these to every ship in combat. Also MAX across
-  unlocked so progression matters.
-
-Research from production_tick routes to TechState.current_target; on
-completion the tech moves to ``unlocked`` and gates new projects via
-projects.required_tech.
+- ``field`` / ``tier`` — column + row in the Research scene.
+- ``tier_group`` — the tier slot id (e.g. ``construction_t2``). Techs
+  sharing a tier_group are alternatives at the same choice point.
+- ``cost`` — research points to unlock.
+- ``prereqs`` — list of tech ids; satisfied if *any* alternative in the
+  prereq's tier_group is unlocked (so picking a different branch still
+  unlocks the next tier).
+- ``description`` — UI tooltip text.
+- effect fields (optional): ``speed_bonus`` / ``attack_bonus`` /
+  ``hull_bonus`` / ``sensor_range`` / ``fuel_range`` /
+  ``industry_per_worker`` / ``food_per_farmer`` /
+  ``research_per_scientist`` / ``spy_offense`` / ``spy_defense`` /
+  ``stealth`` / ``mind_scan``. MAX semantics across unlocked techs.
+- ``effect_stub`` — True means the tech is in the catalogue but its
+  effect isn't wired up to a game system yet (clearly marked in the UI
+  with "(not yet implemented)"). Stubs preserve MOO2's tree shape until
+  the underlying mechanic lands.
 """
 from __future__ import annotations
 
 
 # Fields the catalog covers (order = display order in Research scene).
-FIELDS = ["construction", "power", "sociology", "computers", "biology", "physics", "espionage"]
+FIELDS = [
+    "construction", "power", "chemistry", "sociology", "computers",
+    "biology", "physics", "force_fields", "espionage",
+]
 
 FIELD_NAMES = {
     "construction": "Construction",
     "power":        "Power",
+    "chemistry":    "Chemistry",
     "sociology":    "Sociology",
     "computers":    "Computers",
     "biology":      "Biology",
     "physics":      "Physics",
+    "force_fields": "Force Fields",
     "espionage":    "Espionage",
 }
 
-# Display colours per field; used by the Research scene to tint columns.
 FIELD_COLORS = {
     "construction": (210, 150, 80),
     "power":        (230, 200, 80),
+    "chemistry":    (180, 200, 120),
     "sociology":    (160, 220, 140),
     "computers":    (140, 180, 230),
     "biology":      (150, 220, 180),
     "physics":      (220, 140, 220),
+    "force_fields": (120, 200, 230),
     "espionage":    (200, 110, 130),
 }
 
 
+def _t(field, tier):
+    """Convenience for tier_group keys."""
+    return f"{field}_t{tier}"
+
+
 TECHS: dict[str, dict] = {
-    # ---- Construction ------------------------------------------------------
+    # ===================================================================
+    # Construction — industry, factories, armor frames
+    # ===================================================================
     "industrial_engineering": {
-        "id": "industrial_engineering",
-        "name": "Industrial Engineering",
-        "field": "construction",
-        "tier": 1,
-        "cost": 80,
-        "prereqs": [],
+        "id": "industrial_engineering", "name": "Industrial Engineering",
+        "field": "construction", "tier": 1, "tier_group": _t("construction", 1),
+        "cost": 80, "prereqs": [],
         "description": "Enables Factory; +1 production per worker",
         "industry_per_worker": 1,
     },
+    "heavy_armor": {
+        "id": "heavy_armor", "name": "Heavy Armor",
+        "field": "construction", "tier": 1, "tier_group": _t("construction", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Reinforced ship plating frames", "effect_stub": True,
+    },
+    "anti_missile_rockets": {
+        "id": "anti_missile_rockets", "name": "Anti-Missile Rockets",
+        "field": "construction", "tier": 1, "tier_group": _t("construction", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Point-defense interceptors", "effect_stub": True,
+    },
     "advanced_construction": {
-        "id": "advanced_construction",
-        "name": "Advanced Construction",
-        "field": "construction",
-        "tier": 2,
-        "cost": 200,
-        "prereqs": ["industrial_engineering"],
+        "id": "advanced_construction", "name": "Advanced Construction",
+        "field": "construction", "tier": 2, "tier_group": _t("construction", 2),
+        "cost": 200, "prereqs": ["industrial_engineering"],
         "description": "Enables Atmospheric Renewer; +1 production per worker",
         "industry_per_worker": 1,
     },
+    "cold_fusion": {
+        "id": "cold_fusion", "name": "Cold Fusion",
+        "field": "construction", "tier": 2, "tier_group": _t("construction", 2),
+        "cost": 200, "prereqs": ["industrial_engineering"],
+        "description": "Clean civilian power grid", "effect_stub": True,
+    },
+    "pollution_processor": {
+        "id": "pollution_processor", "name": "Pollution Processor",
+        "field": "construction", "tier": 2, "tier_group": _t("construction", 2),
+        "cost": 200, "prereqs": ["industrial_engineering"],
+        "description": "Industrial waste reclamation", "effect_stub": True,
+    },
     "automated_factories": {
-        "id": "automated_factories",
-        "name": "Robotic Factories",
-        "field": "construction",
-        "tier": 3,
-        "cost": 400,
-        "prereqs": ["advanced_construction"],
+        "id": "automated_factories", "name": "Robotic Factories",
+        "field": "construction", "tier": 3, "tier_group": _t("construction", 3),
+        "cost": 400, "prereqs": ["advanced_construction"],
         "description": "Enables Automated Factory; +2 production per worker",
         "industry_per_worker": 2,
     },
+    "battle_pods": {
+        "id": "battle_pods", "name": "Battle Pods",
+        "field": "construction", "tier": 3, "tier_group": _t("construction", 3),
+        "cost": 400, "prereqs": ["advanced_construction"],
+        "description": "Modular ship internal volume", "effect_stub": True,
+    },
+    "powered_armor": {
+        "id": "powered_armor", "name": "Powered Armor",
+        "field": "construction", "tier": 3, "tier_group": _t("construction", 3),
+        "cost": 400, "prereqs": ["advanced_construction"],
+        "description": "Exoskeletons for marines", "effect_stub": True,
+    },
     "robo_miners": {
-        "id": "robo_miners",
-        "name": "Deep Core Mining",
-        "field": "construction",
-        "tier": 4,
-        "cost": 700,
-        "prereqs": ["automated_factories"],
+        "id": "robo_miners", "name": "Deep Core Mining",
+        "field": "construction", "tier": 4, "tier_group": _t("construction", 4),
+        "cost": 700, "prereqs": ["automated_factories"],
         "description": "Enables Deep Core Mine; +3 production per worker",
         "industry_per_worker": 3,
     },
+    "augmented_engines": {
+        "id": "augmented_engines", "name": "Augmented Engines",
+        "field": "construction", "tier": 4, "tier_group": _t("construction", 4),
+        "cost": 700, "prereqs": ["automated_factories"],
+        "description": "Tactical-combat thrust boost", "effect_stub": True,
+    },
+    "fast_missile_racks": {
+        "id": "fast_missile_racks", "name": "Fast Missile Racks",
+        "field": "construction", "tier": 4, "tier_group": _t("construction", 4),
+        "cost": 700, "prereqs": ["automated_factories"],
+        "description": "Double-fire missile launchers", "effect_stub": True,
+    },
+    "adamantium_armor": {
+        "id": "adamantium_armor", "name": "Adamantium Armor",
+        "field": "construction", "tier": 5, "tier_group": _t("construction", 5),
+        "cost": 1100, "prereqs": ["robo_miners"],
+        "description": "Hardened ship hulls", "effect_stub": True,
+    },
+    "inertial_stabilizer": {
+        "id": "inertial_stabilizer", "name": "Inertial Stabilizer",
+        "field": "construction", "tier": 5, "tier_group": _t("construction", 5),
+        "cost": 1100, "prereqs": ["robo_miners"],
+        "description": "Ships dodge incoming fire", "effect_stub": True,
+    },
+    "artificial_planet": {
+        "id": "artificial_planet", "name": "Artificial Planet",
+        "field": "construction", "tier": 6, "tier_group": _t("construction", 6),
+        "cost": 1600, "prereqs": ["adamantium_armor"],
+        "description": "Construct planetoid colonies", "effect_stub": True,
+    },
+    "xeno_hull": {
+        "id": "xeno_hull", "name": "Xeno-Composite Hull",
+        "field": "construction", "tier": 6, "tier_group": _t("construction", 6),
+        "cost": 1600, "prereqs": ["adamantium_armor"],
+        "description": "Alien-tech composite shipframes", "effect_stub": True,
+    },
 
-    # ---- Power (drives) ----------------------------------------------------
+    # ===================================================================
+    # Power — drives, fuel, energy systems
+    # ===================================================================
     "nuclear_drives": {
-        "id": "nuclear_drives",
-        "name": "Nuclear Drives",
-        "field": "power",
-        "tier": 1,
-        "cost": 100,
-        "prereqs": [],
-        "description": "+1 speed, 9 parsec fuel range",
-        "speed_bonus": 1,
-        "fuel_range": 9,
+        "id": "nuclear_drives", "name": "Nuclear Drives",
+        "field": "power", "tier": 1, "tier_group": _t("power", 1),
+        "cost": 60, "prereqs": [],
+        "description": "+1 ship speed, fuel range 6 pc",
+        "speed_bonus": 1, "fuel_range": 6,
+    },
+    "chemical_fuel": {
+        "id": "chemical_fuel", "name": "Chemical Fuel Refinement",
+        "field": "power", "tier": 1, "tier_group": _t("power", 1),
+        "cost": 60, "prereqs": [],
+        "description": "Extra fuel range", "effect_stub": True,
     },
     "fusion_drives": {
-        "id": "fusion_drives",
-        "name": "Fusion Drives",
-        "field": "power",
-        "tier": 2,
-        "cost": 200,
-        "prereqs": ["nuclear_drives"],
-        "description": "+2 speed, 12 parsec fuel range",
-        "speed_bonus": 2,
-        "fuel_range": 12,
+        "id": "fusion_drives", "name": "Fusion Drives",
+        "field": "power", "tier": 2, "tier_group": _t("power", 2),
+        "cost": 150, "prereqs": ["nuclear_drives"],
+        "description": "+2 ship speed, fuel range 8 pc",
+        "speed_bonus": 2, "fuel_range": 8,
+    },
+    "subspace_communications": {
+        "id": "subspace_communications", "name": "Subspace Communications",
+        "field": "power", "tier": 2, "tier_group": _t("power", 2),
+        "cost": 150, "prereqs": ["nuclear_drives"],
+        "description": "Real-time fleet command", "effect_stub": True,
     },
     "ion_drives": {
-        "id": "ion_drives",
-        "name": "Ion Drives",
-        "field": "power",
-        "tier": 3,
-        "cost": 350,
-        "prereqs": ["fusion_drives"],
-        "description": "+3 speed, 16 parsec fuel range",
-        "speed_bonus": 3,
-        "fuel_range": 16,
+        "id": "ion_drives", "name": "Ion Drives",
+        "field": "power", "tier": 3, "tier_group": _t("power", 3),
+        "cost": 300, "prereqs": ["fusion_drives"],
+        "description": "+3 ship speed, fuel range 11 pc",
+        "speed_bonus": 3, "fuel_range": 11,
+    },
+    "warp_dissipator": {
+        "id": "warp_dissipator", "name": "Warp Dissipator",
+        "field": "power", "tier": 3, "tier_group": _t("power", 3),
+        "cost": 300, "prereqs": ["fusion_drives"],
+        "description": "Disable enemy FTL in-system", "effect_stub": True,
     },
     "anti_matter_drives": {
-        "id": "anti_matter_drives",
-        "name": "Anti-Matter Drives",
-        "field": "power",
-        "tier": 4,
-        "cost": 500,
-        "prereqs": ["ion_drives"],
-        "description": "+4 speed, 20 parsec fuel range",
-        "speed_bonus": 4,
-        "fuel_range": 20,
+        "id": "anti_matter_drives", "name": "Anti-Matter Drives",
+        "field": "power", "tier": 4, "tier_group": _t("power", 4),
+        "cost": 500, "prereqs": ["ion_drives"],
+        "description": "+4 ship speed, fuel range 14 pc",
+        "speed_bonus": 4, "fuel_range": 14,
+    },
+    "energy_absorber": {
+        "id": "energy_absorber", "name": "Energy Absorber",
+        "field": "power", "tier": 4, "tier_group": _t("power", 4),
+        "cost": 500, "prereqs": ["ion_drives"],
+        "description": "Convert incoming energy to shields", "effect_stub": True,
     },
     "hyper_drives": {
-        "id": "hyper_drives",
-        "name": "Hyper Drives",
-        "field": "power",
-        "tier": 5,
-        "cost": 800,
-        "prereqs": ["anti_matter_drives"],
-        "description": "+6 speed, 28 parsec fuel range",
-        "speed_bonus": 6,
-        "fuel_range": 28,
+        "id": "hyper_drives", "name": "Hyper Drives",
+        "field": "power", "tier": 5, "tier_group": _t("power", 5),
+        "cost": 750, "prereqs": ["anti_matter_drives"],
+        "description": "+5 ship speed, fuel range 18 pc",
+        "speed_bonus": 5, "fuel_range": 18,
+    },
+    "interphased_drive": {
+        "id": "interphased_drive", "name": "Interphased Drive",
+        "field": "power", "tier": 5, "tier_group": _t("power", 5),
+        "cost": 750, "prereqs": ["anti_matter_drives"],
+        "description": "Ships phase-shift to dodge", "effect_stub": True,
+    },
+    "transwarp_drive": {
+        "id": "transwarp_drive", "name": "Transwarp Drives",
+        "field": "power", "tier": 6, "tier_group": _t("power", 6),
+        "cost": 1100, "prereqs": ["hyper_drives"],
+        "description": "Beyond hyperdrive speeds", "effect_stub": True,
     },
 
-    # ---- Sociology ---------------------------------------------------------
+    # ===================================================================
+    # Chemistry — armor materials, fuel cells, atmospheres
+    # ===================================================================
+    "titanium_armor": {
+        "id": "titanium_armor", "name": "Titanium Armor",
+        "field": "chemistry", "tier": 1, "tier_group": _t("chemistry", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Base composite ship plating", "effect_stub": True,
+    },
+    "deuterium_fuel": {
+        "id": "deuterium_fuel", "name": "Deuterium Fuel Cells",
+        "field": "chemistry", "tier": 1, "tier_group": _t("chemistry", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Compact reactor fuel", "effect_stub": True,
+    },
+    "tritanium_armor": {
+        "id": "tritanium_armor", "name": "Tritanium Armor",
+        "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
+        "cost": 200, "prereqs": ["titanium_armor"],
+        "description": "Stronger hull alloy", "effect_stub": True,
+    },
+    "irridium_fuel": {
+        "id": "irridium_fuel", "name": "Irridium Fuel Cells",
+        "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
+        "cost": 200, "prereqs": ["titanium_armor"],
+        "description": "Longer-range fuel cells", "effect_stub": True,
+    },
+    "pulson_missile": {
+        "id": "pulson_missile", "name": "Pulson Missile",
+        "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
+        "cost": 200, "prereqs": ["titanium_armor"],
+        "description": "Improved missile warhead", "effect_stub": True,
+    },
+    "atmospheric_terraforming": {
+        "id": "atmospheric_terraforming", "name": "Atmospheric Terraforming",
+        "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
+        "cost": 400, "prereqs": ["tritanium_armor"],
+        "description": "Reshape toxic / radiated worlds", "effect_stub": True,
+    },
+    "merculite_missile": {
+        "id": "merculite_missile", "name": "Merculite Missile",
+        "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
+        "cost": 400, "prereqs": ["tritanium_armor"],
+        "description": "Advanced missile guidance", "effect_stub": True,
+    },
+    "adamantium_chem": {
+        "id": "adamantium_chem", "name": "Adamantium Chemistry",
+        "field": "chemistry", "tier": 4, "tier_group": _t("chemistry", 4),
+        "cost": 700, "prereqs": ["atmospheric_terraforming"],
+        "description": "Synthesize ultra-hard alloys", "effect_stub": True,
+    },
+    "irradiation_resistance": {
+        "id": "irradiation_resistance", "name": "Irradiation Resistance",
+        "field": "chemistry", "tier": 4, "tier_group": _t("chemistry", 4),
+        "cost": 700, "prereqs": ["atmospheric_terraforming"],
+        "description": "Colonize Radiated worlds", "effect_stub": True,
+    },
+    "neutronium_armor": {
+        "id": "neutronium_armor", "name": "Neutronium Armor",
+        "field": "chemistry", "tier": 5, "tier_group": _t("chemistry", 5),
+        "cost": 1100, "prereqs": ["adamantium_chem"],
+        "description": "Densest known armor", "effect_stub": True,
+    },
+    "xentronium_armor": {
+        "id": "xentronium_armor", "name": "Xentronium Armor",
+        "field": "chemistry", "tier": 5, "tier_group": _t("chemistry", 5),
+        "cost": 1100, "prereqs": ["adamantium_chem"],
+        "description": "Pinnacle armor material", "effect_stub": True,
+    },
+
+    # ===================================================================
+    # Sociology — trade, government, diplomacy
+    # ===================================================================
     "trade": {
-        "id": "trade",
-        "name": "Trade",
-        "field": "sociology",
-        "tier": 1,
-        "cost": 100,
-        "prereqs": [],
+        "id": "trade", "name": "Trade",
+        "field": "sociology", "tier": 1, "tier_group": _t("sociology", 1),
+        "cost": 60, "prereqs": [],
         "description": "Enables Marketplace",
     },
+    "diplomatic_corps": {
+        "id": "diplomatic_corps", "name": "Diplomatic Corps",
+        "field": "sociology", "tier": 1, "tier_group": _t("sociology", 1),
+        "cost": 60, "prereqs": [],
+        "description": "Goodwill across foreign empires", "effect_stub": True,
+    },
     "governance": {
-        "id": "governance",
-        "name": "Governance",
-        "field": "sociology",
-        "tier": 2,
-        "cost": 200,
-        "prereqs": ["trade", "industrial_engineering"],
+        "id": "governance", "name": "Governance",
+        "field": "sociology", "tier": 2, "tier_group": _t("sociology", 2),
+        "cost": 200, "prereqs": ["trade", "industrial_engineering"],
         "description": "Enables Capital",
     },
+    "xeno_relations": {
+        "id": "xeno_relations", "name": "Xeno Relations",
+        "field": "sociology", "tier": 2, "tier_group": _t("sociology", 2),
+        "cost": 200, "prereqs": ["trade"],
+        "description": "Insight into alien minds", "effect_stub": True,
+    },
     "financial_planning": {
-        "id": "financial_planning",
-        "name": "Financial Planning",
-        "field": "sociology",
-        "tier": 3,
-        "cost": 300,
-        "prereqs": ["governance"],
+        "id": "financial_planning", "name": "Financial Planning",
+        "field": "sociology", "tier": 3, "tier_group": _t("sociology", 3),
+        "cost": 300, "prereqs": ["governance"],
         "description": "Enables Stock Exchange",
     },
+    "federation": {
+        "id": "federation", "name": "Federation",
+        "field": "sociology", "tier": 3, "tier_group": _t("sociology", 3),
+        "cost": 300, "prereqs": ["governance"],
+        "description": "Powerful alliance treaties", "effect_stub": True,
+    },
     "virtual_reality_network": {
-        "id": "virtual_reality_network",
-        "name": "Virtual Reality Network",
-        "field": "sociology",
-        "tier": 4,
-        "cost": 500,
-        "prereqs": ["financial_planning"],
+        "id": "virtual_reality_network", "name": "Virtual Reality Network",
+        "field": "sociology", "tier": 4, "tier_group": _t("sociology", 4),
+        "cost": 500, "prereqs": ["financial_planning"],
         "description": "Enables VR Network",
     },
+    "galactic_currency_exchange": {
+        "id": "galactic_currency_exchange", "name": "Galactic Currency Exchange",
+        "field": "sociology", "tier": 4, "tier_group": _t("sociology", 4),
+        "cost": 500, "prereqs": ["financial_planning"],
+        "description": "Empire-wide BC boost", "effect_stub": True,
+    },
+    "galactic_unification": {
+        "id": "galactic_unification", "name": "Galactic Unification",
+        "field": "sociology", "tier": 5, "tier_group": _t("sociology", 5),
+        "cost": 800, "prereqs": ["virtual_reality_network"],
+        "description": "Bind worlds into one polity", "effect_stub": True,
+    },
+    "xeno_psychology": {
+        "id": "xeno_psychology", "name": "Xeno Psychology",
+        "field": "sociology", "tier": 5, "tier_group": _t("sociology", 5),
+        "cost": 800, "prereqs": ["virtual_reality_network"],
+        "description": "Read alien diplomatic intent", "effect_stub": True,
+    },
 
-    # ---- Computers ---------------------------------------------------------
+    # ===================================================================
+    # Computers — research, networks, security
+    # ===================================================================
     "computer_science": {
-        "id": "computer_science",
-        "name": "Computer Science",
-        "field": "computers",
-        "tier": 1,
-        "cost": 80,
-        "prereqs": [],
+        "id": "computer_science", "name": "Computer Science",
+        "field": "computers", "tier": 1, "tier_group": _t("computers", 1),
+        "cost": 80, "prereqs": [],
         "description": "Enables Research Lab",
     },
+    "optronic_computer": {
+        "id": "optronic_computer", "name": "Optronic Computer",
+        "field": "computers", "tier": 1, "tier_group": _t("computers", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Light-based processors", "effect_stub": True,
+    },
     "advanced_computers": {
-        "id": "advanced_computers",
-        "name": "Advanced Computers",
-        "field": "computers",
-        "tier": 2,
-        "cost": 200,
-        "prereqs": ["computer_science"],
+        "id": "advanced_computers", "name": "Advanced Computers",
+        "field": "computers", "tier": 2, "tier_group": _t("computers", 2),
+        "cost": 200, "prereqs": ["computer_science"],
         "description": "Enables Supercomputer; +1 research per scientist",
         "research_per_scientist": 1,
     },
+    "cyber_security_link": {
+        "id": "cyber_security_link", "name": "Cyber Security Link",
+        "field": "computers", "tier": 2, "tier_group": _t("computers", 2),
+        "cost": 200, "prereqs": ["computer_science"],
+        "description": "Hardened empire networks", "effect_stub": True,
+    },
     "galactic_networks": {
-        "id": "galactic_networks",
-        "name": "Galactic Networks",
-        "field": "computers",
-        "tier": 3,
-        "cost": 400,
-        "prereqs": ["advanced_computers"],
+        "id": "galactic_networks", "name": "Galactic Networks",
+        "field": "computers", "tier": 3, "tier_group": _t("computers", 3),
+        "cost": 400, "prereqs": ["advanced_computers"],
         "description": "Enables Galactic Cybernet; +1 research per scientist",
         "research_per_scientist": 1,
     },
+    "holo_simulator": {
+        "id": "holo_simulator", "name": "Holo Simulator",
+        "field": "computers", "tier": 3, "tier_group": _t("computers", 3),
+        "cost": 400, "prereqs": ["advanced_computers"],
+        "description": "Morale + training boost", "effect_stub": True,
+    },
     "positronic_computers": {
-        "id": "positronic_computers",
-        "name": "Positronic Computers",
-        "field": "computers",
-        "tier": 4,
-        "cost": 700,
-        "prereqs": ["galactic_networks"],
+        "id": "positronic_computers", "name": "Positronic Computers",
+        "field": "computers", "tier": 4, "tier_group": _t("computers", 4),
+        "cost": 700, "prereqs": ["galactic_networks"],
         "description": "Enables Positronic Brain; +2 research per scientist",
         "research_per_scientist": 2,
     },
+    "molecular_compression": {
+        "id": "molecular_compression", "name": "Molecular Compression",
+        "field": "computers", "tier": 4, "tier_group": _t("computers", 4),
+        "cost": 700, "prereqs": ["galactic_networks"],
+        "description": "Mass-energy storage", "effect_stub": True,
+    },
+    "cybertronic_computer": {
+        "id": "cybertronic_computer", "name": "Cybertronic Computer",
+        "field": "computers", "tier": 5, "tier_group": _t("computers", 5),
+        "cost": 1000, "prereqs": ["positronic_computers"],
+        "description": "Adaptive AI cores", "effect_stub": True,
+    },
+    "achilles_targeting": {
+        "id": "achilles_targeting", "name": "Achilles Targeting",
+        "field": "computers", "tier": 5, "tier_group": _t("computers", 5),
+        "cost": 1000, "prereqs": ["positronic_computers"],
+        "description": "Hit critical ship systems", "effect_stub": True,
+    },
 
-    # ---- Biology -----------------------------------------------------------
+    # ===================================================================
+    # Biology — farming, growth, terraforming, genetics
+    # ===================================================================
     "agriculture": {
-        "id": "agriculture",
-        "name": "Agriculture",
-        "field": "biology",
-        "tier": 1,
-        "cost": 80,
-        "prereqs": [],
+        "id": "agriculture", "name": "Agriculture",
+        "field": "biology", "tier": 1, "tier_group": _t("biology", 1),
+        "cost": 80, "prereqs": [],
         "description": "Enables Hydroponics; +1 food per farmer",
         "food_per_farmer": 1,
     },
+    "microbiotics": {
+        "id": "microbiotics", "name": "Microbiotics",
+        "field": "biology", "tier": 1, "tier_group": _t("biology", 1),
+        "cost": 80, "prereqs": [],
+        "description": "Longer lives, more pop", "effect_stub": True,
+    },
     "soil_enrichment": {
-        "id": "soil_enrichment",
-        "name": "Soil Enrichment",
-        "field": "biology",
-        "tier": 2,
-        "cost": 150,
-        "prereqs": ["agriculture"],
+        "id": "soil_enrichment", "name": "Soil Enrichment",
+        "field": "biology", "tier": 2, "tier_group": _t("biology", 2),
+        "cost": 150, "prereqs": ["agriculture"],
         "description": "Enables Enriched Soil; +1 food per farmer",
         "food_per_farmer": 1,
     },
+    "heightened_intelligence": {
+        "id": "heightened_intelligence", "name": "Heightened Intelligence",
+        "field": "biology", "tier": 2, "tier_group": _t("biology", 2),
+        "cost": 150, "prereqs": ["agriculture"],
+        "description": "Population research bonus", "effect_stub": True,
+    },
     "cloning": {
-        "id": "cloning",
-        "name": "Cloning",
-        "field": "biology",
-        "tier": 3,
-        "cost": 300,
-        "prereqs": ["soil_enrichment"],
+        "id": "cloning", "name": "Cloning",
+        "field": "biology", "tier": 3, "tier_group": _t("biology", 3),
+        "cost": 300, "prereqs": ["soil_enrichment"],
         "description": "Enables Cloning Center; +1 food per farmer",
         "food_per_farmer": 1,
     },
+    "telepathic_training": {
+        "id": "telepathic_training", "name": "Telepathic Training",
+        "field": "biology", "tier": 3, "tier_group": _t("biology", 3),
+        "cost": 300, "prereqs": ["soil_enrichment"],
+        "description": "Spy + diplomacy edge", "effect_stub": True,
+    },
+    "bio_terminators": {
+        "id": "bio_terminators", "name": "Bio Terminators",
+        "field": "biology", "tier": 3, "tier_group": _t("biology", 3),
+        "cost": 300, "prereqs": ["soil_enrichment"],
+        "description": "Anti-bio strike weapons", "effect_stub": True,
+    },
     "terraforming": {
-        "id": "terraforming",
-        "name": "Terraforming",
-        "field": "biology",
-        "tier": 4,
-        "cost": 600,
-        "prereqs": ["cloning"],
+        "id": "terraforming", "name": "Terraforming",
+        "field": "biology", "tier": 4, "tier_group": _t("biology", 4),
+        "cost": 600, "prereqs": ["cloning"],
         "description": "Enables Terraforming; +2 food per farmer",
         "food_per_farmer": 2,
     },
+    "biomorphic_fungi": {
+        "id": "biomorphic_fungi", "name": "Biomorphic Fungi",
+        "field": "biology", "tier": 4, "tier_group": _t("biology", 4),
+        "cost": 600, "prereqs": ["cloning"],
+        "description": "Pop on hostile worlds", "effect_stub": True,
+    },
+    "gaia_transformation": {
+        "id": "gaia_transformation", "name": "Gaia Transformation",
+        "field": "biology", "tier": 5, "tier_group": _t("biology", 5),
+        "cost": 1000, "prereqs": ["terraforming"],
+        "description": "Convert worlds to Gaia", "effect_stub": True,
+    },
+    "evolutionary_mutation": {
+        "id": "evolutionary_mutation", "name": "Evolutionary Mutation",
+        "field": "biology", "tier": 5, "tier_group": _t("biology", 5),
+        "cost": 1000, "prereqs": ["terraforming"],
+        "description": "Re-pick a race trait mid-game", "effect_stub": True,
+    },
 
-    # ---- Physics (ship weapons + scanners) ---------------------------------
+    # ===================================================================
+    # Physics — ship weapons, scanners, exotic beams
+    # ===================================================================
     "laser_cannons": {
-        "id": "laser_cannons",
-        "name": "Laser Cannons",
-        "field": "physics",
-        "tier": 1,
-        "cost": 100,
-        "prereqs": [],
+        "id": "laser_cannons", "name": "Laser Cannons",
+        "field": "physics", "tier": 1, "tier_group": _t("physics", 1),
+        "cost": 100, "prereqs": [],
         "description": "Ships gain +1 attack",
         "attack_bonus": 1,
     },
+    "death_ray": {
+        "id": "death_ray", "name": "Death Ray Projector",
+        "field": "physics", "tier": 1, "tier_group": _t("physics", 1),
+        "cost": 100, "prereqs": [],
+        "description": "Bombard hostile populations", "effect_stub": True,
+    },
     "phasors": {
-        "id": "phasors",
-        "name": "Phasors",
-        "field": "physics",
-        "tier": 2,
-        "cost": 250,
-        "prereqs": ["laser_cannons"],
-        "description": "Ships gain +2 attack (replaces Laser)",
+        "id": "phasors", "name": "Phasors",
+        "field": "physics", "tier": 2, "tier_group": _t("physics", 2),
+        "cost": 250, "prereqs": ["laser_cannons"],
+        "description": "Ships gain +2 attack",
         "attack_bonus": 2,
     },
+    "disruptor": {
+        "id": "disruptor", "name": "Disruptor",
+        "field": "physics", "tier": 2, "tier_group": _t("physics", 2),
+        "cost": 250, "prereqs": ["laser_cannons"],
+        "description": "Penetrates ship armor", "effect_stub": True,
+    },
     "tachyon_scanner": {
-        "id": "tachyon_scanner",
-        "name": "Tachyon Scanner",
-        "field": "physics",
-        "tier": 3,
-        "cost": 400,
-        "prereqs": ["phasors"],
-        "description": "+1 hull, long-range fleet detection",
-        "hull_bonus": 1,
-        "sensor_range": 16,
+        "id": "tachyon_scanner", "name": "Tachyon Scanner",
+        "field": "physics", "tier": 3, "tier_group": _t("physics", 3),
+        "cost": 400, "prereqs": ["phasors"],
+        "description": "+1 hull, long-range detection",
+        "hull_bonus": 1, "sensor_range": 16,
+    },
+    "mass_driver": {
+        "id": "mass_driver", "name": "Mass Driver",
+        "field": "physics", "tier": 3, "tier_group": _t("physics", 3),
+        "cost": 400, "prereqs": ["phasors"],
+        "description": "Kinetic shield-piercing rounds", "effect_stub": True,
     },
     "plasma_cannons": {
-        "id": "plasma_cannons",
-        "name": "Plasma Cannons",
-        "field": "physics",
-        "tier": 4,
-        "cost": 600,
-        "prereqs": ["tachyon_scanner"],
+        "id": "plasma_cannons", "name": "Plasma Cannons",
+        "field": "physics", "tier": 4, "tier_group": _t("physics", 4),
+        "cost": 600, "prereqs": ["tachyon_scanner"],
         "description": "Ships gain +3 attack, +1 hull",
-        "attack_bonus": 3,
-        "hull_bonus": 1,
+        "attack_bonus": 3, "hull_bonus": 1,
+    },
+    "stellar_converter": {
+        "id": "stellar_converter", "name": "Stellar Converter",
+        "field": "physics", "tier": 4, "tier_group": _t("physics", 4),
+        "cost": 600, "prereqs": ["tachyon_scanner"],
+        "description": "Planet-cracking superweapon", "effect_stub": True,
+    },
+    "proton_torpedo": {
+        "id": "proton_torpedo", "name": "Proton Torpedo",
+        "field": "physics", "tier": 5, "tier_group": _t("physics", 5),
+        "cost": 1000, "prereqs": ["plasma_cannons"],
+        "description": "Heavy guided weapon", "effect_stub": True,
+    },
+    "phasing_cloak": {
+        "id": "phasing_cloak", "name": "Phasing Cloak",
+        "field": "physics", "tier": 5, "tier_group": _t("physics", 5),
+        "cost": 1000, "prereqs": ["plasma_cannons"],
+        "description": "Ships skip past detection", "effect_stub": True,
     },
 
-    # ---- Espionage (spies + counter-intelligence) --------------------------
+    # ===================================================================
+    # Force Fields — shields, cloaking, planetary barriers
+    # ===================================================================
+    "class_i_shield": {
+        "id": "class_i_shield", "name": "Class I Shield",
+        "field": "force_fields", "tier": 1, "tier_group": _t("force_fields", 1),
+        "cost": 100, "prereqs": [],
+        "description": "Basic ship shielding", "effect_stub": True,
+    },
+    "personal_shield": {
+        "id": "personal_shield", "name": "Personal Shield",
+        "field": "force_fields", "tier": 1, "tier_group": _t("force_fields", 1),
+        "cost": 100, "prereqs": [],
+        "description": "Marine ground combat shield", "effect_stub": True,
+    },
+    "class_iii_shield": {
+        "id": "class_iii_shield", "name": "Class III Shield",
+        "field": "force_fields", "tier": 2, "tier_group": _t("force_fields", 2),
+        "cost": 250, "prereqs": ["class_i_shield"],
+        "description": "Stronger ship deflectors", "effect_stub": True,
+    },
+    "tractor_beam": {
+        "id": "tractor_beam", "name": "Tractor Beam",
+        "field": "force_fields", "tier": 2, "tier_group": _t("force_fields", 2),
+        "cost": 250, "prereqs": ["class_i_shield"],
+        "description": "Lock enemy ship engines", "effect_stub": True,
+    },
+    "class_v_shield": {
+        "id": "class_v_shield", "name": "Class V Shield",
+        "field": "force_fields", "tier": 3, "tier_group": _t("force_fields", 3),
+        "cost": 450, "prereqs": ["class_iii_shield"],
+        "description": "Heavy ship deflectors", "effect_stub": True,
+    },
+    "planetary_barrier_shield": {
+        "id": "planetary_barrier_shield", "name": "Planetary Barrier Shield",
+        "field": "force_fields", "tier": 3, "tier_group": _t("force_fields", 3),
+        "cost": 450, "prereqs": ["class_iii_shield"],
+        "description": "Build planet-wide shield", "effect_stub": True,
+    },
+    "stasis_field": {
+        "id": "stasis_field", "name": "Stasis Field",
+        "field": "force_fields", "tier": 3, "tier_group": _t("force_fields", 3),
+        "cost": 450, "prereqs": ["class_iii_shield"],
+        "description": "Freeze enemy ship for a turn", "effect_stub": True,
+    },
+    "class_vii_shield": {
+        "id": "class_vii_shield", "name": "Class VII Shield",
+        "field": "force_fields", "tier": 4, "tier_group": _t("force_fields", 4),
+        "cost": 750, "prereqs": ["class_v_shield"],
+        "description": "Capital-grade ship shields", "effect_stub": True,
+    },
+    "wide_area_jammer": {
+        "id": "wide_area_jammer", "name": "Wide Area Jammer",
+        "field": "force_fields", "tier": 4, "tier_group": _t("force_fields", 4),
+        "cost": 750, "prereqs": ["class_v_shield"],
+        "description": "Reduces enemy fleet accuracy", "effect_stub": True,
+    },
+    "hard_shields": {
+        "id": "hard_shields", "name": "Hard Shields",
+        "field": "force_fields", "tier": 5, "tier_group": _t("force_fields", 5),
+        "cost": 1100, "prereqs": ["class_vii_shield"],
+        "description": "Block all small-arms fire", "effect_stub": True,
+    },
+    "cloaking_field": {
+        "id": "cloaking_field", "name": "Cloaking Field",
+        "field": "force_fields", "tier": 5, "tier_group": _t("force_fields", 5),
+        "cost": 1100, "prereqs": ["class_vii_shield"],
+        "description": "Ship-wide cloak", "effect_stub": True,
+    },
+
+    # ===================================================================
+    # Espionage — spies + counter-intelligence
+    # ===================================================================
     "spy_network": {
-        "id": "spy_network",
-        "name": "Spy Network",
-        "field": "espionage",
-        "tier": 1,
-        "cost": 120,
-        "prereqs": [],
+        "id": "spy_network", "name": "Spy Network",
+        "field": "espionage", "tier": 1, "tier_group": _t("espionage", 1),
+        "cost": 120, "prereqs": [],
         "description": "+1 spy skill & security",
-        "spy_offense": 1,
+        "spy_offense": 1, "spy_defense": 1,
+    },
+    "counter_intelligence": {
+        "id": "counter_intelligence", "name": "Counter-Intelligence",
+        "field": "espionage", "tier": 1, "tier_group": _t("espionage", 1),
+        "cost": 120, "prereqs": [],
+        "description": "+1 security; faster spy detection",
         "spy_defense": 1,
     },
     "stealth_suit": {
-        "id": "stealth_suit",
-        "name": "Stealth Suit",
-        "field": "espionage",
-        "tier": 2,
-        "cost": 280,
-        "prereqs": ["spy_network"],
+        "id": "stealth_suit", "name": "Stealth Suit",
+        "field": "espionage", "tier": 2, "tier_group": _t("espionage", 2),
+        "cost": 280, "prereqs": ["spy_network"],
         "description": "+2 spy skill; caught spies rarely identified",
-        "spy_offense": 2,
-        "stealth": True,
+        "spy_offense": 2, "stealth": True,
+    },
+    "subterfuge": {
+        "id": "subterfuge", "name": "Subterfuge",
+        "field": "espionage", "tier": 2, "tier_group": _t("espionage", 2),
+        "cost": 280, "prereqs": ["spy_network"],
+        "description": "Frame rival empires on capture", "effect_stub": True,
     },
     "mind_scan": {
-        "id": "mind_scan",
-        "name": "Mind Scan",
-        "field": "espionage",
-        "tier": 3,
-        "cost": 420,
-        "prereqs": ["spy_network"],
+        "id": "mind_scan", "name": "Mind Scan",
+        "field": "espionage", "tier": 3, "tier_group": _t("espionage", 3),
+        "cost": 420, "prereqs": ["spy_network"],
         "description": "+3 security; always unmask caught spies",
-        "spy_defense": 3,
-        "mind_scan": True,
+        "spy_defense": 3, "mind_scan": True,
+    },
+    "assassination": {
+        "id": "assassination", "name": "Assassination",
+        "field": "espionage", "tier": 3, "tier_group": _t("espionage", 3),
+        "cost": 420, "prereqs": ["spy_network"],
+        "description": "Eliminate enemy leaders", "effect_stub": True,
     },
     "neural_scrambler": {
-        "id": "neural_scrambler",
-        "name": "Neural Scrambler",
-        "field": "espionage",
-        "tier": 4,
-        "cost": 640,
-        "prereqs": ["stealth_suit", "mind_scan"],
+        "id": "neural_scrambler", "name": "Neural Scrambler",
+        "field": "espionage", "tier": 4, "tier_group": _t("espionage", 4),
+        "cost": 640, "prereqs": ["stealth_suit", "mind_scan"],
         "description": "+3 spy skill & security",
-        "spy_offense": 3,
-        "spy_defense": 3,
+        "spy_offense": 3, "spy_defense": 3,
+    },
+    "deep_cover": {
+        "id": "deep_cover", "name": "Deep Cover",
+        "field": "espionage", "tier": 4, "tier_group": _t("espionage", 4),
+        "cost": 640, "prereqs": ["stealth_suit", "mind_scan"],
+        "description": "Long-term embedded agents", "effect_stub": True,
     },
 }
 
-# Convenience: techs grouped by field, sorted by tier.
+
+# ---- Convenience accessors ---------------------------------------------
+
 def techs_in_field(field: str) -> list[dict]:
     return sorted(
         (t for t in TECHS.values() if t.get("field") == field),
-        key=lambda t: t.get("tier", 0),
+        key=lambda t: (t.get("tier", 0), t["name"].lower()),
     )
 
-# Order used by the Info-panel research list and the Research scene's
-# "next available" hint. Tier 1s first, then 2s, then 3s, etc., so the
-# panel surfaces a sensible "next research" suggestion.
+
+def alternatives_in_group(tech_id: str) -> list[str]:
+    """Tech ids that share the same tier_group as ``tech_id`` (the
+    alternatives a player picks between — including ``tech_id`` itself).
+    Solo techs (no tier_group set) return just the tech id."""
+    group = TECHS.get(tech_id, {}).get("tier_group")
+    if not group:
+        return [tech_id]
+    return [t["id"] for t in TECHS.values() if t.get("tier_group") == group]
+
+
+def tier_group_of(tech_id: str) -> str | None:
+    return TECHS.get(tech_id, {}).get("tier_group")
+
+
+# Order used by the Info-panel research list and the AI's "next available"
+# fallback. Tier 1s first, then 2s, etc., so a sensible default research
+# emerges when no personality has a strong opinion.
 TECH_ORDER = [
-    # Tier 1
-    "industrial_engineering", "nuclear_drives", "trade", "computer_science",
-    "agriculture", "laser_cannons", "spy_network",
-    # Tier 2
-    "advanced_construction", "fusion_drives", "governance", "advanced_computers",
-    "soil_enrichment", "phasors", "stealth_suit",
-    # Tier 3
-    "automated_factories", "ion_drives", "financial_planning", "galactic_networks",
-    "cloning", "tachyon_scanner", "mind_scan",
-    # Tier 4
-    "robo_miners", "anti_matter_drives", "virtual_reality_network",
-    "positronic_computers", "terraforming", "plasma_cannons", "neural_scrambler",
-    # Tier 5 (only Power goes this deep)
-    "hyper_drives",
+    tid for tid, spec in sorted(
+        TECHS.items(),
+        key=lambda kv: (kv[1].get("tier", 99), kv[1].get("field", ""), kv[0]),
+    )
 ]
 
 
-def is_available(tech_id: str, unlocked: set[str] | list) -> bool:
+def is_available(tech_id: str, unlocked: set[str] | list,
+                 locked_out: set[str] | list = ()) -> bool:
+    """A tech is researchable if it isn't already unlocked or locked-out
+    and every prereq is satisfied. A prereq is satisfied when EITHER
+    that specific tech is unlocked OR any alternative in the prereq's
+    tier_group is unlocked — so picking a different branch at a prior
+    tier still opens the next tier."""
     if tech_id not in TECHS:
         return False
-    if tech_id in unlocked:
+    unlocked_set = set(unlocked)
+    locked_set = set(locked_out)
+    if tech_id in unlocked_set or tech_id in locked_set:
         return False
-    unlocked_set = set(unlocked)
-    return all(p in unlocked_set for p in TECHS[tech_id]["prereqs"])
+    for prereq_id in TECHS[tech_id]["prereqs"]:
+        if prereq_id in unlocked_set:
+            continue
+        # Any alternative in the prereq's tier_group will do.
+        group = TECHS.get(prereq_id, {}).get("tier_group")
+        if group and any(
+            t.get("tier_group") == group and t["id"] in unlocked_set
+            for t in TECHS.values()
+        ):
+            continue
+        return False
+    return True
 
 
-def empire_speed_bonus(unlocked: set[str] | list) -> int:
-    """Best drive tech contributes this. Max across all unlocked drive
-    techs (not additive — Fusion replaces Nuclear, etc.)."""
-    unlocked_set = set(unlocked)
+# ---- Effect helpers (MAX semantics across unlocked techs) --------------
+
+def empire_speed_bonus(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("speed_bonus", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("speed_bonus", 0))
     return best
 
 
-# Fuel range (in parsecs) with no drive tech at all. Every empire can
-# operate this far from a friendly supply system from turn 1.
 BASE_FUEL_RANGE = 6
 
 
-def empire_fuel_range(unlocked: set[str] | list) -> int:
-    """Best drive tech's fuel range, falling back to BASE_FUEL_RANGE.
-    Like speed, drives replace each other (max, not sum)."""
-    unlocked_set = set(unlocked)
+def empire_fuel_range(unlocked):
     best = BASE_FUEL_RANGE
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("fuel_range", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("fuel_range", 0))
     return best
 
 
-# Sensor range (parsecs) with no scanner tech — colonies + ships detect
-# enemy fleets passing this close. Scanner techs (Tachyon Scanner) push
-# it far out so you see incoming attacks earlier.
 BASE_SENSOR_RANGE = 6
 
 
-def empire_sensor_range(unlocked: set[str] | list) -> int:
-    unlocked_set = set(unlocked)
+def empire_sensor_range(unlocked):
     best = BASE_SENSOR_RANGE
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("sensor_range", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("sensor_range", 0))
     return best
 
 
-def empire_attack_bonus(unlocked: set[str] | list) -> int:
-    """Best weapon tech contributes this. Max (not sum) — Phasor
-    replaces Laser, etc."""
-    unlocked_set = set(unlocked)
+def empire_attack_bonus(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("attack_bonus", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("attack_bonus", 0))
     return best
 
 
-def empire_hull_bonus(unlocked: set[str] | list) -> int:
-    """Best hull/scanner tech contributes this. Max across unlocked."""
-    unlocked_set = set(unlocked)
+def empire_hull_bonus(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("hull_bonus", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("hull_bonus", 0))
     return best
 
 
-def empire_spy_offense(unlocked: set[str] | list) -> int:
-    """Best espionage tech contributes this to offensive spy skill."""
-    unlocked_set = set(unlocked)
+def empire_spy_offense(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("spy_offense", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("spy_offense", 0))
     return best
 
 
-def empire_spy_defense(unlocked: set[str] | list) -> int:
-    """Best espionage tech contributes this to internal security."""
-    unlocked_set = set(unlocked)
+def empire_spy_defense(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("spy_defense", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("spy_defense", 0))
     return best
 
 
-def empire_has_stealth(unlocked: set[str] | list) -> bool:
-    """Stealth Suit: caught offensive spies are rarely identified."""
+def empire_has_stealth(unlocked):
     return any(TECHS.get(t, {}).get("stealth") for t in unlocked)
 
 
-def empire_has_mind_scan(unlocked: set[str] | list) -> bool:
-    """Mind Scan: caught enemy spies are always unmasked (defeats stealth)."""
+def empire_has_mind_scan(unlocked):
     return any(TECHS.get(t, {}).get("mind_scan") for t in unlocked)
 
 
-def empire_industry_per_worker(unlocked: set[str] | list) -> int:
-    """Best Construction tech contributes this to industry per worker.
-    MAX so tiers replace each other (later replaces earlier)."""
-    unlocked_set = set(unlocked)
+def empire_industry_per_worker(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("industry_per_worker", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("industry_per_worker", 0))
     return best
 
 
-def empire_food_per_farmer(unlocked: set[str] | list) -> int:
-    """Best Biology tech contributes this to food per farmer. MAX."""
-    unlocked_set = set(unlocked)
+def empire_food_per_farmer(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("food_per_farmer", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("food_per_farmer", 0))
     return best
 
 
-def empire_research_per_scientist(unlocked: set[str] | list) -> int:
-    """Best Computers tech contributes this to research per scientist. MAX."""
-    unlocked_set = set(unlocked)
+def empire_research_per_scientist(unlocked):
     best = 0
-    for tech_id, spec in TECHS.items():
-        if tech_id in unlocked_set:
-            best = max(best, spec.get("research_per_scientist", 0))
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("research_per_scientist", 0))
     return best

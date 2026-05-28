@@ -244,6 +244,14 @@ def _resolve_success(game, conn, cm, esp, atk, tgt, mission,
         ts = _tech_state_for(cm, atk)
         if ts is not None and tech_id not in ts.unlocked:
             ts.unlocked.append(tech_id)
+        # If the attacker had locked this out earlier (chose differently
+        # at the same tier), stealing reverses that.
+        if ts is not None and tech_id in ts.locked_out:
+            ts.locked_out.remove(tech_id)
+            conn.execute(
+                "DELETE FROM empire_locked_techs WHERE empire_id = ? AND tech_id = ?",
+                (atk, tech_id),
+            )
         insert_empire_tech(conn, atk, tech_id)
         from ecs.techs import TECHS
         tname = TECHS.get(tech_id, {}).get("name", tech_id)
