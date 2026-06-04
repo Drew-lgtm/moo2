@@ -17,6 +17,7 @@ from ecs.db import clear_galaxy
 from ecs.components import Empire, Owner, Population, BuildState
 from ecs.economy import production_tick, pop_growth_tick
 from ecs.autobuild import autobuild_tick as _autobuild_tick
+from ecs.assimilation import assimilation_tick as _assimilation_tick
 from ecs.ai import ai_tick
 from ecs.fleet import fleet_tick
 from ecs.combat import combat_tick
@@ -215,7 +216,7 @@ class Game:
         # diplomacy tick ages treaties and decays attitudes.
         for cb in (ai_tick, _autobuild_tick, pop_growth_tick, production_tick,
                    _leaders_tick, fleet_tick, combat_tick, _exploration_tick,
-                   _espionage_tick, _diplomacy_tick):
+                   _espionage_tick, _assimilation_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 

@@ -339,6 +339,7 @@ class ColonyScene(Scene):
         self._draw_close_button(screen)
         self._draw_invasion_log(screen)
         self._draw_refit_banner(screen)
+        self._draw_conquest_banner(screen, planet, owner)
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
@@ -477,6 +478,37 @@ class ColonyScene(Scene):
         breakdown_color = (170, 180, 200)
         surf = self.body_font.render(breakdown, True, breakdown_color)
         screen.blit(surf, (24, 162))
+
+    def _draw_conquest_banner(self, screen, planet, owner):
+        """Show the captive population's native race + assimilation
+        progress when the colony isn't yet fully aligned with the
+        owner's race. Also surfaces an active insurgency."""
+        if planet is None or owner is None:
+            return
+        prog = getattr(planet, "assimilation_progress", 100)
+        if prog >= 100:
+            return
+        # Find the owning empire to compare race against the captives'.
+        owner_emp = None
+        for _e, emp in self.game.component_mgr.get_all(Empire):
+            if emp.id == owner.empire_id:
+                owner_emp = emp
+                break
+        if owner_emp is None:
+            return
+        if planet.original_race == owner_emp.race_type:
+            return  # weird state — same race, treat as native
+        text = (f"Captured: {planet.original_race} natives — "
+                f"assimilating {prog}%")
+        color = (220, 200, 120)
+        screen.blit(self.body_font.render(text, True, color), (24, 180))
+
+        if getattr(planet, "guerrilla_turns", 0) > 0:
+            sub = (f"INSURGENCY ACTIVE — {planet.guerrilla_turns} turn(s) "
+                   f"remaining. Park Troop Transports / build defences to "
+                   f"suppress.")
+            screen.blit(self.body_font.render(sub, True, (240, 130, 130)),
+                        (24, 200))
 
     def _draw_refit_banner(self, screen):
         """One-line outcome of the last refit on this scene entry."""

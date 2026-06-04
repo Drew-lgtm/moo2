@@ -73,6 +73,9 @@ def init_db():
             gravity TEXT DEFAULT 'Normal',
             special TEXT DEFAULT '',
             autobuild TEXT DEFAULT '',
+            original_race TEXT DEFAULT '',
+            assimilation_progress INTEGER DEFAULT 100,
+            guerrilla_turns INTEGER DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -242,6 +245,12 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN special TEXT DEFAULT ''")
     if "autobuild" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN autobuild TEXT DEFAULT ''")
+    if "original_race" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN original_race TEXT DEFAULT ''")
+    if "assimilation_progress" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN assimilation_progress INTEGER DEFAULT 100")
+    if "guerrilla_turns" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN guerrilla_turns INTEGER DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -287,6 +296,15 @@ def update_planet_population(conn, planet_id, current, max_population, growth_pr
     conn.execute(
         "UPDATE planets SET population = ?, max_population = ?, growth_progress = ? WHERE id = ?",
         (current, max_population, growth_progress, planet_id),
+    )
+
+
+def update_planet_conquest(conn, planet_id, original_race, assimilation_progress,
+                           guerrilla_turns):
+    conn.execute(
+        "UPDATE planets SET original_race = ?, assimilation_progress = ?, "
+        "guerrilla_turns = ? WHERE id = ?",
+        (original_race, assimilation_progress, guerrilla_turns, planet_id),
     )
 
 

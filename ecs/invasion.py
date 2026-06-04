@@ -22,7 +22,7 @@ from __future__ import annotations
 import random
 
 from ecs.components import (
-    Planet, Orbiting, Owner, Population, BuildState, TechState,
+    Planet, Orbiting, Owner, Population, BuildState, TechState, Empire,
     Ship, ShipOwner, ShipAt, ShipInTransit,
 )
 from ecs.projects import PROJECTS
@@ -30,7 +30,7 @@ from ecs.techs import empire_marine_attack_bonus, empire_marine_defense_bonus
 from ecs.races import trait_count, traits_for_empire
 from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
-    update_planet_workers, delete_ship,
+    update_planet_workers, delete_ship, update_planet_conquest,
 )
 
 
@@ -190,6 +190,20 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
         # Apply on the planet entity.
         cm.remove_component(planet_entity, Owner)
         cm.add_component(planet_entity, Owner(empire_id=empire_id))
+        # Stamp the captive race on the planet (if not already set) and
+        # reset assimilation progress so the new owner has to absorb
+        # the population before it counts as "native". A previously-
+        # captured world keeps its original_race — recapture doesn't
+        # change who the captives actually are.
+        if not planet.original_race:
+            captive_emp = next(
+                (e for _e, e in cm.get_all(Empire) if e.id == defender_owner.empire_id),
+                None,
+            )
+            if captive_emp is not None:
+                planet.original_race = captive_emp.race_type
+        planet.assimilation_progress = 0
+        planet.guerrilla_turns = 0
         if pop is not None:
             pop.current = new_pop
             # Reset worker assignment proportionally — defenders' civic
@@ -224,6 +238,10 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
             delete_ship(conn, db_id)
         if success:
             update_planet_owner(conn, planet.id, empire_id)
+            update_planet_conquest(
+                conn, planet.id, planet.original_race,
+                planet.assimilation_progress, planet.guerrilla_turns,
+            )
         if pop is not None:
             update_planet_population(conn, planet.id, pop.current, pop.max, pop.growth_progress)
             update_planet_workers(conn, planet.id, pop.farmers, pop.workers, pop.scientists)

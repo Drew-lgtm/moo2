@@ -42,6 +42,18 @@ class Planet:
       yet so Low/Heavy are flat penalties.
     - ``special`` is a list of feature keys (artifacts, gem_deposits,
       gold_veins, ...). Effects in ``ecs.economy.planet_output``.
+
+    Conquest state:
+
+    - ``original_race`` is the race of the population currently
+      occupying this colony — set when the planet is first colonised
+      and rewritten when assimilation completes after a capture.
+    - ``assimilation_progress`` is 0–100; 100 = fully native to the
+      owning empire. After invasion this drops to 0 and ticks up each
+      turn (slower if the original race has the ``defiant`` trait).
+    - ``guerrilla_turns`` is the count of remaining turns an active
+      insurgency runs on this colony; decremented by garrison strength
+      each turn and triggers building destruction while > 0.
     """
     id: int
     planet_type: str
@@ -50,6 +62,9 @@ class Planet:
     richness: str = "Abundant"
     gravity: str = "Normal"
     special: list[str] = field(default_factory=list)
+    original_race: str = ""
+    assimilation_progress: int = 100
+    guerrilla_turns: int = 0
 
 
 @dataclass

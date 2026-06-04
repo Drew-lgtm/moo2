@@ -12,14 +12,14 @@ mirrors the colonize_planet flow.
 from __future__ import annotations
 
 from ecs.components import (
-    Planet, Orbiting, Owner, Population, BuildState,
+    Planet, Orbiting, Owner, Population, BuildState, Empire,
     Ship, ShipOwner, ShipAt, ShipInTransit,
 )
 from ecs.economy import compute_max_population, default_assignment
 from ecs.races import trait_count, traits_for_empire
 from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
-    update_planet_workers, delete_ship,
+    update_planet_workers, delete_ship, update_planet_conquest,
 )
 
 
@@ -94,6 +94,13 @@ def colonize_planet(game, planet_entity: int, empire_id: int) -> bool:
     farmers, workers, scientists = default_assignment(planet.planet_type, INITIAL_POPULATION)
 
     cm.add_component(planet_entity, Owner(empire_id=empire_id))
+    # Stamp the founding empire's race onto the planet — a fresh
+    # colony is already 100% the empire's own race.
+    emp = next((e for _e, e in cm.get_all(Empire) if e.id == empire_id), None)
+    if emp is not None:
+        planet.original_race = emp.race_type
+    planet.assimilation_progress = 100
+    planet.guerrilla_turns = 0
     cm.add_component(planet_entity, Population(
         current=INITIAL_POPULATION, max=max_pop,
         farmers=farmers, workers=workers, scientists=scientists,
@@ -113,6 +120,8 @@ def colonize_planet(game, planet_entity: int, empire_id: int) -> bool:
         update_planet_owner(conn, planet.id, empire_id)
         update_planet_population(conn, planet.id, INITIAL_POPULATION, max_pop, 0.0)
         update_planet_workers(conn, planet.id, farmers, workers, scientists)
+        update_planet_conquest(conn, planet.id, planet.original_race,
+                                planet.assimilation_progress, planet.guerrilla_turns)
         delete_ship(conn, ship_db_id)
         conn.commit()
     return True

@@ -324,6 +324,17 @@ class GalaxyGenerator:
                             richness=richness,
                             gravity=gravity,
                             special=parse_specials(special_blob),
+                            original_race=(planet["original_race"]
+                                            if "original_race" in planet.keys()
+                                            else ""),
+                            assimilation_progress=(
+                                planet["assimilation_progress"]
+                                if "assimilation_progress" in planet.keys()
+                                else 100
+                            ),
+                            guerrilla_turns=(planet["guerrilla_turns"]
+                                              if "guerrilla_turns" in planet.keys()
+                                              else 0),
                         ),
                     )
                     self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
