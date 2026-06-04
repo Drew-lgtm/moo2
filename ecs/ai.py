@@ -988,6 +988,10 @@ def _score_tech(tech_id: str, empire, personality, traits, diplo,
         elif slot == "armor":  score += 20
         elif slot == "shield": score += 15
         if field == "power":   score += 10  # drives → reach
+        # Marine combat gear — aggressive AIs invade, so ground tech
+        # matters as much as ship combat tech.
+        if tech.get("marine_attack") or tech.get("marine_defense"):
+            score += 20
     if focus == "science":
         if "research_per_scientist" in tech: score += 30
         if field == "computers": score += 20

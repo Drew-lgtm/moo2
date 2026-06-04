@@ -61,6 +61,34 @@ LMB or Esc hides it.
 
 ---
 
+## Quality of life (cont'd)
+
+### Planet autobuild
+
+**Goal:** A per-colony "autobuild" toggle. With it on, the AI's same
+build heuristic queues a sensible build order on that colony so the
+player doesn't have to micro every new world.
+
+**Sketch:**
+
+- Add an ``autobuild: bool`` flag to ``BuildState`` (persisted as a
+  new column on the ``planets`` table). Default off so existing flows
+  don't change for established players.
+- A small button in the Colony screen toggling it on / off, with a
+  banner ("Autobuild on — using Economic build priority"); maybe a
+  per-colony picker for which personality's ``build_priority`` to use.
+- A new ``autobuild_tick`` that runs before ``production_tick`` and
+  queues the next project on any autobuild colony with an empty queue
+  + no current project. Uses ``personalities.get(...)['build_priority']``
+  so the existing AI logic does the work.
+- Build screen on autobuild colonies grays "Build" with a hint that
+  the queue is managed; player can still toggle off + take over.
+
+Why useful: by mid-game a player has 6-10 colonies and the queueing
+becomes the most repetitive part. Lets human play scale.
+
+---
+
 ## Possible next pillars
 
 - **Random events** (space monsters guarding stars, derelicts you can

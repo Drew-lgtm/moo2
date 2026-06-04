@@ -382,12 +382,20 @@ class ColonyScene(Scene):
             )))
 
     def _draw_invasion_log(self, screen):
-        """One-line summary of the last invasion result on this scene
-        entry — sits just under the descriptor chip row so the player
-        can see what happened. Cleared when the scene is exited."""
+        """Two-line summary of the last invasion: outcome + ground-
+        combat math breakdown so the player sees what tech / trait
+        tilted the fight."""
         if self._invasion_log is None:
             return
         log = self._invasion_log
+        reason = log.get("reason")
+        if reason:
+            text = "Invasion failed: " + reason.replace("_", " ")
+            surf = self.body_font.render(text, True, (220, 160, 160))
+            screen.blit(surf, (24, 144))
+            return
+
+        # Outcome line.
         if log.get("success"):
             text = (
                 f"Invasion succeeded — atk {log['attacker_strength']} "
@@ -396,9 +404,6 @@ class ColonyScene(Scene):
                 f"pop reduced by {log['pop_lost']}M."
             )
             color = (160, 220, 160)
-        elif log.get("reason"):
-            text = "Invasion failed: " + log["reason"].replace("_", " ")
-            color = (220, 160, 160)
         else:
             text = (
                 f"Invasion repelled — atk {log['attacker_strength']} "
@@ -407,8 +412,32 @@ class ColonyScene(Scene):
                 f"defenders took {log['pop_lost']}M casualties."
             )
             color = (220, 160, 160)
-        surf = self.body_font.render(text, True, color)
-        screen.blit(surf, (24, 144))
+        screen.blit(self.body_font.render(text, True, color), (24, 144))
+
+        # Breakdown line. Shows the per-marine and per-militia composition
+        # so the player understands which tech / trait shifted the math.
+        def _suffix(tech, trait):
+            bits = []
+            if tech:  bits.append(f"+{tech} tech")
+            if trait > 0: bits.append(f"+{trait} race")
+            elif trait < 0: bits.append(f"{trait} race")
+            return f" ({', '.join(bits)})" if bits else ""
+        atk_bits = (
+            f"{log.get('n_transports', 0)} transports × "
+            f"{log.get('atk_per_marine', 0)} marines"
+            f"{_suffix(log.get('atk_tech_bonus', 0), log.get('atk_trait_bonus', 0))}"
+        )
+        def_bits = (
+            f"{log.get('defender_pop', 0)} pop × "
+            f"{log.get('def_per_militia', 0)} militia"
+            f"{_suffix(log.get('def_tech_bonus', 0), log.get('def_trait_bonus', 0))}"
+            + (f" + {log['def_buildings']} buildings"
+               if log.get('def_buildings') else "")
+        )
+        breakdown = f"Atk: {atk_bits}   Def: {def_bits}"
+        breakdown_color = (170, 180, 200)
+        surf = self.body_font.render(breakdown, True, breakdown_color)
+        screen.blit(surf, (24, 162))
 
     def _draw_refit_banner(self, screen):
         """One-line outcome of the last refit on this scene entry."""

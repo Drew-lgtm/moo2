@@ -27,6 +27,7 @@ from ecs.components import (
 )
 from ecs.projects import PROJECTS
 from ecs.techs import empire_marine_attack_bonus, empire_marine_defense_bonus
+from ecs.races import trait_count, traits_for_empire
 from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
     update_planet_workers, delete_ship,
@@ -144,13 +145,20 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
     # Both stack (SUM in the helpers) — distinct gear layers.
     attacker_unlocked = _empire_unlocked(cm, empire_id)
     defender_unlocked = _empire_unlocked(cm, defender_owner.empire_id)
-    atk_per_marine = MARINES_PER_TRANSPORT + empire_marine_attack_bonus(attacker_unlocked)
-    def_per_militia = (
-        MILITIA_PER_MILLION_POP
-        + empire_marine_defense_bonus(defender_unlocked)
-    )
+    atk_tech = empire_marine_attack_bonus(attacker_unlocked)
+    def_tech = empire_marine_defense_bonus(defender_unlocked)
+    # Race traits: Warlord adds +1 to both ground attack and defense;
+    # Pacifist subtracts 1 from ground attack only. Bulrathi marines
+    # hit like a tank; Psilon defenders fold faster.
+    atk_traits = traits_for_empire(cm, empire_id)
+    def_traits = traits_for_empire(cm, defender_owner.empire_id)
+    atk_trait_bonus = trait_count(atk_traits, "warlord") - trait_count(atk_traits, "pacifist")
+    def_trait_bonus = trait_count(def_traits, "warlord")
+    atk_per_marine = max(1, MARINES_PER_TRANSPORT + atk_tech + atk_trait_bonus)
+    def_per_militia = max(1, MILITIA_PER_MILLION_POP + def_tech + def_trait_bonus)
     raw_attack = n_transports * atk_per_marine
-    militia = (pop.current * def_per_militia) if pop else 0
+    defender_pop_at_start = pop.current if pop else 0  # captured pre-mutation for the report
+    militia = defender_pop_at_start * def_per_militia
     defense_buildings = _planet_defense_rating(build_state)
     raw_defense = militia + defense_buildings
 
@@ -227,4 +235,15 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
         "defender_strength": raw_defense,
         "transports_lost": len(destroyed_db_ids),
         "pop_lost": pop_lost,
+        # Per-side breakdown for the colony screen banner so the player
+        # can see what tech / trait actually moved the dial.
+        "atk_per_marine": atk_per_marine,
+        "atk_tech_bonus": atk_tech,
+        "atk_trait_bonus": atk_trait_bonus,
+        "def_per_militia": def_per_militia,
+        "def_tech_bonus": def_tech,
+        "def_trait_bonus": def_trait_bonus,
+        "def_buildings": defense_buildings,
+        "n_transports": n_transports,
+        "defender_pop": defender_pop_at_start,
     }

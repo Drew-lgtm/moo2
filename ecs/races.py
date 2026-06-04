@@ -32,6 +32,10 @@ TRAITS: dict[str, dict] = {
     "tolerant":       {"name": "Tolerant",              "cost":  6, "desc": "Pop consumes only 0.5 food each."},
     "ship_attack":    {"name": "+1 Ship Attack",        "cost":  3, "desc": "All ships gain +1 attack power."},
     "ship_hull":      {"name": "+2 Ship Hull",          "cost":  3, "desc": "All ships gain +2 hull."},
+    "warlord":        {"name": "Warlord",               "cost":  4,
+                       "desc": "+1 ground attack per marine and +1 defense per militia."},
+    "pacifist":       {"name": "Pacifist",              "cost": -2,
+                       "desc": "-1 ground attack per marine. Defense unaffected."},
     "rich_homeworld": {"name": "Rich Homeworld",        "cost":  3, "desc": "Homeworld starts with +50 BC."},
     "subterranean":   {"name": "Subterranean",          "cost":  6, "desc": "Every colony gets +2 max pop."},
 }
@@ -40,9 +44,9 @@ TRAITS: dict[str, dict] = {
 TRAIT_ORDER = [
     "food_bonus", "industry_bonus", "research_bonus", "bc_bonus",
     "fast_growth", "tolerant",
-    "ship_attack", "ship_hull",
+    "ship_attack", "ship_hull", "warlord",
     "rich_homeworld", "subterranean",
-    "slow_growth", "weak_industry",
+    "slow_growth", "weak_industry", "pacifist",
 ]
 
 
@@ -54,8 +58,8 @@ RACES: dict[str, dict] = {
                   "description": "Charismatic traders."},
     "Alkari":    {"name": "Alkari",    "traits": ["ship_attack", "ship_hull"],
                   "description": "Sky-born warriors."},
-    "Bulrathi":  {"name": "Bulrathi",  "traits": ["ship_hull", "industry_bonus", "slow_growth"],
-                  "description": "Massive ursinoids — tough but slow."},
+    "Bulrathi":  {"name": "Bulrathi",  "traits": ["warlord", "ship_hull", "slow_growth"],
+                  "description": "Massive ursinoids — devastating in ground combat."},
     "Darlok":    {"name": "Darlok",    "traits": ["research_bonus", "slow_growth"],
                   "description": "Shapeshifter spies."},
     "Elerian":   {"name": "Elerian",   "traits": ["research_bonus", "ship_attack"],
@@ -66,10 +70,10 @@ RACES: dict[str, dict] = {
                   "description": "Hive-mind insectoids."},
     "Meklar":    {"name": "Meklar",    "traits": ["industry_bonus", "industry_bonus"],
                   "description": "Cybernetic industrial machine."},
-    "Mrrshan":   {"name": "Mrrshan",   "traits": ["ship_attack", "ship_attack"],
-                  "description": "Feline warriors."},
-    "Psilon":    {"name": "Psilon",    "traits": ["research_bonus", "research_bonus"],
-                  "description": "Genius scientists."},
+    "Mrrshan":   {"name": "Mrrshan",   "traits": ["ship_attack", "ship_attack", "warlord"],
+                  "description": "Feline warriors — ferocious on the ground too."},
+    "Psilon":    {"name": "Psilon",    "traits": ["research_bonus", "research_bonus", "pacifist"],
+                  "description": "Genius scientists — but lousy soldiers."},
     "Sakkra":    {"name": "Sakkra",    "traits": ["fast_growth", "food_bonus"],
                   "description": "Reptilian breeders."},
     "Silicoid":  {"name": "Silicoid",  "traits": ["tolerant", "slow_growth"],
