@@ -165,6 +165,26 @@ class ColonyScene(Scene):
             return False
         return can_invade(self.game.component_mgr, self._planet_entity, empire_id)
 
+    def tooltip_at(self, pos):
+        """Right-click an action button on the colony screen."""
+        if self._build_rect.collidepoint(pos):
+            return ["Build",
+                    "hint: open the build queue for this colony"]
+        if self._refit_rect.collidepoint(pos):
+            plan = self._refit_plan()
+            if plan and plan["to_refit"] > 0:
+                return ["Refit Fleet",
+                        f"hint: bring {plan['to_refit']} parked ship(s) up to current tech",
+                        f"hint: cost {plan['total_cost']} BC (40% of build cost per ship)"]
+            return ["Refit Fleet", "hint: no eligible ships parked here"]
+        if self._colonize_rect.collidepoint(pos):
+            return ["Colonize",
+                    "hint: spend the colony ship parked at this star to found a colony"]
+        if self._invade_rect.collidepoint(pos):
+            return ["Invade",
+                    "hint: send marines from your parked Troop Transports"]
+        return None
+
     def _star_entity(self) -> int | None:
         if self._planet_entity is None:
             return None

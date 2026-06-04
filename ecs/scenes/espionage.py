@@ -74,6 +74,34 @@ class EspionageScene(Scene):
 
     # ------------------------------------------------------------------ input
 
+    def tooltip_at(self, pos):
+        """Train button + each empire's mission steppers."""
+        player = self._player()
+        esp = self.game.espionage
+        if player is None or esp is None:
+            return None
+        for action, payload, rect in self._hits:
+            if not rect.collidepoint(pos):
+                continue
+            if action == "train":
+                return [
+                    "Train Spy",
+                    f"hint: {SPY_COST} BC for one operative",
+                    "hint: untasked spies defend the empire (counter-intel)",
+                ]
+            if action == "mission":
+                target_id, mission, delta = payload
+                from ecs.tooltips import spy_mission_tooltip
+                lines = spy_mission_tooltip(mission)
+                cur = esp.mission_count(player.id, target_id, mission)
+                lines.append(f"hint: currently {cur} assigned vs target")
+                if delta > 0:
+                    lines.append("hint: click to add one")
+                else:
+                    lines.append("hint: click to remove one")
+                return lines
+        return None
+
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.game.scenes.replace("galaxy")

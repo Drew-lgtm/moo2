@@ -30,24 +30,34 @@ LMB or Esc hides it.
 - All panel scenes (Colonies / Planets / Info / etc.) get bar
   passthrough so the bottom buttons stay inspectable everywhere.
 
-**Still to wire (same pattern — `tooltip_at` returning helper
-output):**
+**Second wave landed:**
 
-- Ship icons in the System View cluster (already have
-  `tooltips.ship_tooltip`; need to add hit-rects to the SystemView
-  ship-drawing pass).
-- Diplomacy treaty / declare-war buttons — explain the treaty effect
-  and the AI acceptance threshold.
-- Leader cards in the Leaders scene — skill effect, salary, current
-  post (helper not yet written; cribbing from
-  `Leader.effect_text` is straightforward).
-- Espionage rows / mission steppers — explain Steal Tech vs Sabotage,
-  what catching a spy costs.
-- Colony-screen buildings list — show project effect on right-click.
-- Pause / Main menu options — small affordance.
+- System-View fleet rows: right-click an empire's fleet row shows the
+  composition plus a sample loadout per ship class present.
+- Galaxy fleet chips: right-click your own parked fleet shows class
+  counts + a representative loadout for each class (peek at what's in
+  the squad).
+- Diplomacy: empire rows show attitude + treaties + war flag; action
+  buttons explain themselves (`Propose Trade Treaty`, `Declare War`,
+  `Make Peace`, gift/demand, tech/chart trade).
+- Leaders: right-click a roster card or pool candidate to see skill,
+  effect, salary, current post + what the action button (Hire /
+  Assign / Fire) does.
+- Espionage: train button explains cost + counter-intel default;
+  mission steppers explain Steal Tech vs Sabotage and show current
+  allocation.
+- Colony-screen action buttons (Build / Refit / Colonize / Invade)
+  each get a short hint, including the refit cost preview.
 
-None of these blockers — they're just the next wave of the same
-template.
+**Still nice-to-have:**
+
+- Per-building tooltip in the Colony screen building list (currently
+  rendered as one concatenated string — would need a small re-render
+  pass to split into per-building rects).
+- Pause / Main menu options (currently keyboard-only — no per-option
+  rects to hit-test). Low priority.
+- Combat report rows.
+- Empire-setup screen (custom-race traits).
 
 ---
 

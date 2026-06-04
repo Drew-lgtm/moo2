@@ -109,6 +109,36 @@ class DiplomacyScene(Scene):
         self.banner = text
         self.banner_color = (150, 220, 150) if ok else (230, 150, 150)
 
+    def tooltip_at(self, pos):
+        """Right-click an empire row -> attitude/treaties. RMB an action
+        button -> what it does (treaty meaning included where relevant)."""
+        for empire_id, rect in self._row_hits:
+            if rect.collidepoint(pos):
+                emp = self._empire_by_id(empire_id)
+                if emp is None:
+                    return None
+                diplo = self.game.diplomacy
+                player = self._player()
+                att = None
+                treaties: list[str] = []
+                war = False
+                if diplo is not None and player is not None:
+                    att = diplo.attitude(player.id, empire_id)
+                    war = diplo.at_war(player.id, empire_id)
+                    from ecs.diplomacy import TREATIES
+                    treaties = [t for t in TREATIES
+                                if diplo.has_treaty(player.id, empire_id, t)]
+                from ecs.tooltips import empire_row_tooltip
+                return empire_row_tooltip(emp, attitude=att,
+                                          treaties=treaties, at_war=war)
+        for action, arg, rect in self._action_hits:
+            if rect.collidepoint(pos):
+                from ecs.tooltips import diplo_action_tooltip, treaty_tooltip
+                if action == "propose" and arg:
+                    return treaty_tooltip(arg) + ["hint: click to propose"]
+                return diplo_action_tooltip(action, arg)
+        return None
+
     # ------------------------------------------------------------------ actions
 
     def _do_action(self, action: str, arg: str):

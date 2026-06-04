@@ -172,6 +172,122 @@ def star_tooltip(name: str, planet_count: int, owner_names: list[str],
 
 # ----- ships ----------------------------------------------------------
 
+# ----- treaties / diplomacy actions -----------------------------------
+
+_TREATY_DESCRIPTIONS = {
+    "non_aggression": "A pledge of non-attack. Breaking it scars your "
+                      "reputation with everyone.",
+    "trade":          "Both sides earn +% BC per turn from each other's economy.",
+    "research":       "Both sides earn +% research per turn from each "
+                      "other's labs.",
+    "open_borders":   "Ships may traverse each other's space and refuel at "
+                      "allied colonies.",
+    "alliance":       "Mutual defence + shared visibility. Heavy commitment.",
+    "defensive_pact": "If one side is attacked, the other joins the war.",
+}
+
+_DIPLO_ACTION_HINTS = {
+    "propose":      "Offer a treaty. The AI weighs attitude and strength.",
+    "cancel":       "Cancels the treaty with a 5-turn notice — others can "
+                    "still see the diplomatic shift.",
+    "declare_war":  "Immediate war. Skips any treaty timer; breaking a "
+                    "peace counts as betrayal.",
+    "make_peace":   "Sue for peace. Attitude floor at -10 after acceptance.",
+    "gift":         "Hand over 50 BC to lift attitude.",
+    "demand":       "Threaten for 50 BC of tribute. Refused if you're "
+                    "weaker.",
+    "trade_tech":   "Offer one of your unlocked techs for one of theirs.",
+    "trade_chart":  "Swap exploration maps for instant mutual visibility.",
+}
+
+
+def treaty_tooltip(treaty: str) -> list[str]:
+    """Two-line tooltip for a treaty button — full name + what it does."""
+    from ecs.diplomacy import TREATY_NAMES
+    name = TREATY_NAMES.get(treaty, treaty.replace("_", " ").title())
+    desc = _TREATY_DESCRIPTIONS.get(treaty, "")
+    return [name, desc] if desc else [name]
+
+
+def diplo_action_tooltip(action: str, treaty_arg: str | None = None) -> list[str]:
+    """Tooltip for a diplomacy button (propose / declare_war / make_peace
+    / gift / demand / trade_tech / trade_chart / cancel)."""
+    label = action.replace("_", " ").title()
+    hint = _DIPLO_ACTION_HINTS.get(action, "")
+    lines = [label]
+    if hint:
+        lines.append(hint)
+    if treaty_arg and action in ("propose", "cancel"):
+        from ecs.diplomacy import TREATY_NAMES
+        lines.append(f"hint: target: {TREATY_NAMES.get(treaty_arg, treaty_arg)}")
+    return lines
+
+
+def empire_row_tooltip(emp, attitude: int | None = None,
+                        treaties: list[str] | None = None,
+                        at_war: bool = False) -> list[str]:
+    """Tooltip for an empire row (diplomacy / espionage / leaders)."""
+    lines = [emp.name, f"hint: {emp.race_type}"]
+    if at_war:
+        lines.append("AT WAR")
+    if attitude is not None:
+        lines.append(f"Attitude: {attitude:+d}")
+    if treaties:
+        from ecs.diplomacy import TREATY_NAMES
+        names = ", ".join(TREATY_NAMES.get(t, t) for t in treaties)
+        lines.append(f"hint: Treaties: {names}")
+    return lines
+
+
+# ----- leaders --------------------------------------------------------
+
+def leader_tooltip(leader, assignment_label: str | None = None) -> list[str]:
+    """Tooltip for a leader card — skill, effect, salary, post."""
+    lines = [
+        f"{leader.name}",
+        f"{('Colony' if leader.category == 'colony' else 'Ship')} · "
+        f"{leader.skill_name} Lv.{leader.level}",
+        f"Effect: {leader.effect_text()}",
+    ]
+    if leader.owner_empire_id is not None:
+        lines.append(f"Salary {leader.salary} BC/turn")
+    else:
+        lines.append(f"Hire: {leader.hire_cost} BC (then {leader.salary}/turn)")
+    if assignment_label:
+        lines.append(f"hint: Post: {assignment_label}")
+    return lines
+
+
+# ----- spies ----------------------------------------------------------
+
+_SPY_MISSION_HINTS = {
+    "steal":    "Copy a random tech the target knows and you don't. "
+                "Caught spies who get identified poison relations.",
+    "sabotage": "Destroy a random target building, or drain BC if "
+                "nothing to wreck.",
+    "defense":  "Counter-intel at home. Boosts security against incoming spies.",
+}
+
+
+def spy_mission_tooltip(mission: str) -> list[str]:
+    label = mission.capitalize()
+    hint = _SPY_MISSION_HINTS.get(mission, "")
+    return [label, hint] if hint else [label]
+
+
+def spy_row_tooltip(emp, my_spies_here: dict) -> list[str]:
+    """Tooltip for an enemy row in the Espionage screen — empire +
+    current assignments against them."""
+    lines = [f"Spy ops vs {emp.name}", f"hint: {emp.race_type}"]
+    for mission in ("steal", "sabotage"):
+        n = my_spies_here.get(mission, 0)
+        if n:
+            lines.append(f"{mission.capitalize()}: {n} assigned")
+    if not any(my_spies_here.values()):
+        lines.append("hint: no operatives assigned")
+    return lines
+
+
 def ship_tooltip(ship, owner_name: str | None = None) -> list[str]:
     """Ship card — class + frozen loadout from build time. Uses the
     same field semantics ``ecs.ship_design.stored_loadout_summary``

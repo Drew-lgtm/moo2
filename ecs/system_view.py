@@ -151,8 +151,13 @@ class SystemView:
     # ------------------------------------------------------------------ tooltips
 
     def tooltip_at(self, pos):
-        """Right-click a planet -> tooltip with type/size/richness/pop.
-        Returns ``list[str]`` or None."""
+        """Right-click a planet -> tooltip with type/size/richness/pop;
+        right-click a fleet row -> empire's fleet composition with a
+        sample loadout for each class present. Returns ``list[str]``
+        or None."""
+        for rect, empire_id in getattr(self, "_fleet_row_hits", []):
+            if rect.collidepoint(pos):
+                return self._fleet_row_tooltip(empire_id)
         for entity_id, planet, ppos, radius, _rx, _ry in self.planet_layout:
             hit = max(radius + 6, 14)
             dx = pos[0] - ppos[0]
@@ -170,6 +175,37 @@ class SystemView:
                             break
                 return planet_tooltip(planet, pop, bs, owner_name)
         return None
+
+    def _fleet_row_tooltip(self, empire_id: int) -> list[str]:
+        """Multi-line summary of one empire's fleet at this star.
+        Lists each ship class present with the loadout snapshot of the
+        first ship of that class — gives the player a peek at what
+        they're about to fight."""
+        cm = self.component_mgr
+        emp_name = f"Empire {empire_id}"
+        for _e, emp in cm.get_all(Empire):
+            if emp.id == empire_id:
+                emp_name = emp.name
+                break
+        # Bucket ships by class, keep one representative for loadout.
+        sample: dict[str, Ship] = {}
+        counts: dict[str, int] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != self.star_id:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            ship = cm.get_component(ship_entity, Ship)
+            if owner is None or ship is None or owner.empire_id != empire_id:
+                continue
+            counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
+            sample.setdefault(ship.ship_class, ship)
+        lines = [f"{emp_name} fleet"]
+        from ecs.ship_design import stored_loadout_summary
+        for cls, n in sorted(counts.items()):
+            ship = sample[cls]
+            lines.append(f"{cls.title()} × {n}")
+            lines.append(f"hint: {stored_loadout_summary(ship)}")
+        return lines
 
     # ------------------------------------------------------------------ input
 
@@ -301,6 +337,10 @@ class SystemView:
             if owner is None:
                 continue
             by_empire.setdefault(owner.empire_id, []).append(ship_entity)
+        # Per-empire row hit-boxes so right-click can pop a tooltip
+        # listing the empire's fleet composition + a sample loadout
+        # for each ship class present. Rebuilt every draw.
+        self._fleet_row_hits: list[tuple[pygame.Rect, int]] = []
         if not by_empire:
             return
 
@@ -310,6 +350,7 @@ class SystemView:
         overlay.blit(font.render("Fleets in system:", True, (220, 220, 220)), (x, y))
         y += 22
         for empire_id, ships in sorted(by_empire.items()):
+            row_top = y
             name, color_name = empire_info.get(empire_id, (f"Empire {empire_id}", "blue"))
             rgb = empire_color(color_name)
 
@@ -333,3 +374,6 @@ class SystemView:
                 detail = font.render("  " + ", ".join(pieces), True, (180, 200, 220))
                 overlay.blit(detail, (x + 22, y))
                 y += 22
+            self._fleet_row_hits.append(
+                (pygame.Rect(x, row_top, 360, max(20, y - row_top)), empire_id)
+            )

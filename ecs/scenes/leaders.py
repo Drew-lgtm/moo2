@@ -107,6 +107,33 @@ class LeadersScene(Scene):
 
     # ------------------------------------------------------------------ input
 
+    def tooltip_at(self, pos):
+        """Right-click a leader (hired roster or pool) -> full effect
+        + salary + assignment. Right-click an action button -> what it
+        does."""
+        mgr = self.game.leaders
+        if mgr is None:
+            return None
+        for action, payload, rect in self._hits:
+            if not rect.collidepoint(pos):
+                continue
+            if action in ("hire", "assign", "dismiss"):
+                leader = mgr.leaders.get(payload)
+                if leader is None:
+                    return None
+                from ecs.tooltips import leader_tooltip
+                lines = leader_tooltip(
+                    leader, assignment_label=self._assignment_label(leader),
+                )
+                hint_map = {
+                    "hire":    "click to hire (BC paid from treasury)",
+                    "assign":  "click to cycle the post",
+                    "dismiss": "click to fire (no refund)",
+                }
+                lines.append(f"hint: {hint_map[action]}")
+                return lines
+        return None
+
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.game.scenes.replace("galaxy")

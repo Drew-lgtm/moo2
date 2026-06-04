@@ -74,11 +74,17 @@ class GalaxyScene(Scene):
             )
 
     def tooltip_at(self, pos):
-        """Stars (with fog-of-war respect) and the bottom UI bar."""
+        """Stars (with fog-of-war respect), player fleet chips, and the
+        bottom UI bar."""
         # Bar takes priority since it overlaps the bottom strip.
         bar_tip = self.game.ui_bar.tooltip_at(pos)
         if bar_tip:
             return bar_tip
+        # Fleet chip — group ships at that star into a count + loadout
+        # peek so the player can see what they've parked.
+        for chip_star, chip_rect in self._fleet_chip_hits:
+            if chip_rect.collidepoint(pos):
+                return self._fleet_chip_tooltip(chip_star)
         star_entity = self._star_at(pos)
         if star_entity is None:
             return None
@@ -242,6 +248,32 @@ class GalaxyScene(Scene):
                 continue
             counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
         return counts
+
+    def _fleet_chip_tooltip(self, star_entity: int) -> list[str]:
+        """List the player's ships at this star by class + a sample
+        loadout per class."""
+        cm = self.game.component_mgr
+        player = self.game.player_empire()
+        if player is None:
+            return ["(no empire)"]
+        counts: dict[str, int] = {}
+        sample: dict[str, Ship] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != star_entity:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            ship = cm.get_component(ship_entity, Ship)
+            if (owner is None or ship is None
+                    or owner.empire_id != player.id):
+                continue
+            counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
+            sample.setdefault(ship.ship_class, ship)
+        lines = ["Your fleet"]
+        from ecs.ship_design import stored_loadout_summary
+        for cls, n in sorted(counts.items()):
+            lines.append(f"{cls.title()} × {n}")
+            lines.append(f"hint: {stored_loadout_summary(sample[cls])}")
+        return lines
 
     def _star_at(self, pos):
         # Right panel covers the strip past play_area_width; positions
