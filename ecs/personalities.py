@@ -47,6 +47,7 @@ PERSONALITIES: dict[str, dict] = {
             "hydroponics", "subterranean_farms", "stock_exchange",
             "research_lab", "capital", "atmospheric_renewer",
             "soil_enrichment_b", "cloning_center", "automated_factory",
+            "pleasure_dome_b",
             "missile_base", "ground_batteries", "star_base",
         ],
         "research_priority": [
@@ -65,7 +66,7 @@ PERSONALITIES: dict[str, dict] = {
             "research_lab", "supercomputer", "factory", "granary",
             "ship_colony_ship",  # more colonies = more scientists
             "marketplace", "galactic_cybernet", "hydroponics", "capital",
-            "ship_frigate",
+            "ship_frigate", "astro_university_b",
             "missile_base", "ground_batteries", "star_base", "battlestation",
         ],
         "research_priority": [

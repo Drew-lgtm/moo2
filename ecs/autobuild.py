@@ -47,9 +47,12 @@ AUTOBUILD_PROFILES: dict[str, dict] = {
         "cloning_center",       # +1 max pop + big growth (Cloning)
         "atmospheric_renewer",  # +2 max pop + growth (Advanced Construction)
         "terraforming",         # +3 max pop (Terraforming)
+        "weather_control_center", # +5 food + growth (Weather Controller)
+        "orbital_mirror",       # +4 food + growth (Orbital Mirror Array)
         # Back-fill once the farming chain is exhausted so the world
         # still contributes industry / BC / research / defence.
         "factory", "marketplace", "research_lab", "capital",
+        "pleasure_dome_b",      # +2 max pop + BC + growth (Pleasure Dome)
         "missile_base", "ground_batteries", "star_base",
     ]},
 }

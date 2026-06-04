@@ -191,6 +191,12 @@ TECHS: dict[str, dict] = {
         "description": "Alien composite shipframes (+5 hull)",
         "equipment": {"slot": "armor", "size": 2, "hull": 5},
     },
+    "orbital_mirror_array": {
+        "id": "orbital_mirror_array", "name": "Orbital Mirror Array",
+        "field": "construction", "tier": 7, "tier_group": _t("construction", 7),
+        "cost": 2000, "prereqs": ["xeno_hull"],
+        "description": "Solar mirrors in orbit — perpetual summer below",
+    },
 
     # ===================================================================
     # Power — drives, fuel, energy systems
@@ -415,6 +421,12 @@ TECHS: dict[str, dict] = {
         "description": "Read alien intent (+2 spy offense & defense)",
         "spy_offense": 2, "spy_defense": 2,
     },
+    "pleasure_dome": {
+        "id": "pleasure_dome", "name": "Pleasure Dome",
+        "field": "sociology", "tier": 5, "tier_group": _t("sociology", 5),
+        "cost": 800, "prereqs": ["virtual_reality_network"],
+        "description": "Climate-controlled leisure habitats",
+    },
 
     # ===================================================================
     # Computers — research, networks, security
@@ -486,6 +498,12 @@ TECHS: dict[str, dict] = {
         "cost": 1000, "prereqs": ["positronic_computers"],
         "description": "Hit critical systems (+2 attack/ship)",
         "equipment": {"slot": "special", "size": 2, "attack": 2},
+    },
+    "astro_university": {
+        "id": "astro_university", "name": "Astro University",
+        "field": "computers", "tier": 5, "tier_group": _t("computers", 5),
+        "cost": 1000, "prereqs": ["positronic_computers"],
+        "description": "Networked institutes of higher learning",
     },
 
     # ===================================================================
@@ -563,6 +581,12 @@ TECHS: dict[str, dict] = {
         "field": "biology", "tier": 5, "tier_group": _t("biology", 5),
         "cost": 1000, "prereqs": ["terraforming"],
         "description": "Re-pick a race trait mid-game", "effect_stub": True,
+    },
+    "weather_controller": {
+        "id": "weather_controller", "name": "Weather Controller",
+        "field": "biology", "tier": 6, "tier_group": _t("biology", 6),
+        "cost": 1400, "prereqs": ["terraforming"],
+        "description": "Planet-scale climate engineering",
     },
 
     # ===================================================================

@@ -105,6 +105,34 @@ PROJECTS: dict[str, dict] = {
         "effects": {"food": 3},
         "required_tech": "soil_enrichment",
     },
+    "weather_control_center": {
+        "id": "weather_control_center", "name": "Weather Control Center",
+        "category": "farming",
+        "cost": 320, "description": "Climate engineering (+5 food, faster growth)",
+        "effects": {"food": 5, "growth_rate": 0.15},
+        "required_tech": "weather_controller",
+    },
+    "orbital_mirror": {
+        "id": "orbital_mirror", "name": "Orbital Mirror",
+        "category": "farming",
+        "cost": 380, "description": "Solar reflectors in orbit (+4 food, +growth)",
+        "effects": {"food": 4, "growth_rate": 0.10},
+        "required_tech": "orbital_mirror_array",
+    },
+    "astro_university_b": {
+        "id": "astro_university_b", "name": "Astro University",
+        "category": "science",
+        "cost": 320, "description": "Networked research institutes (+8 research)",
+        "effects": {"research": 8},
+        "required_tech": "astro_university",
+    },
+    "pleasure_dome_b": {
+        "id": "pleasure_dome_b", "name": "Pleasure Dome",
+        "category": "economy",
+        "cost": 360, "description": "Leisure habitat (+2 max pop, +5 BC, +growth)",
+        "effects": {"max_pop": 2, "bc": 5, "growth_rate": 0.20},
+        "required_tech": "pleasure_dome",
+    },
     # ---- Tier 4 expansions ----
     "deep_core_mine": {
         "id": "deep_core_mine", "name": "Deep Core Mine", "category": "economy",
@@ -234,6 +262,9 @@ BUILDING_ORDER = [
     "subterranean_farms", "cloning_center",
     # Late game (tier-4 tech unlocks)
     "deep_core_mine", "vr_network", "positronic_brain", "terraforming",
+    # Top-tier exotic projects
+    "weather_control_center", "orbital_mirror",
+    "astro_university_b", "pleasure_dome_b",
     # Planetary defenses
     "missile_base", "ground_batteries", "fighter_garrison",
     "star_base", "battlestation", "star_fortress",
