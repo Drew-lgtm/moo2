@@ -42,6 +42,7 @@ AUTOBUILD_PROFILES: dict[str, dict] = {
     "farming":      {"label": "Farming", "build_priority": [
         "granary",              # +growth (no tech)
         "hydroponics",          # +2 max pop (Agriculture)
+        "subterranean_farms",   # +3 flat food (Soil Enrichment) — fungi vats
         "soil_enrichment_b",    # +1 max pop + growth (Soil Enrichment)
         "cloning_center",       # +1 max pop + big growth (Cloning)
         "atmospheric_renewer",  # +2 max pop + growth (Advanced Construction)

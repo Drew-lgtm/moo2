@@ -94,9 +94,16 @@ PROJECTS: dict[str, dict] = {
     },
     "cloning_center": {
         "id": "cloning_center", "name": "Cloning Center", "category": "farming",
-        "cost": 250, "description": "+1 max pop, much faster growth",
-        "effects": {"max_pop": 1, "growth_rate": 0.3},
+        "cost": 250, "description": "+1 max pop, cloned cells & organs (+0.55 growth)",
+        "effects": {"max_pop": 1, "growth_rate": 0.55},
         "required_tech": "cloning",
+    },
+    "subterranean_farms": {
+        "id": "subterranean_farms", "name": "Subterranean Farms",
+        "category": "farming",
+        "cost": 150, "description": "Underground fungi vats (+3 food/turn)",
+        "effects": {"food": 3},
+        "required_tech": "soil_enrichment",
     },
     # ---- Tier 4 expansions ----
     "deep_core_mine": {
@@ -223,7 +230,8 @@ BUILDING_ORDER = [
     "factory", "granary", "research_lab", "hydroponics", "marketplace", "capital",
     # Mid / late game (gated by deeper tech)
     "atmospheric_renewer", "automated_factory", "stock_exchange",
-    "supercomputer", "galactic_cybernet", "soil_enrichment_b", "cloning_center",
+    "supercomputer", "galactic_cybernet", "soil_enrichment_b",
+    "subterranean_farms", "cloning_center",
     # Late game (tier-4 tech unlocks)
     "deep_core_mine", "vr_network", "positronic_brain", "terraforming",
     # Planetary defenses

@@ -22,8 +22,8 @@ PERSONALITIES: dict[str, dict] = {
         "build_priority": [
             "factory", "granary", "research_lab", "marketplace",
             "ship_colony_ship",  # expand once basic infra is up
-            "hydroponics", "capital", "supercomputer", "stock_exchange",
-            "atmospheric_renewer", "ship_frigate", "ship_cruiser",
+            "hydroponics", "subterranean_farms", "capital", "supercomputer",
+            "stock_exchange", "atmospheric_renewer", "ship_frigate", "ship_cruiser",
             # Defensive tail — built when the economy outpaces other
             # priorities, hardening colonies against invasion.
             "missile_base", "ground_batteries", "star_base", "battlestation",
@@ -44,9 +44,9 @@ PERSONALITIES: dict[str, dict] = {
         "build_priority": [
             "granary", "marketplace", "factory",
             "ship_colony_ship",  # spread wide for more revenue
-            "hydroponics", "stock_exchange", "research_lab", "capital",
-            "atmospheric_renewer", "soil_enrichment_b",
-            "cloning_center", "automated_factory",
+            "hydroponics", "subterranean_farms", "stock_exchange",
+            "research_lab", "capital", "atmospheric_renewer",
+            "soil_enrichment_b", "cloning_center", "automated_factory",
             "missile_base", "ground_batteries", "star_base",
         ],
         "research_priority": [
