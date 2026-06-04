@@ -140,7 +140,8 @@ TECHS: dict[str, dict] = {
         "id": "powered_armor", "name": "Powered Armor",
         "field": "construction", "tier": 3, "tier_group": _t("construction", 3),
         "cost": 400, "prereqs": ["advanced_construction"],
-        "description": "Exoskeletons for marines", "effect_stub": True,
+        "description": "Marine exoskeletons (+3 attack, +1 defense per marine)",
+        "marine_attack": 3, "marine_defense": 1,
     },
     "robo_miners": {
         "id": "robo_miners", "name": "Deep Core Mining",
@@ -659,7 +660,8 @@ TECHS: dict[str, dict] = {
         "id": "personal_shield", "name": "Personal Shield",
         "field": "force_fields", "tier": 1, "tier_group": _t("force_fields", 1),
         "cost": 100, "prereqs": [],
-        "description": "Marine ground combat shield", "effect_stub": True,
+        "description": "Marine ground shielding (+2 defense per defender)",
+        "marine_defense": 2,
     },
     "class_iii_shield": {
         "id": "class_iii_shield", "name": "Class III Shield",
@@ -929,3 +931,22 @@ def empire_research_per_scientist(unlocked):
     for t in unlocked:
         best = max(best, TECHS.get(t, {}).get("research_per_scientist", 0))
     return best
+
+
+def empire_marine_attack_bonus(unlocked) -> int:
+    """Ground-combat tech contribution to attack per marine. SUM across
+    unlocked techs — Powered Armor and any future marine-attack gear
+    stack."""
+    total = 0
+    for t in unlocked:
+        total += TECHS.get(t, {}).get("marine_attack", 0)
+    return total
+
+
+def empire_marine_defense_bonus(unlocked) -> int:
+    """Ground-combat tech contribution to defense per defending militia
+    unit. SUM — Powered Armor and Personal Shield are distinct layers."""
+    total = 0
+    for t in unlocked:
+        total += TECHS.get(t, {}).get("marine_defense", 0)
+    return total

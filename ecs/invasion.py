@@ -22,10 +22,11 @@ from __future__ import annotations
 import random
 
 from ecs.components import (
-    Planet, Orbiting, Owner, Population, BuildState,
+    Planet, Orbiting, Owner, Population, BuildState, TechState,
     Ship, ShipOwner, ShipAt, ShipInTransit,
 )
 from ecs.projects import PROJECTS
+from ecs.techs import empire_marine_attack_bonus, empire_marine_defense_bonus
 from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
     update_planet_workers, delete_ship,
@@ -74,6 +75,13 @@ def can_invade(component_mgr, planet_entity: int, empire_id: int) -> bool:
     return bool(_troop_transports_at_star(
         component_mgr, orbit.star_entity, empire_id,
     ))
+
+
+def _empire_unlocked(component_mgr, empire_id: int) -> set[str]:
+    for _eid, ts in component_mgr.get_all(TechState):
+        if ts.empire_id == empire_id:
+            return set(ts.unlocked)
+    return set()
 
 
 def _planet_defense_rating(build_state) -> int:
@@ -131,8 +139,18 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
 
     transports = _troop_transports_at_star(cm, orbit.star_entity, empire_id)
     n_transports = len(transports)
-    raw_attack = n_transports * MARINES_PER_TRANSPORT
-    militia = (pop.current * MILITIA_PER_MILLION_POP) if pop else 0
+    # Per-empire tech bonuses to marine combat. Powered Armor adds
+    # attack + a touch of defense; Personal Shield adds pure defense.
+    # Both stack (SUM in the helpers) — distinct gear layers.
+    attacker_unlocked = _empire_unlocked(cm, empire_id)
+    defender_unlocked = _empire_unlocked(cm, defender_owner.empire_id)
+    atk_per_marine = MARINES_PER_TRANSPORT + empire_marine_attack_bonus(attacker_unlocked)
+    def_per_militia = (
+        MILITIA_PER_MILLION_POP
+        + empire_marine_defense_bonus(defender_unlocked)
+    )
+    raw_attack = n_transports * atk_per_marine
+    militia = (pop.current * def_per_militia) if pop else 0
     defense_buildings = _planet_defense_rating(build_state)
     raw_defense = militia + defense_buildings
 

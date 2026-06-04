@@ -90,8 +90,9 @@ LMB or Esc hides it.
 These techs are still flavour-only because each needs a new system to
 hook into. Notes on what each would require:
 
-- **Powered Armor / Personal Shield** — marines / ground combat depth
-  (see pillar above).
+- ~~**Powered Armor / Personal Shield**~~ — landed: both feed empire-
+  wide marine-attack / marine-defense bonuses through ``invasion.py``,
+  so ground combat now reflects tech depth on both sides.
 - **Artificial Planet / Gaia Engineering** — programmatic creation /
   conversion of planet entities at runtime.
 - **Atmospheric Terraforming / Irradiation Resistance / Adaptive
