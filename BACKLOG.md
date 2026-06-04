@@ -8,47 +8,46 @@ would live in the codebase. Strike-through items as they ship.
 
 ## Quality of life
 
-### Right-click tooltips on everything
+### ~~Right-click tooltips~~ (foundation landed; remaining surfaces below)
 
-**Goal:** A right-click on any interactive element pops a small, short
-hint describing what it is / what it does. Left-click still acts on
-the element; right-click only inspects.
+Central tooltip widget (`ecs/tooltip.py`) + format helpers
+(`ecs/tooltips.py`) + `Game._handle_tooltip` dispatch landed. Scenes
+implement `tooltip_at(pos) -> list[str] | None`; the run-loop calls
+that on right-click and draws the widget on top of everything else.
+LMB or Esc hides it.
 
-**Scope:**
+**Covered surfaces:**
 
-- **Tech cards** (research scene): name, field, tier, cost, prereqs,
-  effect summary ("+2 spy defense", "+3 attack per slot, size 3",
-  "Battle Pods: +50% ship space"). Mention if it's currently locked
-  out via a tier-choice exclusion.
-- **Bottom UI buttons** (Colonies, Planets, Research, …, Espionage,
-  Info, Turn): one-line purpose.
-- **Stars** (galaxy view): name, owner, planet count, your sensor /
-  exploration status, "Right-click to inspect" etc.
-- **Planets** (system view + colony screen): type · size · richness ·
-  gravity · special features, base outputs, current owner.
-- **Ships in cluster** (system view): class, frozen loadout (armor /
-  shield / N× weapon / specials), combat stats.
-- **Diplomacy treaty buttons**: what the treaty does + AI acceptance
-  thresholds (clearly tagged as a hint, not exact).
-- **Leader / spy rows**: explain the per-skill effect.
-- **Build screen rows**: cost in production, effects on completion,
-  prereq tech.
+- Tech cards in the Research scene (name, field, tier, cost, prereqs,
+  effects, tier alternatives, unlocked/locked-out status).
+- Bottom UI bar buttons (one-line purpose).
+- Galaxy stars (name, planet count, owners; fog-of-war note on
+  unexplored stars).
+- System-view planets (type · size · richness · gravity, population,
+  building queue, features, ownership).
+- Build-screen project rows (cost, category, effects, required tech;
+  ship rows surface the live auto-loadout).
+- All panel scenes (Colonies / Planets / Info / etc.) get bar
+  passthrough so the bottom buttons stay inspectable everywhere.
 
-**Implementation sketch:**
+**Still to wire (same pattern — `tooltip_at` returning helper
+output):**
 
-- One central tooltip widget (`ecs/scenes/tooltip.py`) that any scene
-  can hand a `(rect, lines, anchor=pos)` to. Drawn last each frame so
-  it sits above everything.
-- Each scene records a `_tooltip_targets: list[(rect, payload)]` on
-  draw; the scene's `handle_event` checks RMB-down against the list
-  and fires `tooltip.show(payload, pos)` / `tooltip.hide()` on
-  click-away.
-- Payloads use small `tooltip.from_tech(tech_id)`, `from_planet(p)`,
-  etc. helpers so the formatting stays consistent across scenes.
+- Ship icons in the System View cluster (already have
+  `tooltips.ship_tooltip`; need to add hit-rects to the SystemView
+  ship-drawing pass).
+- Diplomacy treaty / declare-war buttons — explain the treaty effect
+  and the AI acceptance threshold.
+- Leader cards in the Leaders scene — skill effect, salary, current
+  post (helper not yet written; cribbing from
+  `Leader.effect_text` is straightforward).
+- Espionage rows / mission steppers — explain Steal Tech vs Sabotage,
+  what catching a spy costs.
+- Colony-screen buildings list — show project effect on right-click.
+- Pause / Main menu options — small affordance.
 
-**Why not now:** touches every interactive scene — about 10 files —
-and the formatting helpers want to land in one batch for consistency.
-Big enough to deserve its own session.
+None of these blockers — they're just the next wave of the same
+template.
 
 ---
 

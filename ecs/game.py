@@ -23,6 +23,7 @@ from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
 from ecs.exploration import Exploration, exploration_tick as _exploration_tick
 from ecs.espionage import Espionage, espionage_tick as _espionage_tick
 from ecs.leaders import LeadersManager, leaders_tick as _leaders_tick
+from ecs.tooltip import Tooltip
 from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
 from assets.loader import load_random_background
@@ -84,6 +85,10 @@ class Game:
 
         self.scenes = SceneManager()
         self.running = True
+        # Shared right-click inspect tooltip. Scenes expose
+        # ``tooltip_at(pos)`` to provide content; the run-loop below
+        # dispatches RMB to them and draws the widget last each frame.
+        self.tooltip = Tooltip()
 
         # Functions called after each advance_turn(). Each receives
         # (game, new_turn). Future systems (production, research) register here.
@@ -274,6 +279,31 @@ class Game:
         pygame.K_g: "galaxy",
     }
 
+    def _handle_tooltip(self, event) -> bool:
+        """Right-click anywhere -> ask the active scene for tooltip
+        content under the mouse; left-click or Esc hides it.
+
+        Returns True when the event has been consumed (we don't want a
+        spurious left-click stripping a tooltip to also dismiss a
+        scene's selection)."""
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            scene = self.scenes.active
+            fn = getattr(scene, "tooltip_at", None)
+            lines = fn(event.pos) if fn else None
+            if lines:
+                self.tooltip.show(lines, event.pos)
+            else:
+                self.tooltip.hide()
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.tooltip.hide()
+            return False  # don't consume — left-click still goes to scene
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            if self.tooltip.visible:
+                self.tooltip.hide()
+                return True  # swallow this Esc — would otherwise close scene
+        return False
+
     def _handle_shortcut(self, event) -> bool:
         if event.type != pygame.KEYDOWN:
             return False
@@ -299,6 +329,8 @@ class Game:
                     # F11 toggles between the SCALED window and fullscreen at
                     # the same logical resolution.
                     pygame.display.toggle_fullscreen()
+                elif self._handle_tooltip(event):
+                    pass  # consumed: right-click inspect or auto-hide
                 elif self._handle_shortcut(event):
                     pass  # consumed by the global shortcut handler
                 else:
@@ -308,6 +340,9 @@ class Game:
 
             self.screen.blit(self.background, (0, 0))
             self.scenes.active.draw(self.screen)
+            # Tooltip draws LAST so it overlays everything (and over the
+            # next scene if a click changes scenes during the same tick).
+            self.tooltip.draw(self.screen)
             pygame.display.flip()
 
         pygame.quit()

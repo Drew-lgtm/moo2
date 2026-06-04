@@ -76,6 +76,11 @@ class PanelScene(Scene):
             return 100
         return max(40, self._body_rect_cache.height - 40)
 
+    def tooltip_at(self, pos):
+        """Default: route to the bottom UI bar so RMB on a bar button
+        always works, even on these full-overlay panels."""
+        return self.game.ui_bar.tooltip_at(pos)
+
     def handle_event(self, event):
         self.game.ui_bar.handle_event(event)
         if event.type == pygame.KEYDOWN:

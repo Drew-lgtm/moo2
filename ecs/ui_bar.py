@@ -82,6 +82,16 @@ class BottomUIBar:
         for btn in self.buttons:
             btn.handle_event(event)
 
+    def tooltip_at(self, pos):
+        """Right-click on a bar button -> what it does. Returned as
+        ``list[str]`` ready for ``Tooltip.show``; callers add it to
+        their own ``tooltip_at`` result."""
+        from ecs.tooltips import button_tooltip
+        for btn in self.buttons:
+            if btn.rect.collidepoint(pos):
+                return button_tooltip(btn.name)
+        return None
+
 
 class UIButton:
     def __init__(self, name, rect, label, callback, font):

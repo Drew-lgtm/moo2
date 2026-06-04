@@ -19,6 +19,7 @@ from ecs.techs import (
     techs_in_field, is_available,
 )
 from ecs.db import get_connection, update_empire_tech
+from ecs.tooltips import tech_tooltip
 
 
 BG_COLOR = (10, 12, 24, 230)
@@ -76,6 +77,16 @@ class ResearchScene(Scene):
             conn.commit()
 
     # ------------------------------------------------------------------ input
+
+    def tooltip_at(self, pos):
+        """Right-click a tech card -> detailed effect summary."""
+        tech_state = self._player_tech_state()
+        unlocked = set(tech_state.unlocked) if tech_state else set()
+        locked = set(tech_state.locked_out) if tech_state else set()
+        for tech_id, rect, _avail in self._tech_hits:
+            if rect.collidepoint(pos):
+                return tech_tooltip(tech_id, unlocked=unlocked, locked_out=locked)
+        return None
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:

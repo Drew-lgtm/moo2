@@ -148,6 +148,29 @@ class SystemView:
             self.planet_layout.append((entity_id, planet, pos, radius, rx, ry))
             i += 1
 
+    # ------------------------------------------------------------------ tooltips
+
+    def tooltip_at(self, pos):
+        """Right-click a planet -> tooltip with type/size/richness/pop.
+        Returns ``list[str]`` or None."""
+        for entity_id, planet, ppos, radius, _rx, _ry in self.planet_layout:
+            hit = max(radius + 6, 14)
+            dx = pos[0] - ppos[0]
+            dy = pos[1] - ppos[1]
+            if dx * dx + dy * dy <= hit * hit:
+                from ecs.tooltips import planet_tooltip
+                pop = self.component_mgr.get_component(entity_id, Population)
+                bs = self.component_mgr.get_component(entity_id, BuildState)
+                owner = self.component_mgr.get_component(entity_id, Owner)
+                owner_name = None
+                if owner is not None:
+                    for _e, emp in self.component_mgr.get_all(Empire):
+                        if emp.id == owner.empire_id:
+                            owner_name = emp.name
+                            break
+                return planet_tooltip(planet, pop, bs, owner_name)
+        return None
+
     # ------------------------------------------------------------------ input
 
     def handle_event(self, event):

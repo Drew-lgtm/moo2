@@ -73,6 +73,46 @@ class GalaxyScene(Scene):
                 f"stars/{visual.image_name}", size=(visual.size, visual.size)
             )
 
+    def tooltip_at(self, pos):
+        """Stars (with fog-of-war respect) and the bottom UI bar."""
+        # Bar takes priority since it overlaps the bottom strip.
+        bar_tip = self.game.ui_bar.tooltip_at(pos)
+        if bar_tip:
+            return bar_tip
+        star_entity = self._star_at(pos)
+        if star_entity is None:
+            return None
+        cm = self.game.component_mgr
+        name_comp = cm.get_component(star_entity, Name)
+        name = name_comp.value if name_comp else "Star"
+        # Fog of war — has the player explored it?
+        exploration = getattr(self.game, "exploration", None)
+        player = self.game.player_empire()
+        ref = cm.get_component(star_entity, StarRef)
+        explored = True
+        if exploration is not None and player is not None and ref is not None:
+            explored = exploration.is_explored(player.id, ref.db_id)
+        # Count planets + collect owner names at the star.
+        from ecs.components import Planet, Orbiting
+        planet_count = 0
+        owners: set[int] = set()
+        for planet_entity, orbit in cm.get_all(Orbiting):
+            if orbit.star_entity != star_entity:
+                continue
+            p = cm.get_component(planet_entity, Planet)
+            if p is None:
+                continue
+            planet_count += 1
+            o = cm.get_component(planet_entity, Owner)
+            if o is not None:
+                owners.add(o.empire_id)
+        owner_names: list[str] = []
+        for _e, emp in cm.get_all(Empire):
+            if emp.id in owners:
+                owner_names.append(emp.name)
+        from ecs.tooltips import star_tooltip
+        return star_tooltip(name, planet_count, owner_names, explored)
+
     def handle_event(self, event):
         self.game.ui_bar.handle_event(event)
 

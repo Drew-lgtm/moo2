@@ -28,6 +28,9 @@ class SystemViewScene(Scene):
         # it here would make on_enter redirect to galaxy.
         self.view = None
 
+    def tooltip_at(self, pos):
+        return self.view.tooltip_at(pos) if self.view is not None else None
+
     def handle_event(self, event):
         if self.view is None:
             return
