@@ -65,6 +65,9 @@ class Planet:
     original_race: str = ""
     assimilation_progress: int = 100
     guerrilla_turns: int = 0
+    # Plague event state — turns remaining of an active outbreak. While
+    # > 0 the colony loses 1M pop per turn and pop growth is suppressed.
+    plague_turns: int = 0
 
 
 @dataclass

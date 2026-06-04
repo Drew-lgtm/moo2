@@ -76,6 +76,7 @@ def init_db():
             original_race TEXT DEFAULT '',
             assimilation_progress INTEGER DEFAULT 100,
             guerrilla_turns INTEGER DEFAULT 0,
+            plague_turns INTEGER DEFAULT 0,
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -251,6 +252,8 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN assimilation_progress INTEGER DEFAULT 100")
     if "guerrilla_turns" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN guerrilla_turns INTEGER DEFAULT 0")
+    if "plague_turns" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN plague_turns INTEGER DEFAULT 0")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -305,6 +308,13 @@ def update_planet_conquest(conn, planet_id, original_race, assimilation_progress
         "UPDATE planets SET original_race = ?, assimilation_progress = ?, "
         "guerrilla_turns = ? WHERE id = ?",
         (original_race, assimilation_progress, guerrilla_turns, planet_id),
+    )
+
+
+def update_planet_plague(conn, planet_id, plague_turns):
+    conn.execute(
+        "UPDATE planets SET plague_turns = ? WHERE id = ?",
+        (plague_turns, planet_id),
     )
 
 

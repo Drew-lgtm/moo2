@@ -510,6 +510,13 @@ class ColonyScene(Scene):
             screen.blit(self.body_font.render(sub, True, (240, 130, 130)),
                         (24, 200))
 
+        if getattr(planet, "plague_turns", 0) > 0:
+            plague_text = (f"PLAGUE OUTBREAK — {planet.plague_turns} turn(s) of "
+                           f"pop loss. Research Microbiotics to shorten future "
+                           f"outbreaks.")
+            screen.blit(self.body_font.render(plague_text, True, (240, 180, 100)),
+                        (24, 220))
+
     def _draw_refit_banner(self, screen):
         """One-line outcome of the last refit on this scene entry."""
         r = self._refit_result

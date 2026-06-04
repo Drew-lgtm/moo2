@@ -335,6 +335,9 @@ class GalaxyGenerator:
                             guerrilla_turns=(planet["guerrilla_turns"]
                                               if "guerrilla_turns" in planet.keys()
                                               else 0),
+                            plague_turns=(planet["plague_turns"]
+                                           if "plague_turns" in planet.keys()
+                                           else 0),
                         ),
                     )
                     self.component_mgr.add_component(planet_entity, Orbiting(star_entity))
