@@ -202,7 +202,7 @@ def ai_tick(game, new_turn: int):
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
             _ai_queue_building(
                 cm, entity_id, personality["build_priority"], unlocked,
-                pending_writes, suppress=suppress,
+                pending_writes, suppress=suppress, traits=traits,
             )
 
         if tech_state is not None:
@@ -283,7 +283,7 @@ def _ai_rebalance_workers(cm, entity_id, worker_pct, pending_writes):
 
 
 def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
-                        pending_writes, suppress: tuple = ()):
+                        pending_writes, suppress: tuple = (), traits=None):
     build_state = cm.get_component(entity_id, BuildState)
     planet = cm.get_component(entity_id, Planet)
     if build_state is None or planet is None:
@@ -298,7 +298,7 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
             continue
         if proj_id in completed:
             continue
-        if not project_is_available(proj_id, unlocked):
+        if not project_is_available(proj_id, unlocked, traits):
             continue
         build_state.current_project = proj_id
         pending_writes.append(("build", (planet.id, proj_id, build_state.progress)))

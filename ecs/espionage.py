@@ -212,14 +212,24 @@ def espionage_tick(game, new_turn: int):
         for atk, tgt, mission in work:
             atk_set = unlocked.get(atk, set())
             tgt_set = unlocked.get(tgt, set())
+            # Attacker race traits — Spymasters get a flat bonus per
+            # pick (Darloks at +2 from two stacks).
+            attacker_traits = traits_for_empire(cm, atk)
+            atk_trait_bonus = trait_count(attacker_traits, "spymaster")
             atk_skill = (BASE_SPY_SKILL + empire_spy_offense(atk_set)
-                         + rng.randint(0, 4))
+                         + atk_trait_bonus + rng.randint(0, 4))
             defenders = esp.defense_count(tgt)
-            # Hive Mind: collective awareness makes infiltration harder.
+            # Defender race traits — Hive Mind (+2 per stack), Mind
+            # Link (+1 per stack, telepathic awareness), Spymaster
+            # (+1 per stack).
             target_traits = traits_for_empire(cm, tgt)
-            hive_bonus = trait_count(target_traits, "hive_mind") * 2
+            def_trait_bonus = (
+                trait_count(target_traits, "hive_mind") * 2
+                + trait_count(target_traits, "mind_link")
+                + trait_count(target_traits, "spymaster")
+            )
             tgt_security = (BASE_SECURITY + empire_spy_defense(tgt_set)
-                            + defenders + hive_bonus + rng.randint(0, 4))
+                            + defenders + def_trait_bonus + rng.randint(0, 4))
 
             if atk_skill > tgt_security:
                 _resolve_success(game, conn, cm, esp, atk, tgt, mission,

@@ -132,6 +132,9 @@ PROJECTS: dict[str, dict] = {
         "cost": 360, "description": "Leisure habitat (+2 max pop, +5 BC, +growth)",
         "effects": {"max_pop": 2, "bc": 5, "growth_rate": 0.20},
         "required_tech": "pleasure_dome",
+        # Hive Mind / Mind Link races have no individual desires —
+        # leisure habitats are meaningless to them.
+        "forbidden_traits": ["hive_mind", "mind_link"],
     },
     # ---- Tier 4 expansions ----
     "deep_core_mine": {
@@ -273,22 +276,49 @@ SHIP_PROJECT_ORDER = [f"ship_{s}" for s in SHIP_ORDER]
 PROJECT_ORDER = BUILDING_ORDER + SHIP_PROJECT_ORDER
 
 
-def project_is_available(project_id: str, unlocked_techs: set[str] | list) -> bool:
-    """A project requires its `required_tech` (if any) to be in
-    `unlocked_techs`. Projects without that key are always available."""
+def project_is_available(project_id: str, unlocked_techs: set[str] | list,
+                          traits=None) -> bool:
+    """A project requires its `required_tech` (if any) to be unlocked,
+    and must not have any trait listed in ``forbidden_traits`` that the
+    empire actually has. Pass ``traits`` from ``effective_traits`` for
+    the trait filter; omit it to skip the trait check (older callers)."""
     proj = PROJECTS.get(project_id)
     if proj is None:
         return False
+    if traits:
+        for forbidden in proj.get("forbidden_traits", ()):
+            if forbidden in traits:
+                return False
     required = proj.get("required_tech")
     if required is None:
         return True
     return required in set(unlocked_techs)
 
 
-def building_growth_bonus(completed_ids) -> float:
-    """Sum the growth_rate bonuses from a planet's completed buildings."""
+def project_allowed_for_traits(project_id: str, traits) -> bool:
+    """True if the project isn't disabled by the empire's race traits.
+    Used by economy ticks to filter completed buildings on conquest /
+    rule-change so a hive race that captured a Pleasure-Dome world
+    doesn't get its effects."""
+    proj = PROJECTS.get(project_id)
+    if proj is None:
+        return False
+    if not traits:
+        return True
+    for forbidden in proj.get("forbidden_traits", ()):
+        if forbidden in traits:
+            return False
+    return True
+
+
+def building_growth_bonus(completed_ids, traits=None) -> float:
+    """Sum the growth_rate bonuses from a planet's completed buildings.
+    Buildings forbidden by the empire's race traits (e.g. Pleasure
+    Dome for hive races) contribute nothing."""
     total = 0.0
     for project_id in completed_ids:
+        if traits and not project_allowed_for_traits(project_id, traits):
+            continue
         total += PROJECTS.get(project_id, {}).get("effects", {}).get("growth_rate", 0.0)
     return total
 

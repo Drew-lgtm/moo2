@@ -142,6 +142,11 @@ class BuildScene(Scene):
                 return set(tech.unlocked)
         return set()
 
+    def _player_traits(self) -> list[str]:
+        from ecs.races import traits_for_empire
+        pid = self._player_empire_id()
+        return traits_for_empire(self.game.component_mgr, pid) if pid else []
+
     def _filtered_projects(self, build_state, unlocked) -> list[dict]:
         """Projects shown in the list, after category + search filter.
 
@@ -278,7 +283,7 @@ class BuildScene(Scene):
         is_ship = proj.get("type") == "ship"
         if not is_ship and project_id in build_state.completed:
             return
-        if not project_is_available(project_id, self._player_unlocked_techs()):
+        if not project_is_available(project_id, self._player_unlocked_techs(), self._player_traits()):
             return
         if not is_ship and build_state.current_project == project_id:
             return
@@ -455,7 +460,7 @@ class BuildScene(Scene):
         already_built = build_state is not None and (not is_ship) and proj_id in build_state.completed
         currently_building = build_state is not None and build_state.current_project == proj_id
         queued = build_state is not None and proj_id in build_state.queue
-        tech_locked = not project_is_available(proj_id, unlocked)
+        tech_locked = not project_is_available(proj_id, unlocked, self._player_traits())
         available = not tech_locked and not already_built
 
         rect = pygame.Rect(area.x, row_top, area.width, self.ROW_H - 4)
@@ -515,10 +520,20 @@ class BuildScene(Scene):
             status_text = "QUEUED"
             status_color = (120, 180, 255)
         elif tech_locked:
-            required = proj.get("required_tech")
-            tech_name = TECHS.get(required, {}).get("name", required or "?")
-            status_text = f"Needs {tech_name}"
-            status_color = (160, 120, 120)
+            # Could be a race-trait block (Pleasure Dome for hive
+            # races) rather than a tech block. Show the right reason.
+            traits = self._player_traits()
+            blocked_by_trait = any(
+                t in traits for t in proj.get("forbidden_traits", ())
+            )
+            if blocked_by_trait:
+                status_text = "Not for this race"
+                status_color = (200, 160, 200)
+            else:
+                required = proj.get("required_tech")
+                tech_name = TECHS.get(required, {}).get("name", required or "?")
+                status_text = f"Needs {tech_name}"
+                status_color = (160, 120, 120)
         else:
             status_text = f"{proj['cost']} prod"
             status_color = (200, 220, 240)

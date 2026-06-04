@@ -28,7 +28,7 @@ from ecs.db import (
     insert_empire_tech,
     insert_ship,
 )
-from ecs.projects import PROJECTS, building_growth_bonus
+from ecs.projects import PROJECTS, building_growth_bonus, project_allowed_for_traits
 from ecs.techs import TECHS
 from ecs.difficulty import ai_output_multiplier
 from ecs.races import trait_count, traits_for_empire
@@ -224,12 +224,16 @@ def normalize_assignment(pop: Population):
 
 # ---- per-planet output ------------------------------------------------
 
-def _building_bonuses(build_state: BuildState | None):
-    """Sum flat bonuses contributed by completed buildings."""
+def _building_bonuses(build_state: BuildState | None, traits=None):
+    """Sum flat bonuses contributed by completed buildings. Buildings
+    forbidden by an empire's race trait (e.g. Pleasure Dome for a
+    hive_mind race) contribute nothing."""
     food = industry = research = bc = 0
     if build_state is None:
         return food, industry, research, bc
     for project_id in build_state.completed:
+        if traits and not project_allowed_for_traits(project_id, traits):
+            continue
         effects = PROJECTS.get(project_id, {}).get("effects", {})
         food += effects.get("food", 0)
         industry += effects.get("industry", 0)
@@ -273,6 +277,7 @@ def planet_output(planet: Planet, population: Population | None,
     )
     sci_per = (SCIENTIST_RESEARCH.get(p_type, 0)
                + trait_count(traits, "research_bonus")
+               + trait_count(traits, "mind_link")  # telepathic collective
                + tb.get("research", 0))
 
     food = population.farmers * farm_per
@@ -293,7 +298,7 @@ def planet_output(planet: Planet, population: Population | None,
         industry = int(round(industry * grav_mult))
         research = int(round(research * grav_mult))
 
-    b_food, b_industry, b_research, b_bc = _building_bonuses(build_state)
+    b_food, b_industry, b_research, b_bc = _building_bonuses(build_state, traits)
     # Special features add a flat per-turn bonus regardless of pop —
     # artifact ruins yield research even if no scientists are assigned,
     # and deposits passively generate BC.
@@ -453,7 +458,7 @@ def pop_growth_tick(game, new_turn: int):
                 continue
 
             if pop.current < pop.max:
-                bonus = building_growth_bonus(build_state.completed) if build_state else 0.0
+                bonus = building_growth_bonus(build_state.completed, traits) if build_state else 0.0
                 trait_growth = 0.2 * (
                     trait_count(traits, "fast_growth")
                     - trait_count(traits, "slow_growth")

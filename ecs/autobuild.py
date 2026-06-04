@@ -19,6 +19,7 @@ from __future__ import annotations
 from ecs.components import Owner, BuildState, Empire, TechState, Planet
 from ecs.projects import PROJECTS, project_is_available
 from ecs.personalities import PERSONALITIES
+from ecs.races import traits_for_empire
 from ecs.db import get_connection, update_planet_build
 
 
@@ -105,6 +106,7 @@ def autobuild_tick(game, new_turn: int):
     if player is None:
         return
     unlocked = _player_unlocked(cm, player.id)
+    traits = traits_for_empire(cm, player.id)
     pending: list[tuple[int, str, int]] = []  # (planet_id, project_id, progress)
 
     for entity_id, owner in cm.get_all(Owner):
@@ -131,7 +133,7 @@ def autobuild_tick(game, new_turn: int):
                 continue
             if project_id in completed:
                 continue
-            if not project_is_available(project_id, unlocked):
+            if not project_is_available(project_id, unlocked, traits):
                 continue
             bs.current_project = project_id
             pending.append((planet.id, project_id, bs.progress))
