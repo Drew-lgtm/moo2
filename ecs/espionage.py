@@ -38,6 +38,7 @@ from ecs.components import (
 from ecs.techs import (
     empire_spy_offense, empire_spy_defense, empire_has_stealth, empire_has_mind_scan,
 )
+from ecs.races import trait_count, traits_for_empire
 
 
 MISSIONS = ["steal", "sabotage"]
@@ -214,8 +215,11 @@ def espionage_tick(game, new_turn: int):
             atk_skill = (BASE_SPY_SKILL + empire_spy_offense(atk_set)
                          + rng.randint(0, 4))
             defenders = esp.defense_count(tgt)
+            # Hive Mind: collective awareness makes infiltration harder.
+            target_traits = traits_for_empire(cm, tgt)
+            hive_bonus = trait_count(target_traits, "hive_mind") * 2
             tgt_security = (BASE_SECURITY + empire_spy_defense(tgt_set)
-                            + defenders + rng.randint(0, 4))
+                            + defenders + hive_bonus + rng.randint(0, 4))
 
             if atk_skill > tgt_security:
                 _resolve_success(game, conn, cm, esp, atk, tgt, mission,

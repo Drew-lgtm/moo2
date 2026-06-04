@@ -36,6 +36,9 @@ TRAITS: dict[str, dict] = {
                        "desc": "+1 ground attack per marine and +1 defense per militia."},
     "pacifist":       {"name": "Pacifist",              "cost": -2,
                        "desc": "-1 ground attack per marine. Defense unaffected."},
+    "hive_mind":      {"name": "Hive Mind",             "cost":  6,
+                       "desc": "+1 industry per worker. +2 spy defense — "
+                               "the collective notices intruders."},
     "rich_homeworld": {"name": "Rich Homeworld",        "cost":  3, "desc": "Homeworld starts with +50 BC."},
     "subterranean":   {"name": "Subterranean",          "cost":  6, "desc": "Every colony gets +2 max pop."},
 }
@@ -44,7 +47,7 @@ TRAITS: dict[str, dict] = {
 TRAIT_ORDER = [
     "food_bonus", "industry_bonus", "research_bonus", "bc_bonus",
     "fast_growth", "tolerant",
-    "ship_attack", "ship_hull", "warlord",
+    "ship_attack", "ship_hull", "warlord", "hive_mind",
     "rich_homeworld", "subterranean",
     "slow_growth", "weak_industry", "pacifist",
 ]
@@ -66,8 +69,8 @@ RACES: dict[str, dict] = {
                   "description": "Telepathic scholars."},
     "Gnolam":    {"name": "Gnolam",    "traits": ["bc_bonus", "bc_bonus", "rich_homeworld"],
                   "description": "Lucky merchants."},
-    "Klackon":   {"name": "Klackon",   "traits": ["industry_bonus", "food_bonus"],
-                  "description": "Hive-mind insectoids."},
+    "Klackon":   {"name": "Klackon",   "traits": ["hive_mind", "food_bonus"],
+                  "description": "Hive-mind insectoids — relentless workers, hard to infiltrate."},
     "Meklar":    {"name": "Meklar",    "traits": ["industry_bonus", "industry_bonus"],
                   "description": "Cybernetic industrial machine."},
     "Mrrshan":   {"name": "Mrrshan",   "traits": ["ship_attack", "ship_attack", "warlord"],

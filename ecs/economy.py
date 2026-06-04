@@ -267,6 +267,7 @@ def planet_output(planet: Planet, population: Population | None,
         0,
         WORKER_INDUSTRY.get(p_type, 0)
         + trait_count(traits, "industry_bonus")
+        + trait_count(traits, "hive_mind")  # hive workers pull double
         - trait_count(traits, "weak_industry")
         + tb.get("industry", 0),
     )
