@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from ecs.techs import TECHS, FIELD_NAMES
 from ecs.ships import SHIPS
+from ecs.projects import PROJECTS
 
 
 # ----- techs ----------------------------------------------------------
@@ -285,6 +286,51 @@ def spy_row_tooltip(emp, my_spies_here: dict) -> list[str]:
             lines.append(f"{mission.capitalize()}: {n} assigned")
     if not any(my_spies_here.values()):
         lines.append("hint: no operatives assigned")
+    return lines
+
+
+# ----- projects (buildings + ships) ----------------------------------
+
+def project_tooltip(project_id: str, unlocked_techs=None,
+                    installed: bool = False) -> list[str]:
+    """One-stop tooltip for any project — building or ship. Shows
+    category, production cost, effects, required tech, description.
+    Ship projects also surface the live auto-loadout when
+    ``unlocked_techs`` is provided. ``installed=True`` marks a building
+    that's already completed on a planet (no cost line — it's built)."""
+    proj = PROJECTS.get(project_id)
+    if proj is None:
+        return [project_id]
+    lines: list[str] = [proj.get("name", project_id)]
+    cat = proj.get("category", "")
+    cost = proj.get("cost", "?")
+    if proj.get("type") == "ship":
+        lines.append(f"Ship · {cost} production")
+        ship_class = proj.get("ship_class")
+        if ship_class and unlocked_techs is not None:
+            from ecs.ship_design import loadout_summary
+            lines.append(loadout_summary(ship_class, unlocked_techs))
+    else:
+        if installed:
+            lines.append(f"{cat.title()} · built")
+        else:
+            lines.append(f"{cat.title()} · {cost} production")
+        effects = proj.get("effects", {})
+        if effects:
+            bits = [f"+{v} {k.replace('_', ' ')}" for k, v in effects.items()]
+            lines.append("Effects: " + ", ".join(bits))
+    req = proj.get("required_tech")
+    if req:
+        tech_name = TECHS.get(req, {}).get("name", req)
+        # For already-built buildings the requirement is past — phrase
+        # as info rather than a gate.
+        if installed:
+            lines.append(f"hint:from {tech_name}")
+        else:
+            lines.append(f"hint:needs {tech_name}")
+    desc = proj.get("description")
+    if desc:
+        lines.append(f"hint:{desc}")
     return lines
 
 

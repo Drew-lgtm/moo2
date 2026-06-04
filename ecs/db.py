@@ -175,12 +175,19 @@ def init_db():
             race TEXT,
             score INTEGER DEFAULT 0,
             outcome TEXT,
-            turn INTEGER
+            turn INTEGER,
+            pillar_pop INTEGER DEFAULT 0,
+            pillar_colonies INTEGER DEFAULT 0,
+            pillar_tech INTEGER DEFAULT 0,
+            pillar_buildings INTEGER DEFAULT 0,
+            pillar_economy INTEGER DEFAULT 0,
+            pillar_military INTEGER DEFAULT 0
         );
         """)
         _migrate_empires(conn)
         _migrate_planets(conn)
         _migrate_ships(conn)
+        _migrate_hall_of_fame(conn)
         conn.commit()
 
 
@@ -201,6 +208,17 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN personality TEXT DEFAULT 'balanced'")
     if "custom_traits" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN custom_traits TEXT DEFAULT ''")
+
+
+def _migrate_hall_of_fame(conn):
+    """Per-pillar columns introduced after the initial Hall of Fame
+    schema. Existing rows show 0 — won't compete in pillar records but
+    still appear in the main leaderboard."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(hall_of_fame)")}
+    for col in ("pillar_pop", "pillar_colonies", "pillar_tech",
+                "pillar_buildings", "pillar_economy", "pillar_military"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE hall_of_fame ADD COLUMN {col} INTEGER DEFAULT 0")
 
 
 def _migrate_ships(conn):
@@ -507,20 +525,59 @@ def get_meta(conn, key, default=None):
     return row["value"] if row is not None else default
 
 
-def insert_hall_of_fame(conn, empire_name, race, score, outcome, turn):
+def insert_hall_of_fame(conn, empire_name, race, score, outcome, turn,
+                        pillars=None):
+    """Write a Hall of Fame row. ``pillars`` is an optional dict with
+    keys ``Population / Colonies / Tech / Buildings / Economy /
+    Military`` that lets us also rank per-pillar records in the
+    Game-Over view."""
+    p = pillars or {}
     conn.execute(
-        "INSERT INTO hall_of_fame (empire_name, race, score, outcome, turn) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (empire_name, race, score, outcome, turn),
+        "INSERT INTO hall_of_fame (empire_name, race, score, outcome, turn, "
+        "pillar_pop, pillar_colonies, pillar_tech, pillar_buildings, "
+        "pillar_economy, pillar_military) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (empire_name, race, score, outcome, turn,
+         p.get("Population", 0), p.get("Colonies", 0), p.get("Tech", 0),
+         p.get("Buildings", 0), p.get("Economy", 0), p.get("Military", 0)),
     )
 
 
 def get_hall_of_fame(limit=12):
+    """Top rows by score. Tie-breakers: lower turn beats higher turn
+    (faster win is more impressive), then newer entries last."""
     with get_connection() as conn:
         return conn.execute(
-            "SELECT * FROM hall_of_fame ORDER BY score DESC, id DESC LIMIT ?",
+            "SELECT * FROM hall_of_fame "
+            "ORDER BY score DESC, turn ASC, id DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+def get_hall_of_fame_pillar_records():
+    """Per-pillar best-ever values across all runs. Returns a dict
+    ``{Population: (value, empire_name, race), ...}`` ready for the
+    Game-Over screen's Records section. Skips pillars with no recorded
+    score (no Hall of Fame entries with that pillar > 0)."""
+    cols = {
+        "Population": "pillar_pop",
+        "Colonies":   "pillar_colonies",
+        "Tech":       "pillar_tech",
+        "Buildings":  "pillar_buildings",
+        "Economy":    "pillar_economy",
+        "Military":   "pillar_military",
+    }
+    out: dict[str, tuple[int, str, str]] = {}
+    with get_connection() as conn:
+        for label, col in cols.items():
+            row = conn.execute(
+                f"SELECT {col} AS val, empire_name, race "
+                f"FROM hall_of_fame WHERE {col} > 0 "
+                f"ORDER BY {col} DESC LIMIT 1"
+            ).fetchone()
+            if row is not None:
+                out[label] = (row["val"], row["empire_name"], row["race"])
+    return out
 
 
 def clear_galaxy():

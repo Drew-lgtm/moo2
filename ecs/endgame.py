@@ -205,5 +205,9 @@ def record_result(game, winner_id: int, outcome: str):
     with get_connection() as conn:
         for emp, perspective in rows:
             score = final_score(game, emp.id, perspective)
-            insert_hall_of_fame(conn, emp.name, emp.race_type, score, perspective, turn)
+            bd = score_breakdown(game, emp.id)
+            insert_hall_of_fame(
+                conn, emp.name, emp.race_type, score, perspective, turn,
+                pillars=bd["pillars"],
+            )
         conn.commit()

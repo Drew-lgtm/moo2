@@ -184,34 +184,14 @@ class BuildScene(Scene):
     # ------------------------------------------------------------------ input
 
     def tooltip_at(self, pos):
-        """Right-click a project row -> cost, tech requirement,
-        effects. Ship projects also surface the auto-loadout the new
-        hull would carry given current research."""
+        """Right-click a project row → ``tooltips.project_tooltip``
+        format. The same helper backs the Colony screen's per-building
+        tooltips, so the format stays consistent across scenes."""
+        from ecs.tooltips import project_tooltip
         for project_id, row_rect, _avail in self._row_hits:
-            if not row_rect.collidepoint(pos):
-                continue
-            proj = PROJECTS.get(project_id, {})
-            lines = [proj.get("name", project_id)]
-            cat = proj.get("category", "")
-            cost = proj.get("cost", "?")
-            if proj.get("type") == "ship":
-                lines.append(f"Ship · {cost} production")
-                ship_class = proj.get("ship_class")
-                if ship_class:
-                    lines.append(loadout_summary(ship_class, self._player_unlocked_techs()))
-            else:
-                lines.append(f"{cat.title()} · {cost} production")
-                effects = proj.get("effects", {})
-                if effects:
-                    bits = [f"+{v} {k}" for k, v in effects.items()]
-                    lines.append("Effects: " + ", ".join(bits))
-            req = proj.get("required_tech")
-            if req:
-                lines.append(f"hint:needs {TECHS.get(req, {}).get('name', req)}")
-            desc = proj.get("description")
-            if desc and desc not in lines:
-                lines.append(f"hint:{desc}")
-            return lines
+            if row_rect.collidepoint(pos):
+                return project_tooltip(project_id,
+                                       unlocked_techs=self._player_unlocked_techs())
         return None
 
     def handle_event(self, event):

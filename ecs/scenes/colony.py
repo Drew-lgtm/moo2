@@ -55,6 +55,9 @@ class ColonyScene(Scene):
         self._invade_rect = pygame.Rect(0, 0, 0, 0)
         self._refit_rect = pygame.Rect(0, 0, 0, 0)
         self._auto_rect = pygame.Rect(0, 0, 0, 0)
+        # Per-completed-building hit rects, rebuilt every draw.
+        # Right-click any to see what that building does.
+        self._building_hits: list[tuple[pygame.Rect, str]] = []
         # Last invasion result for this entry into the scene — used so
         # the player sees what happened after pressing Invade.
         self._invasion_log: dict | None = None
@@ -171,7 +174,15 @@ class ColonyScene(Scene):
         return can_invade(self.game.component_mgr, self._planet_entity, empire_id)
 
     def tooltip_at(self, pos):
-        """Right-click an action button on the colony screen."""
+        """Right-click an action button or a completed building on the
+        colony screen."""
+        # Buildings first — they sit lower on the screen so a click on
+        # an action button won't accidentally hit them, but listing
+        # them first keeps the priority obvious.
+        for rect, pid in self._building_hits:
+            if rect.collidepoint(pos):
+                from ecs.tooltips import project_tooltip
+                return project_tooltip(pid, installed=True)
         if self._build_rect.collidepoint(pos):
             return ["Build",
                     "hint: open the build queue for this colony"]
@@ -640,16 +651,40 @@ class ColonyScene(Scene):
 
     def _draw_build_summary(self, screen, build_state):
         x, y = 24, 220
+        self._building_hits = []
         if build_state is None:
             screen.blit(self.body_font.render("No build state.", True, HINT_COLOR), (x, y))
             return
-        # Completed
-        if build_state.completed:
-            names = [PROJECTS[pid]["name"] for pid in build_state.completed if pid in PROJECTS]
-            completed_str = "Buildings: " + ", ".join(names)
+        # Completed — render each building as its own clickable label so
+        # the right-click tooltip can resolve which one was hit.
+        prefix = self.body_font.render("Buildings: ", True, TEXT_COLOR)
+        screen.blit(prefix, (x, y))
+        cur_x = x + prefix.get_width()
+        right_edge = self.game.screen_width - 24
+        if not build_state.completed:
+            screen.blit(self.body_font.render("(none)", True, HINT_COLOR),
+                        (cur_x, y))
         else:
-            completed_str = "Buildings: (none)"
-        screen.blit(self.body_font.render(completed_str, True, TEXT_COLOR), (x, y))
+            sep_surf = self.body_font.render(", ", True, HINT_COLOR)
+            indent = x + prefix.get_width()
+            for i, pid in enumerate(build_state.completed):
+                if pid not in PROJECTS:
+                    continue
+                name_surf = self.body_font.render(PROJECTS[pid]["name"],
+                                                   True, TEXT_COLOR)
+                # Wrap onto a new line if this name wouldn't fit before
+                # the right edge of the screen.
+                if cur_x + name_surf.get_width() > right_edge:
+                    y += self.body_font.get_height() + 2
+                    cur_x = indent
+                rect = pygame.Rect(cur_x, y, name_surf.get_width(),
+                                   name_surf.get_height())
+                screen.blit(name_surf, (cur_x, y))
+                self._building_hits.append((rect, pid))
+                cur_x += name_surf.get_width()
+                if i < len(build_state.completed) - 1:
+                    screen.blit(sep_surf, (cur_x, y))
+                    cur_x += sep_surf.get_width()
 
         # Active project
         if build_state.current_project:

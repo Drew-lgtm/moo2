@@ -16,7 +16,7 @@ from ecs.endgame import (
     record_result, score_breakdown, final_score, SCORE_OUTCOME_BONUS,
     _turn_speed_multiplier,
 )
-from ecs.db import get_hall_of_fame
+from ecs.db import get_hall_of_fame, get_hall_of_fame_pillar_records
 
 
 BG_COLOR = (8, 10, 22, 250)
@@ -38,6 +38,7 @@ class GameOverScene(Scene):
         self.small_font = pygame.font.SysFont("Arial", 15, bold=True)
         self._recorded = False
         self._hof: list = []
+        self._pillar_records: dict = {}
 
     def on_enter(self):
         result = getattr(self.game, "pending_endgame", None) or {}
@@ -49,6 +50,7 @@ class GameOverScene(Scene):
                 record_result(self.game, winner_id, mode)
             self._recorded = True
         self._hof = list(get_hall_of_fame(12))
+        self._pillar_records = get_hall_of_fame_pillar_records()
 
     def on_exit(self):
         self.game.pending_endgame = None
@@ -123,6 +125,34 @@ class GameOverScene(Scene):
         screen.blit(self.header_font.render("Final Score", True, HEADER_COLOR), (x_name, y))
         screen.blit(self.header_font.render(str(final), True, final_color), (x_pts, y))
 
+    def _draw_pillar_records(self, screen, cx, sh):
+        """All-time best per pillar across every recorded run. Sits as a
+        narrow side column to the right of the Hall of Fame table."""
+        if not self._pillar_records:
+            return
+        x = cx + 360
+        y = 380
+        screen.blit(self.header_font.render("Records", True, HEADER_COLOR), (x, y))
+        y = 410
+        screen.blit(self.small_font.render("Pillar", True, HINT_COLOR), (x, y))
+        screen.blit(self.small_font.render("Best", True, HINT_COLOR), (x + 110, y))
+        y = 434
+        for i, label in enumerate(("Population", "Colonies", "Tech",
+                                   "Buildings", "Economy", "Military")):
+            rec = self._pillar_records.get(label)
+            if rec is None:
+                continue
+            value, empire_name, race = rec
+            rect = pygame.Rect(x - 6, y, 240, 26)
+            pygame.draw.rect(screen, ROW_BG_ALT if i % 2 else ROW_BG, rect)
+            screen.blit(self.small_font.render(label, True, TEXT_COLOR), (x, y + 4))
+            screen.blit(self.small_font.render(str(value), True, TEXT_COLOR),
+                        (x + 110, y + 4))
+            holder = f"{str(empire_name)[:10]} ({str(race)[:8]})"
+            screen.blit(self.small_font.render(holder, True, HINT_COLOR),
+                        (x + 160, y + 4))
+            y += 28
+
     def draw(self, screen):
         sw, sh = self.game.screen_width, self.game.screen_height
         overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
@@ -175,6 +205,8 @@ class GameOverScene(Scene):
             for text, x in cells:
                 screen.blit(self.small_font.render(text, True, TEXT_COLOR), (x, y + 4))
             y += 28
+
+        self._draw_pillar_records(screen, cx, sh)
 
         prompt = self.body_font.render("Click anywhere to return to the main menu.", True, HINT_COLOR)
         screen.blit(prompt, prompt.get_rect(center=(cx, sh - 40)))
