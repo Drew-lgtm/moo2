@@ -77,11 +77,18 @@ class BuildState:
     `current_project` is the active build. `queue` holds items behind it,
     in order. When a project completes, the next queued item becomes
     current and any progress overflow carries over.
+
+    `autobuild` is empty when manual, or the name of a personality
+    whose ``build_priority`` queues the next building on this colony
+    when nothing else is being built. Set via the Colony screen; AI
+    empires use their own ``_ai_queue_building`` path and don't read
+    this flag.
     """
     current_project: str | None = None
     progress: int = 0
     completed: list[str] = field(default_factory=list)
     queue: list[str] = field(default_factory=list)
+    autobuild: str = ""
 
 @dataclass
 class Orbiting:

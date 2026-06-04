@@ -22,8 +22,9 @@ from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVIT
 from ecs.colonization import can_colonize, colonize_planet
 from ecs.invasion import can_invade, invade_planet
 from ecs.refit import plan_refit, refit_ships_at_star
+from ecs.autobuild import cycle_profile, profile_label
 from ecs.db import (
-    get_connection, update_planet_workers,
+    get_connection, update_planet_workers, update_planet_autobuild,
 )
 
 
@@ -53,6 +54,7 @@ class ColonyScene(Scene):
         self._colonize_rect = pygame.Rect(0, 0, 0, 0)
         self._invade_rect = pygame.Rect(0, 0, 0, 0)
         self._refit_rect = pygame.Rect(0, 0, 0, 0)
+        self._auto_rect = pygame.Rect(0, 0, 0, 0)
         # Last invasion result for this entry into the scene — used so
         # the player sees what happened after pressing Invade.
         self._invasion_log: dict | None = None
@@ -94,6 +96,9 @@ class ColonyScene(Scene):
         # colony with at least one ship parked at the star that's not
         # already running the empire's current best loadout.
         self._refit_rect = pygame.Rect(sw - 100 - 110 - 140, 16, 130, 32)
+        # Autobuild toggle — to the left of Refit. Visible on player
+        # colonies; cycles Off/Balanced/Economic/Scientific/Militaristic.
+        self._auto_rect = pygame.Rect(sw - 100 - 110 - 140 - 170, 16, 160, 32)
         # Colonize button overlays the Build slot when the planet is
         # uncolonized; only one of the two will be visible at a time.
         self._colonize_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
@@ -183,6 +188,14 @@ class ColonyScene(Scene):
         if self._invade_rect.collidepoint(pos):
             return ["Invade",
                     "hint: send marines from your parked Troop Transports"]
+        if self._auto_rect.collidepoint(pos):
+            _p, _pop, bs, _o = self._planet_components()
+            profile = bs.autobuild if bs else ""
+            label = profile_label(profile)
+            lines = [f"Autobuild: {label}",
+                     "hint: cycles Off → Balanced → Economic → Scientific → Militaristic",
+                     "hint: queues the next building when nothing else is being built"]
+            return lines
         return None
 
     def _star_entity(self) -> int | None:
@@ -248,6 +261,16 @@ class ColonyScene(Scene):
                         self.game, star, player_id,
                     )
                 return
+            # Autobuild cycle — Off / Balanced / Economic / Scientific / Militaristic.
+            if self._auto_rect.collidepoint(event.pos):
+                planet, _pop, build_state, _o = self._planet_components()
+                if planet is not None and build_state is not None:
+                    new_profile = cycle_profile(build_state.autobuild)
+                    build_state.autobuild = new_profile
+                    with get_connection() as conn:
+                        update_planet_autobuild(conn, planet.id, new_profile)
+                        conn.commit()
+                return
 
         # Worker +/- buttons
         for role, minus_rect, plus_rect in self._worker_widgets:
@@ -312,6 +335,7 @@ class ColonyScene(Scene):
         else:
             self._draw_build_button(screen, owner)
             self._draw_refit_button(screen, owner)
+            self._draw_auto_button(screen, owner, build_state)
         self._draw_close_button(screen)
         self._draw_invasion_log(screen)
         self._draw_refit_banner(screen)
@@ -332,6 +356,21 @@ class ColonyScene(Scene):
         pygame.draw.rect(screen, border, self._build_rect, 1)
         label = self.body_font.render("Build", True, fg)
         screen.blit(label, label.get_rect(center=self._build_rect.center))
+
+    def _draw_auto_button(self, screen, owner, build_state):
+        """Toggle the colony's autobuild profile. Cycles
+        Off → Balanced → Economic → Scientific → Militaristic → Off.
+        Only shown on player-owned colonies."""
+        if not self._player_owns_this(owner) or build_state is None:
+            return
+        on = bool(build_state.autobuild)
+        bg, border, fg = ((50, 100, 70), (160, 220, 180), TEXT_COLOR) if on \
+            else ((40, 44, 56), (110, 110, 130), (150, 150, 165))
+        pygame.draw.rect(screen, bg, self._auto_rect)
+        pygame.draw.rect(screen, border, self._auto_rect, 1)
+        label = self.body_font.render(
+            f"Auto: {profile_label(build_state.autobuild)}", True, fg)
+        screen.blit(label, label.get_rect(center=self._auto_rect.center))
 
     def _draw_refit_button(self, screen, owner):
         """Visible only when the player owns this colony AND has at

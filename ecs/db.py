@@ -72,6 +72,7 @@ def init_db():
             richness TEXT DEFAULT 'Abundant',
             gravity TEXT DEFAULT 'Normal',
             special TEXT DEFAULT '',
+            autobuild TEXT DEFAULT '',
             FOREIGN KEY(star_id) REFERENCES stars(id),
             FOREIGN KEY(owner_empire_id) REFERENCES empires(id)
         );
@@ -239,6 +240,8 @@ def _migrate_planets(conn):
         conn.execute("ALTER TABLE planets ADD COLUMN gravity TEXT DEFAULT 'Normal'")
     if "special" not in existing:
         conn.execute("ALTER TABLE planets ADD COLUMN special TEXT DEFAULT ''")
+    if "autobuild" not in existing:
+        conn.execute("ALTER TABLE planets ADD COLUMN autobuild TEXT DEFAULT ''")
 
 
 def insert_star(conn, name, x, y, star_class, image, size):
@@ -284,6 +287,13 @@ def update_planet_population(conn, planet_id, current, max_population, growth_pr
     conn.execute(
         "UPDATE planets SET population = ?, max_population = ?, growth_progress = ? WHERE id = ?",
         (current, max_population, growth_progress, planet_id),
+    )
+
+
+def update_planet_autobuild(conn, planet_id, autobuild):
+    conn.execute(
+        "UPDATE planets SET autobuild = ? WHERE id = ?",
+        (autobuild, planet_id),
     )
 
 

@@ -357,6 +357,9 @@ class GalaxyGenerator:
                                 progress=planet["project_progress"] or 0,
                                 completed=completed,
                                 queue=queue,
+                                autobuild=(planet["autobuild"]
+                                            if "autobuild" in planet.keys()
+                                            else ""),
                             ),
                         )
 
