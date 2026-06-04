@@ -15,7 +15,8 @@ industry / max_pop / growth_rate. See ecs.projects.PROJECTS.
 """
 from __future__ import annotations
 
-from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, Orbiting, StarRef
+from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, Orbiting, StarRef, Name
+from ecs.turn_log import CAT_BUILDING, CAT_TECH, log as turn_log
 from ecs.db import (
     get_connection,
     update_empire_economy,
@@ -513,6 +514,13 @@ def production_tick(game, new_turn: int):
     """Apply per-planet industry/research to empires; resolve project progress."""
     cm = game.component_mgr
 
+    # Player empire id (cached once per tick) — used to filter the
+    # rolling turn_log so AI building / research churn stays out.
+    player_emp = next(
+        (e for _eid, e in cm.get_all(Empire) if e.is_player), None
+    )
+    player_id = player_emp.id if player_emp else None
+
     # Cache trait lists + tech bonuses per empire so we don't re-walk
     # Empire / TechState components for every planet on big maps.
     traits_by_empire: dict[int, list[str]] = {
@@ -572,6 +580,14 @@ def production_tick(game, new_turn: int):
                     if "max_pop" in effects and pop is not None:
                         pop.max += effects["max_pop"]
                         pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
+
+                    # Player-perspective turn log entry.
+                    if player_id is not None and owner.empire_id == player_id:
+                        orbit = cm.get_component(entity_id, Orbiting)
+                        sn = cm.get_component(orbit.star_entity, Name) if orbit else None
+                        star_name = sn.value if sn else "?"
+                        turn_log(game, CAT_BUILDING,
+                                 f"Built {proj.get('name', completed_id)} on {star_name}")
 
                 # Carry over progress overflow to the next queued item.
                 overflow = build_state.progress - proj["cost"]
@@ -635,6 +651,9 @@ def production_tick(game, new_turn: int):
                     completed_tech = tech.current_target
                     tech.unlocked.append(completed_tech)
                     tech_unlocks.append((empire.id, completed_tech))
+                    if empire.is_player:
+                        tech_name = TECHS.get(completed_tech, {}).get("name", completed_tech)
+                        turn_log(game, CAT_TECH, f"Researched {tech_name}")
                     # MOO2 choice rule: every other alternative at the
                     # same tier slot is locked-out for this empire (still
                     # acquirable by spy theft / tech trade).

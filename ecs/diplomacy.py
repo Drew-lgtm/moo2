@@ -103,6 +103,24 @@ class Diplomacy:
         self.pending_cancel: dict[tuple[int, int, str], int] = {}
         # rolling log of notable events for UI surfacing
         self.log: list[str] = []
+        # Player notification channel. Game wires both attributes during
+        # _bind_game_ui — Diplomacy stays empire-name-agnostic. The
+        # callback is invoked with (turn, kind, a, b, treaty_or_None)
+        # ONLY when ``player_id`` is one of the two empires involved.
+        self.player_id: int | None = None
+        self.on_player_event = None  # callable | None
+
+    def _notify_player(self, turn: int, kind: str, a: int, b: int,
+                       treaty: str | None = None):
+        if self.player_id is None or self.on_player_event is None:
+            return
+        if self.player_id not in (a, b):
+            return
+        try:
+            self.on_player_event(turn, kind, a, b, treaty)
+        except Exception:
+            # The log channel must never break diplomacy resolution.
+            pass
 
     # -- key helpers ----------------------------------------------------
 
@@ -193,6 +211,7 @@ class Diplomacy:
                 f"T{turn}: {TREATY_NAMES.get(treaty, treaty)} between "
                 f"{a} and {b} will end on turn {self.pending_cancel[key]}."
             )
+            self._notify_player(turn, "cancel_scheduled", a, b, treaty)
 
     def declare_war(self, aggressor: int, target: int, turn: int,
                     all_empire_ids: list[int] | None = None):
@@ -215,8 +234,10 @@ class Diplomacy:
             self.adjust_attitude(aggressor, target, BETRAYAL_SELF_HIT)
             self.log.append(f"T{turn}: Empire {aggressor} BROKE a peace treaty with {target}!")
             self._apply_betrayal_reputation(aggressor, turn, all_empire_ids or [])
+            self._notify_player(turn, "betrayal", aggressor, target)
         else:
             self.log.append(f"T{turn}: Empire {aggressor} declared war on {target}.")
+            self._notify_player(turn, "declare_war", aggressor, target)
 
     def _apply_betrayal_reputation(self, betrayer: int, turn: int, all_empire_ids: list[int]):
         """Every other empire likes the betrayer less and severs its
@@ -243,6 +264,7 @@ class Diplomacy:
             # declare-war threshold (-30) next turn.
             self.set_attitude(a, b, max(self.attitude(a, b), -10))
             self.log.append(f"T{turn}: Empire {a} and {b} signed a peace treaty.")
+            self._notify_player(turn, "make_peace", a, b)
 
     def note_invasion(self, aggressor: int, target: int, turn: int,
                       all_empire_ids: list[int] | None = None):
@@ -265,6 +287,7 @@ class Diplomacy:
             self._pair(a, b)["treaties"].discard(treaty)
             self.pending_cancel.pop(key, None)
             self.log.append(f"T{turn}: {TREATY_NAMES.get(treaty, treaty)} between {a} and {b} has ended.")
+            self._notify_player(turn, "treaty_ended", a, b, treaty)
 
         # Attitude decay toward 0 (war keeps it pinned low — don't decay
         # up out of hostility while fighting).

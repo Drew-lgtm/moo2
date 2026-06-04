@@ -430,6 +430,7 @@ class GalaxyScene(Scene):
         # Floating overlays sit on top of the map but below the bottom UI bar.
         self._draw_hover_tooltip(screen)
         self._draw_fleet_picker_overlay(screen)
+        self._draw_turn_log(screen)
         self.game.ui_bar.draw(screen)
 
     @staticmethod
@@ -588,6 +589,59 @@ class GalaxyScene(Scene):
             rx += label_surf.get_width() + 6
             screen.blit(value_surf, value_surf.get_rect(midleft=(rx, cy)))
             rx += value_surf.get_width() + cell_pad
+
+    def _draw_turn_log(self, screen):
+        """Compact 'Last Turn' panel anchored bottom-left of the play
+        area. Shows the most recent turn's player-visible events from
+        ``game.turn_log`` (buildings, tech, events, combat, colonies,
+        diplomacy). Stays out of the way: collapses entirely when there
+        are no entries to show."""
+        tl = getattr(self.game, "turn_log", None)
+        if tl is None or not tl.entries:
+            return
+        last_turn = tl.last_turn()
+        if last_turn is None:
+            return
+        # Newest entries last in storage; show the most recent few first.
+        entries = tl.for_turn(last_turn)[-6:][::-1]
+        if not entries:
+            return
+
+        font = self._label_font or self.game.font
+        title_font = self._label_font_bold or self.game.font
+        # Geometry — column anchored to the left edge, just above the bar.
+        line_h = font.get_height() + 2
+        title_h = title_font.get_height() + 4
+        pad_x, pad_y = 10, 8
+        max_w = 0
+        rendered = []
+        for cat, text in entries:
+            line = f"[{cat}] {text}"
+            surf = font.render(line, True, (220, 220, 220))
+            rendered.append(surf)
+            max_w = max(max_w, surf.get_width())
+        title_surf = title_font.render(
+            f"Last Turn (T{last_turn})", True, (255, 230, 120))
+        max_w = max(max_w, title_surf.get_width())
+
+        box_w = max_w + pad_x * 2
+        box_h = title_h + line_h * len(rendered) + pad_y * 2
+        bar_top = self.game.screen_height - self.game.ui_bar.BAR_HEIGHT
+        box_x = 10
+        box_y = bar_top - box_h - 6
+
+        bg = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+        bg.fill((10, 12, 24, 200))
+        screen.blit(bg, (box_x, box_y))
+        pygame.draw.rect(screen, (90, 100, 140),
+                         (box_x, box_y, box_w, box_h), 1)
+
+        cy = box_y + pad_y
+        screen.blit(title_surf, (box_x + pad_x, cy))
+        cy += title_h
+        for surf in rendered:
+            screen.blit(surf, (box_x + pad_x, cy))
+            cy += line_h
 
     def _draw_hover_tooltip(self, screen):
         """Floating box near the cursor showing the hovered star.

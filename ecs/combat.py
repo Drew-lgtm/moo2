@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from ecs.components import (
     Ship, ShipOwner, ShipAt, ShipInTransit, TechState, Owner, Orbiting, Position,
-    BuildState,
+    BuildState, Name,
 )
+from ecs.turn_log import log as turn_log, CAT_COMBAT
 from ecs.ships import SHIPS
 from ecs.races import trait_count, traits_for_empire
 from ecs.techs import empire_attack_bonus, empire_hull_bonus
@@ -390,3 +391,22 @@ def combat_tick(game, new_turn: int):
                     reports.append(r)
             if reports:
                 game.pending_combat_reports = reports
+                # Short one-liners for the player's turn log.
+                for r in reports:
+                    sn = cm.get_component(r["star_entity"], Name)
+                    star_name = sn.value if sn else "?"
+                    if r.get("observed"):
+                        turn_log(game, CAT_COMBAT,
+                                 f"Observed clash at {star_name}")
+                    else:
+                        my_side = next(
+                            (s for s in r["sides"]
+                             if s["empire_id"] == player.id),
+                            None,
+                        )
+                        if my_side:
+                            turn_log(
+                                game, CAT_COMBAT,
+                                f"Battle at {star_name}: lost "
+                                f"{my_side['lost']}, {my_side['remaining']} left",
+                            )

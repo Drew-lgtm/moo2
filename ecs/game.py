@@ -29,6 +29,7 @@ from ecs.leaders import LeadersManager, leaders_tick as _leaders_tick
 from ecs.tooltip import Tooltip
 from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
+from ecs.turn_log import TurnLog
 from assets.loader import load_random_background
 
 
@@ -73,6 +74,10 @@ class Game:
         self.pending_combat_reports: list | None = None
         # Rolling record of recent battles for review.
         self.last_combats: list = []
+        # Player-perspective turn log (in-memory). Populated by
+        # production, events, combat, colonization, invasion and
+        # diplomacy. Surfaced as the "Last Turn" strip on galaxy view.
+        self.turn_log: TurnLog = TurnLog()
         # Start-of-turn flag: are there idle player colonies needing
         # build orders? GalaxyScene shows the review screen if so.
         self.pending_idle_review: bool = False
@@ -135,6 +140,8 @@ class Game:
         self.component_mgr = ComponentManager()
         self.background = self._load_background()
         self.ui_bar = BottomUIBar(self.screen_width, self.screen_height)
+        # Per-run turn log; previous game's entries shouldn't bleed in.
+        self.turn_log = TurnLog()
 
     def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal",
                        galaxy_age="average"):
@@ -221,6 +228,40 @@ class Game:
                    _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
+
+        # Wire the diplomacy → player-log channel. Diplomacy fires
+        # ``on_player_event(turn, kind, a, b, treaty)`` only when the
+        # player is one of the involved empires.
+        player = self.player_empire()
+        if self.diplomacy is not None and player is not None:
+            self.diplomacy.player_id = player.id
+            self.diplomacy.on_player_event = self._log_diplomacy_event
+
+    def _log_diplomacy_event(self, turn: int, kind: str, a: int, b: int,
+                              treaty: str | None = None):
+        """Diplomacy → turn_log bridge. Resolves empire names and writes
+        a one-line, player-perspective summary. Only invoked when the
+        player is one of (a, b)."""
+        from ecs.turn_log import log as turn_log_fn, CAT_DIPLO
+        from ecs.diplomacy import TREATY_NAMES
+        player = self.player_empire()
+        if player is None:
+            return
+        other_id = b if a == player.id else a
+        other = next(
+            (e for _x, e in self.component_mgr.get_all(Empire) if e.id == other_id),
+            None,
+        )
+        other_name = other.name if other else f"Empire {other_id}"
+        tname = TREATY_NAMES.get(treaty, treaty) if treaty else ""
+        text = {
+            "declare_war":      f"War declared with {other_name}",
+            "make_peace":       f"Peace signed with {other_name}",
+            "betrayal":         f"Peace broken with {other_name} — they are now at war",
+            "cancel_scheduled": f"{tname} with {other_name} winding down",
+            "treaty_ended":     f"{tname} with {other_name} has ended",
+        }.get(kind, f"Diplomatic shift with {other_name}")
+        turn_log_fn(self, CAT_DIPLO, text)
 
     def player_empire(self) -> Empire | None:
         for _eid, emp in self.component_mgr.get_all(Empire):

@@ -85,12 +85,15 @@ TECH_BREAKTHROUGH_MAX = 150
 
 def _log(game, line: str):
     """Push an event to the game's rolling log AND the espionage report
-    log (which the Espionage scene already surfaces)."""
+    log (which the Espionage scene already surfaces). Also pushed to the
+    player-perspective turn log surfaced on the galaxy view."""
     existing = getattr(game, "events_log", []) or []
     game.events_log = (existing + [line])[-40:]
     esp = getattr(game, "espionage", None)
     if esp is not None:
         esp._log(line)
+    from ecs.turn_log import log as turn_log, CAT_EVENT
+    turn_log(game, CAT_EVENT, line)
 
 
 def _player(component_mgr):

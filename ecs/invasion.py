@@ -23,7 +23,7 @@ import random
 
 from ecs.components import (
     Planet, Orbiting, Owner, Population, BuildState, TechState, Empire,
-    Ship, ShipOwner, ShipAt, ShipInTransit,
+    Ship, ShipOwner, ShipAt, ShipInTransit, Name,
 )
 from ecs.projects import PROJECTS
 from ecs.techs import empire_marine_attack_bonus, empire_marine_defense_bonus
@@ -32,6 +32,7 @@ from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
     update_planet_workers, delete_ship, update_planet_conquest,
 )
+from ecs.turn_log import log as turn_log, CAT_COLONY
 
 
 TROOP_TRANSPORT_CLASS = "troop_transport"
@@ -246,6 +247,17 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
             update_planet_population(conn, planet.id, pop.current, pop.max, pop.growth_progress)
             update_planet_workers(conn, planet.id, pop.farmers, pop.workers, pop.scientists)
         conn.commit()
+
+    # Player-perspective turn log line if the player is on either side.
+    player = next((e for _x, e in cm.get_all(Empire) if e.is_player), None)
+    if player is not None and player.id in (empire_id, defender_owner.empire_id):
+        sn = cm.get_component(orbit.star_entity, Name)
+        star_name = sn.value if sn else "?"
+        if empire_id == player.id:
+            verb = "Captured" if success else "Failed invasion at"
+        else:  # player is the defender
+            verb = "Lost colony at" if success else "Repelled invasion at"
+        turn_log(game, CAT_COLONY, f"{verb} {star_name}")
 
     return {
         "success": success,

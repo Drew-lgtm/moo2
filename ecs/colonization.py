@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ecs.components import (
     Planet, Orbiting, Owner, Population, BuildState, Empire,
-    Ship, ShipOwner, ShipAt, ShipInTransit,
+    Ship, ShipOwner, ShipAt, ShipInTransit, Name,
 )
 from ecs.economy import compute_max_population, default_assignment
 from ecs.races import trait_count, traits_for_empire
@@ -21,6 +21,7 @@ from ecs.db import (
     get_connection, update_planet_owner, update_planet_population,
     update_planet_workers, delete_ship, update_planet_conquest,
 )
+from ecs.turn_log import log as turn_log, CAT_COLONY
 
 
 COLONY_SHIP_CLASS = "colony_ship"
@@ -124,4 +125,11 @@ def colonize_planet(game, planet_entity: int, empire_id: int) -> bool:
                                 planet.assimilation_progress, planet.guerrilla_turns)
         delete_ship(conn, ship_db_id)
         conn.commit()
+
+    # Player-perspective log entry.
+    if emp is not None and emp.is_player:
+        sn = cm.get_component(orbit.star_entity, Name)
+        star_name = sn.value if sn else "?"
+        turn_log(game, CAT_COLONY,
+                 f"Colonised {planet.planet_type.title()} at {star_name}")
     return True
