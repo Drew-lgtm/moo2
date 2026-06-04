@@ -193,7 +193,7 @@ class ColonyScene(Scene):
             profile = bs.autobuild if bs else ""
             label = profile_label(profile)
             lines = [f"Autobuild: {label}",
-                     "hint: cycles Off → Balanced → Economic → Scientific → Militaristic",
+                     "hint: cycles Off → Balanced → Economic → Scientific → Militaristic → Farming",
                      "hint: queues the next building when nothing else is being built"]
             return lines
         return None

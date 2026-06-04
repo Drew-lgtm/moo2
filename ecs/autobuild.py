@@ -18,30 +18,63 @@ from __future__ import annotations
 
 from ecs.components import Owner, BuildState, Empire, TechState, Planet
 from ecs.projects import PROJECTS, project_is_available
-from ecs.personalities import get as get_personality, PERSONALITIES
+from ecs.personalities import PERSONALITIES
 from ecs.db import get_connection, update_planet_build
 
 
-# Personalities the player can pick for a colony's autobuild. Same
-# catalog as the AI uses.
-AVAILABLE_PROFILES = list(PERSONALITIES.keys())  # ["balanced","economic",...]
+# Autobuild profiles — decoupled from AI personalities so we can add
+# player-only options (like "Farming") without polluting the AI's
+# behaviour catalog. The four AI-mirror profiles just borrow the
+# personality's ``build_priority`` so they stay in lock-step with how
+# the AI plays its own colonies.
+AUTOBUILD_PROFILES: dict[str, dict] = {
+    "balanced":     {"label": "Balanced",
+                     "build_priority": PERSONALITIES["balanced"]["build_priority"]},
+    "economic":     {"label": "Economic",
+                     "build_priority": PERSONALITIES["economic"]["build_priority"]},
+    "scientific":   {"label": "Scientific",
+                     "build_priority": PERSONALITIES["scientific"]["build_priority"]},
+    "militaristic": {"label": "Militaristic",
+                     "build_priority": PERSONALITIES["militaristic"]["build_priority"]},
+    # Player-only profile: stack every food / growth / max-pop building
+    # the empire can build, then back-fill with basic economy /
+    # research so a maxed-out farm world still pulls its weight.
+    "farming":      {"label": "Farming", "build_priority": [
+        "granary",              # +growth (no tech)
+        "hydroponics",          # +2 max pop (Agriculture)
+        "soil_enrichment_b",    # +1 max pop + growth (Soil Enrichment)
+        "cloning_center",       # +1 max pop + big growth (Cloning)
+        "atmospheric_renewer",  # +2 max pop + growth (Advanced Construction)
+        "terraforming",         # +3 max pop (Terraforming)
+        # Back-fill once the farming chain is exhausted so the world
+        # still contributes industry / BC / research / defence.
+        "factory", "marketplace", "research_lab", "capital",
+        "missile_base", "ground_batteries", "star_base",
+    ]},
+}
+
+# Cycle order shown by the Colony screen Auto button. "" = Off.
+PROFILE_CYCLE = ["", "balanced", "economic", "scientific", "militaristic", "farming"]
 
 
 def cycle_profile(current: str) -> str:
-    """Cycle order shown by the Colony screen Auto button:
-    "" (Off) -> balanced -> economic -> scientific -> militaristic -> ""."""
-    order = [""] + AVAILABLE_PROFILES
+    """Step the Auto button through the profile cycle."""
     try:
-        idx = order.index(current)
+        idx = PROFILE_CYCLE.index(current)
     except ValueError:
         idx = 0
-    return order[(idx + 1) % len(order)]
+    return PROFILE_CYCLE[(idx + 1) % len(PROFILE_CYCLE)]
 
 
 def profile_label(profile: str) -> str:
     if not profile:
         return "Off"
-    return PERSONALITIES.get(profile, {}).get("name", profile.title())
+    return AUTOBUILD_PROFILES.get(profile, {}).get("label", profile.title())
+
+
+def profile_priority(profile: str) -> list[str]:
+    """Project ids the autobuild tick walks for this profile."""
+    return AUTOBUILD_PROFILES.get(profile, {}).get("build_priority", [])
 
 
 def _player(component_mgr):
@@ -82,7 +115,7 @@ def autobuild_tick(game, new_turn: int):
         if planet is None:
             continue
 
-        priority = get_personality(bs.autobuild).get("build_priority", [])
+        priority = profile_priority(bs.autobuild)
         completed = set(bs.completed)
         for project_id in priority:
             proj = PROJECTS.get(project_id)
