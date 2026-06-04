@@ -23,15 +23,19 @@ from __future__ import annotations
 
 import random
 
-from ecs.components import Empire, Owner, Population, Planet, TechState
+from ecs.components import (
+    Empire, Owner, Population, Planet, TechState, BuildState,
+    ShipInTransit, Orbiting, Name,
+)
 from ecs.techs import TECHS, is_available
 from ecs.db import (
     get_connection, insert_empire_tech, update_empire_economy,
     update_planet_population, update_planet_workers, update_planet_plague,
-    update_empire_tech, delete_planet_building,
+    update_empire_tech, delete_planet_building, update_planet_owner,
+    update_planet_build, insert_planet_building,
 )
-from ecs.components import BuildState
 from ecs.projects import PROJECTS
+from ecs.economy import default_assignment, compute_max_population
 
 
 # Per-turn chance ANY event fires. Tuned conservative so events feel
@@ -39,19 +43,24 @@ from ecs.projects import PROJECTS
 EVENT_BASE_CHANCE = 0.12
 
 # Weighted catalog. Higher weight = more likely when an event fires.
-# Roughly balanced 8 positive : 10 negative weight — slight adversity
-# bias keeps the game tense without feeling punitive.
+# Slight adversity bias keeps the game tense without feeling punitive.
 EVENT_WEIGHTS = {
     # Positive
-    "derelict":         2,    # free random tech
-    "trader":           2,    # +BC
-    "pop_boom":         2,    # +pop on a colony
-    "tech_breakthrough": 2,   # +RP onto current research target
+    "derelict":            2,   # free random tech
+    "trader":              2,   # +BC
+    "pop_boom":            2,   # +pop on a colony
+    "tech_breakthrough":   2,   # +RP onto current research target
+    "cultural_exchange":   2,   # AI's attitude toward player goes up
+    "lost_colony":         1,   # find an abandoned habitable world (rare)
+    # Narrative
+    "antaran_scout":       1,   # sets up future Antaran pillar; log only
     # Negative
-    "plague":           3,    # multi-turn pop loss
-    "pirate_raid":      3,    # BC drain
-    "solar_flare":      2,    # 1 building destroyed
-    "comet_strike":     2,    # 1 pop + 1 building lost
+    "plague":              3,   # multi-turn pop loss
+    "pirate_raid":         3,   # BC drain
+    "solar_flare":         2,   # 1 building destroyed
+    "comet_strike":        2,   # 1 pop + 1 building lost
+    "diplomatic_incident": 2,   # AI's attitude toward player drops
+    "space_storm":         2,   # delays one in-transit fleet
 }
 
 # Plague tuning.
@@ -418,17 +427,205 @@ def _trigger_comet_strike(game, turn: int, rng):
     _log(game, f"T{turn}: Comet impact on planet #{planet.id} — 1M dead{extra}.")
 
 
+# ---- Diplomatic Incident / Cultural Exchange — AI attitude shifts ----
+
+ATTITUDE_INCIDENT_MIN = -15
+ATTITUDE_INCIDENT_MAX = -5
+ATTITUDE_EXCHANGE_MIN = 5
+ATTITUDE_EXCHANGE_MAX = 15
+
+
+def _pick_diplomatic_target(game, rng):
+    """A still-living non-player empire, or None. Used by the two
+    attitude-shift events."""
+    cm = game.component_mgr
+    player = _player(cm)
+    if player is None:
+        return None
+    others = [e for _eid, e in cm.get_all(Empire) if e.id != player.id]
+    return rng.choice(others) if others else None
+
+
+def _trigger_diplomatic_incident(game, turn: int, rng):
+    diplo = getattr(game, "diplomacy", None)
+    player = _player(game.component_mgr)
+    target = _pick_diplomatic_target(game, rng)
+    if diplo is None or player is None or target is None:
+        return
+    delta = rng.randint(ATTITUDE_INCIDENT_MIN, ATTITUDE_INCIDENT_MAX)
+    diplo.adjust_attitude(target.id, player.id, delta)
+    diplo.save()
+    _log(game, f"T{turn}: Diplomatic incident — {target.name} attitude toward "
+               f"you shifted by {delta}.")
+
+
+def _trigger_cultural_exchange(game, turn: int, rng):
+    diplo = getattr(game, "diplomacy", None)
+    player = _player(game.component_mgr)
+    target = _pick_diplomatic_target(game, rng)
+    if diplo is None or player is None or target is None:
+        return
+    delta = rng.randint(ATTITUDE_EXCHANGE_MIN, ATTITUDE_EXCHANGE_MAX)
+    diplo.adjust_attitude(target.id, player.id, delta)
+    diplo.save()
+    _log(game, f"T{turn}: Cultural exchange with {target.name} — relations "
+               f"improved by +{delta}.")
+
+
+# ---- Space Storm — delays one in-transit fleet -----------------------
+
+def _trigger_space_storm(game, turn: int, rng):
+    """A random player-owned ship in transit gets +1-2 turns added to
+    its travel time. No-op if no fleets are moving."""
+    cm = game.component_mgr
+    player = _player(cm)
+    if player is None:
+        return
+    in_transit = []
+    for ship_entity, transit in cm.get_all(ShipInTransit):
+        from ecs.components import ShipOwner
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if owner is None or owner.empire_id != player.id:
+            continue
+        in_transit.append((ship_entity, transit))
+    if not in_transit:
+        return
+    _ship_entity, transit = rng.choice(in_transit)
+    delay = rng.randint(1, 2)
+    transit.turns_remaining += delay
+    transit.total_turns += delay
+    # Persist via the existing ship-transit updater.
+    from ecs.components import Ship
+    from ecs.db import update_ship_transit, get_connection as _gc
+    from ecs.components import StarRef
+    ship = cm.get_component(_ship_entity, Ship)
+    from_ref = cm.get_component(transit.from_star_entity, StarRef)
+    to_ref = cm.get_component(transit.to_star_entity, StarRef)
+    if (ship is not None and from_ref is not None and to_ref is not None):
+        with _gc() as conn:
+            update_ship_transit(conn, ship.id, from_ref.db_id, to_ref.db_id,
+                                 transit.turns_remaining)
+            conn.commit()
+    _log(game, f"T{turn}: A hyperspace anomaly delayed one of your fleets by "
+               f"{delay} turn(s).")
+
+
+# ---- Lost Colony Discovery — pre-built habitable world appears -------
+
+def _trigger_lost_colony(game, turn: int, rng):
+    """Pick an unowned habitable planet in space the player has
+    explored, gift it to the player with 2M pop and a couple of
+    completed buildings. Rare big-win event."""
+    cm = game.component_mgr
+    player = _player(cm)
+    exploration = getattr(game, "exploration", None)
+    if player is None:
+        return
+    # Eligible: unowned, habitable, at an explored star (so the player
+    # could plausibly find it; the abandoned world is "discovered" in
+    # known space).
+    candidates = []
+    for entity_id, orbit in cm.get_all(Orbiting):
+        planet = cm.get_component(entity_id, Planet)
+        if planet is None or not planet.colonizable:
+            continue
+        if cm.get_component(entity_id, Owner) is not None:
+            continue
+        if exploration is not None:
+            from ecs.components import StarRef
+            ref = cm.get_component(orbit.star_entity, StarRef)
+            if ref is None or not exploration.is_explored(player.id, ref.db_id):
+                continue
+        candidates.append((entity_id, planet))
+    if not candidates:
+        return
+    entity_id, planet = rng.choice(candidates)
+    # Seed pop and a small jumpstart of buildings.
+    initial_pop = 2
+    from ecs.races import traits_for_empire, trait_count
+    traits = traits_for_empire(cm, player.id)
+    max_pop = compute_max_population(planet.planet_type, planet.size)
+    max_pop += 2 * trait_count(traits, "subterranean")
+    farmers, workers, scientists = default_assignment(planet.planet_type, initial_pop)
+    cm.add_component(entity_id, Owner(empire_id=player.id))
+    # Mark as freshly-founded by the player — fully aligned, no
+    # assimilation needed.
+    planet.original_race = player.race_type
+    planet.assimilation_progress = 100
+    planet.guerrilla_turns = 0
+    pop = cm.get_component(entity_id, Population)
+    if pop is None:
+        cm.add_component(entity_id, Population(
+            current=initial_pop, max=max_pop,
+            farmers=farmers, workers=workers, scientists=scientists,
+        ))
+    else:
+        pop.current = initial_pop
+        pop.max = max_pop
+        pop.farmers, pop.workers, pop.scientists = farmers, workers, scientists
+    bs = cm.get_component(entity_id, BuildState)
+    if bs is None:
+        bs = BuildState()
+        cm.add_component(entity_id, bs)
+    # Two free buildings — relic of the abandoned colonists.
+    for pid in ("factory", "granary"):
+        if pid not in bs.completed:
+            bs.completed.append(pid)
+    with get_connection() as conn:
+        update_planet_owner(conn, planet.id, player.id)
+        update_planet_population(conn, planet.id, initial_pop, max_pop, 0.0)
+        update_planet_workers(conn, planet.id, farmers, workers, scientists)
+        update_planet_build(conn, planet.id, bs.current_project, bs.progress)
+        for pid in ("factory", "granary"):
+            insert_planet_building(conn, planet.id, pid)
+        from ecs.db import update_planet_conquest
+        update_planet_conquest(conn, planet.id, planet.original_race,
+                                planet.assimilation_progress, planet.guerrilla_turns)
+        conn.commit()
+    _log(game, f"T{turn}: Scouts found an abandoned colony on planet "
+               f"#{planet.id}! 2M pop, with a working Factory and Granary "
+               f"left behind.")
+
+
+# ---- Antaran Scout — narrative warning (no mechanical effect yet) ----
+
+def _trigger_antaran_scout(game, turn: int, rng):
+    """Sets up the future Antaran threat. For now just a log line —
+    the actual late-game raid mechanic is on the backlog."""
+    cm = game.component_mgr
+    player = _player(cm)
+    if player is None:
+        return
+    # Try to name the player's homeworld if we can find it.
+    star_name = "your home system"
+    if player.home_star_id:
+        from ecs.components import StarRef
+        for star_entity, ref in cm.get_all(StarRef):
+            if ref.db_id == player.home_star_id:
+                nm = cm.get_component(star_entity, Name)
+                if nm is not None:
+                    star_name = nm.value
+                break
+    _log(game, f"T{turn}: An Antaran scout was sighted near {star_name}. "
+               f"Something stirs in deep space.")
+
+
 # ---- Tick orchestration -----------------------------------------------
 
 EVENT_HANDLERS = {
-    "derelict":         _trigger_derelict,
-    "trader":           _trigger_trader,
-    "pop_boom":         _trigger_pop_boom,
-    "tech_breakthrough": _trigger_tech_breakthrough,
-    "plague":           _trigger_plague,
-    "pirate_raid":      _trigger_pirate_raid,
-    "solar_flare":      _trigger_solar_flare,
-    "comet_strike":     _trigger_comet_strike,
+    "derelict":            _trigger_derelict,
+    "trader":              _trigger_trader,
+    "pop_boom":            _trigger_pop_boom,
+    "tech_breakthrough":   _trigger_tech_breakthrough,
+    "cultural_exchange":   _trigger_cultural_exchange,
+    "lost_colony":         _trigger_lost_colony,
+    "antaran_scout":       _trigger_antaran_scout,
+    "plague":              _trigger_plague,
+    "pirate_raid":         _trigger_pirate_raid,
+    "solar_flare":         _trigger_solar_flare,
+    "comet_strike":        _trigger_comet_strike,
+    "diplomatic_incident": _trigger_diplomatic_incident,
+    "space_storm":         _trigger_space_storm,
 }
 
 
