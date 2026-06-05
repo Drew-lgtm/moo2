@@ -884,10 +884,41 @@ def _ai_espionage(game, empire, personality):
         return
 
     at_war = diplo is not None and diplo.at_war(empire.id, target.id)
-    mission = "sabotage" if (at_war or personality.get("aggressive")) else "steal"
+    aggressive = bool(personality.get("aggressive"))
+    others_count = len(others)
+    mission = _ai_pick_spy_mission(at_war, aggressive, others_count, _random)
+    # Free any prior assignments against this target so a new pick
+    # doesn't strand spies on the wrong mission (e.g. last turn's Steal
+    # while this turn we want Sabotage).
+    from ecs.espionage import MISSIONS as _MISSIONS
+    for old in _MISSIONS:
+        n = esp.mission_count(empire.id, target.id, old)
+        if n:
+            esp.adjust_mission(empire.id, target.id, old, -n)
     assign = max(0, esp.defense_count(empire.id) - 1)  # keep one defender
     if assign > 0:
         esp.adjust_mission(empire.id, target.id, mission, assign)
+
+
+def _ai_pick_spy_mission(at_war: bool, aggressive: bool, n_others: int, rng) -> str:
+    """Roll a mission for the AI based on disposition. Wartime favours
+    direct disruption (sabotage / incite / assassinate); peacetime
+    aggression favours Frame (it scapegoats a third party). Falls back
+    to Steal Tech when there aren't enough rivals to frame."""
+    if at_war:
+        return rng.choices(
+            ["sabotage", "incite", "assassinate", "steal"],
+            weights=[5, 3, 2, 1], k=1,
+        )[0]
+    if aggressive:
+        # Frame needs at least one third empire to blame.
+        pool = ["steal", "sabotage", "assassinate"]
+        weights = [4, 2, 1]
+        if n_others >= 2:
+            pool.insert(0, "frame")
+            weights.insert(0, 4)
+        return rng.choices(pool, weights=weights, k=1)[0]
+    return rng.choices(["steal", "sabotage"], weights=[4, 1], k=1)[0]
 
 
 # ---- Leaders -----------------------------------------------------------

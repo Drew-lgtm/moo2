@@ -262,16 +262,23 @@ def leader_tooltip(leader, assignment_label: str | None = None) -> list[str]:
 # ----- spies ----------------------------------------------------------
 
 _SPY_MISSION_HINTS = {
-    "steal":    "Copy a random tech the target knows and you don't. "
-                "Caught spies who get identified poison relations.",
-    "sabotage": "Destroy a random target building, or drain BC if "
-                "nothing to wreck.",
-    "defense":  "Counter-intel at home. Boosts security against incoming spies.",
+    "steal":       "Copy a random tech the target knows and you don't. "
+                   "Caught spies who get identified poison relations.",
+    "sabotage":    "Destroy a random target building, or drain BC if "
+                   "nothing to wreck.",
+    "assassinate": "Kill one of the target's hired leaders. Higher catch "
+                   "risk — wet work is loud.",
+    "incite":      "Spark guerrilla unrest on a target colony: resets "
+                   "assimilation, ground forces wear down.",
+    "frame":       "Sabotage with a fall guy: a random THIRD empire "
+                   "takes the diplomatic blame. Needs 3+ rivals alive.",
+    "defense":     "Counter-intel at home. Boosts security against incoming spies.",
 }
 
 
 def spy_mission_tooltip(mission: str) -> list[str]:
-    label = mission.capitalize()
+    from ecs.espionage import MISSION_NAMES
+    label = MISSION_NAMES.get(mission, mission.capitalize())
     hint = _SPY_MISSION_HINTS.get(mission, "")
     return [label, hint] if hint else [label]
 

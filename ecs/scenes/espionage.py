@@ -34,7 +34,9 @@ BAD_COLOR = (240, 130, 130)
 
 
 class EspionageScene(Scene):
-    ROW_H = 60
+    # Five missions now share a row; height bumped so the steppers can
+    # wrap onto two short rows under the empire name.
+    ROW_H = 86
 
     def __init__(self, game):
         super().__init__(game)
@@ -208,6 +210,15 @@ class EspionageScene(Scene):
     def _draw_rows(self, screen, player, esp, right_edge):
         top = 124
         y = top
+        # Three missions on row 1, two on row 2 — keeps cell width
+        # roughly equal so the labels don't overlap.
+        ROWS = [
+            (("steal",       "Steal"),
+             ("sabotage",    "Sabotage"),
+             ("assassinate", "Assassin")),
+            (("incite",      "Incite"),
+             ("frame",       "Frame")),
+        ]
         for emp in self._others():
             rect = pygame.Rect(20, y, right_edge - 40, self.ROW_H - 8)
             pygame.draw.rect(screen, ROW_BG, rect)
@@ -216,21 +227,21 @@ class EspionageScene(Scene):
             name = self.body_font.render(f"{emp.name}  ({emp.race_type})", True, TEXT_COLOR)
             screen.blit(name, (rect.x + 32, rect.y + 6))
 
-            # Mission steppers along the lower part of the row.
-            mx = rect.x + 32
-            my = rect.y + 30
-            for mission, label in (("steal", "Steal"), ("sabotage", "Sabotage")):
-                count = esp.mission_count(player.id, emp.id, mission)
-                lbl = self.small_font.render(label, True, HINT_COLOR)
-                screen.blit(lbl, (mx, my))
-                bx = mx + 70
-                minus = self._stepper(screen, bx, my - 2, "-")
-                cnt = self.body_font.render(str(count), True, TEXT_COLOR)
-                screen.blit(cnt, cnt.get_rect(center=(bx + 36, my + 7)))
-                plus = self._stepper(screen, bx + 54, my - 2, "+")
-                self._hits.append(("mission", (emp.id, mission, -1), minus))
-                self._hits.append(("mission", (emp.id, mission, +1), plus))
-                mx = bx + 100
+            for row_idx, row in enumerate(ROWS):
+                mx = rect.x + 32
+                my = rect.y + 30 + row_idx * 26
+                for mission, label in row:
+                    count = esp.mission_count(player.id, emp.id, mission)
+                    lbl = self.small_font.render(label, True, HINT_COLOR)
+                    screen.blit(lbl, (mx, my))
+                    bx = mx + 70
+                    minus = self._stepper(screen, bx, my - 2, "-")
+                    cnt = self.body_font.render(str(count), True, TEXT_COLOR)
+                    screen.blit(cnt, cnt.get_rect(center=(bx + 36, my + 7)))
+                    plus = self._stepper(screen, bx + 54, my - 2, "+")
+                    self._hits.append(("mission", (emp.id, mission, -1), minus))
+                    self._hits.append(("mission", (emp.id, mission, +1), plus))
+                    mx = bx + 100
             y += self.ROW_H
             if y > self.game.screen_height - 80:
                 break
