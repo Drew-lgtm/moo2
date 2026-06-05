@@ -79,8 +79,16 @@ class Espionage:
     def __init__(self):
         # empire_id -> trained spy count
         self.spies: dict[int, int] = {}
-        # (attacker_id, target_id) -> {"steal": int, "sabotage": int}
+        # (attacker_id, target_id) -> {mission: int} — REALIZED active
+        # counts (spies actually on the job right now).
         self.missions: dict[tuple[int, int], dict[str, int]] = {}
+        # Mirror of ``missions`` but for DESIRED counts. The +/- stepper
+        # writes here; lost spies do NOT decrement desired, so freshly
+        # trained replacements automatically re-fill the slot.
+        self.desired: dict[tuple[int, int], dict[str, int]] = {}
+        # empire_id -> N. Each turn, if spy_count < N, one spy is
+        # auto-trained (if BC affords). 0 = off (manual training only).
+        self.auto_train_target: dict[int, int] = {}
         # rolling log of notable events (player-facing)
         self.log: list[str] = []
 
@@ -89,21 +97,46 @@ class Espionage:
     def spy_count(self, empire_id: int) -> int:
         return self.spies.get(empire_id, 0)
 
-    def _mission_slot(self, attacker: int, target: int) -> dict[str, int]:
-        key = (attacker, target)
-        if key not in self.missions:
-            self.missions[key] = {m: 0 for m in MISSIONS}
-        # Backfill any new mission keys onto pre-existing slots so older
-        # saves keep working when MISSIONS grows.
-        slot = self.missions[key]
+    @staticmethod
+    def _ensure_keys(slot: dict[str, int]) -> dict[str, int]:
         for m in MISSIONS:
             slot.setdefault(m, 0)
         return slot
 
+    def _mission_slot(self, attacker: int, target: int) -> dict[str, int]:
+        """Realized (active) mission slot — spies actually working."""
+        key = (attacker, target)
+        if key not in self.missions:
+            self.missions[key] = {m: 0 for m in MISSIONS}
+        return self._ensure_keys(self.missions[key])
+
+    def _desired_slot(self, attacker: int, target: int) -> dict[str, int]:
+        """Desired mission slot — what the player wants. Sticky across
+        spy deaths so freshly trained replacements can refill."""
+        key = (attacker, target)
+        if key not in self.desired:
+            # Inherit from any pre-existing active slot so old saves /
+            # tests that only set ``missions`` still see consistent
+            # desired counts. Subsequent +/- via adjust_mission writes
+            # directly here.
+            seed = dict(self._mission_slot(attacker, target))
+            self.desired[key] = seed
+        return self._ensure_keys(self.desired[key])
+
     def mission_count(self, attacker: int, target: int, mission: str) -> int:
+        """The DESIRED count for the slot — this is what the player
+        controls and what the UI displays. The realized (active) count
+        may be lower temporarily after a spy dies."""
+        return self._desired_slot(attacker, target).get(mission, 0)
+
+    def active_count(self, attacker: int, target: int, mission: str) -> int:
+        """Spies actually working this slot right now."""
         return self._mission_slot(attacker, target).get(mission, 0)
 
     def assigned_offensive(self, empire_id: int) -> int:
+        """Active spies committed to offensive work. Defense pool =
+        spy_count - this. Trimmed counts (post spy-death) are reflected
+        here; desired-but-unfilled gaps are NOT counted."""
         total = 0
         for (atk, _tgt), slot in self.missions.items():
             if atk == empire_id:
@@ -118,29 +151,86 @@ class Espionage:
         """Alias for defense_count — spies free to be reassigned."""
         return self.defense_count(empire_id)
 
+    def auto_train_target_for(self, empire_id: int) -> int:
+        return self.auto_train_target.get(empire_id, 0)
+
     # -- mutations ------------------------------------------------------
 
     def train_spy(self, empire_id: int, n: int = 1):
         self.spies[empire_id] = self.spies.get(empire_id, 0) + n
+        # New recruit might fill a gap left by a fallen colleague.
+        self._reconcile(empire_id)
 
     def adjust_mission(self, attacker: int, target: int, mission: str, delta: int):
-        """Move ``delta`` spies onto/off a mission, clamped so total
-        offensive spies never exceed the trained pool."""
+        """Move ``delta`` spies onto/off a mission. Writes to ``desired``
+        and then reconciles to active. Increases beyond the trained pool
+        are allowed in desired (sticky goal — auto-trained spies will
+        fill it later), but the active count is clamped to free spies."""
         if mission not in MISSIONS or attacker == target:
             return
-        slot = self._mission_slot(attacker, target)
-        cur = slot.get(mission, 0)
-        if delta > 0:
-            delta = min(delta, self.defense_count(attacker))  # only free spies
+        d_slot = self._desired_slot(attacker, target)
+        cur = d_slot.get(mission, 0)
         new = max(0, cur + delta)
-        slot[mission] = new
+        # Cap manual increases at trained spy count to avoid runaway
+        # phantom goals — desired beyond spy_count is meaningless without
+        # auto-train to back it up.
+        if delta > 0:
+            cap = self.spy_count(attacker)
+            new = min(new, max(cur, cap))
+        d_slot[mission] = new
+        self._reconcile(attacker)
+
+    def set_auto_train_target(self, empire_id: int, target: int):
+        target = max(0, int(target))
+        if target == 0:
+            self.auto_train_target.pop(empire_id, None)
+        else:
+            self.auto_train_target[empire_id] = target
 
     def lose_spy(self, attacker: int, target: int, mission: str):
-        """A caught spy is removed from the pool and its mission slot."""
+        """A caught spy is removed from the pool and from the ACTIVE
+        slot. Desired stays put — a replacement spy will re-fill it."""
         slot = self._mission_slot(attacker, target)
         if slot.get(mission, 0) > 0:
             slot[mission] -= 1
         self.spies[attacker] = max(0, self.spies.get(attacker, 0) - 1)
+
+    def _reconcile(self, empire_id: int):
+        """Make active counts match desired, constrained by trained
+        spies. Trims any active counts that exceed desired (player just
+        decreased a stepper), then fills gaps in deterministic order
+        (lowest target id first, MISSIONS order). Free spies left over
+        stay on defense duty."""
+        # 1. Trim active where it exceeds desired.
+        for (a, t), a_slot in self.missions.items():
+            if a != empire_id:
+                continue
+            d_slot = self._desired_slot(a, t)
+            for m in MISSIONS:
+                cap = d_slot.get(m, 0)
+                if a_slot.get(m, 0) > cap:
+                    a_slot[m] = cap
+        # 2. Fill gaps with whatever free spies we have.
+        free = self.defense_count(empire_id)
+        if free <= 0:
+            return
+        gaps: list[tuple[int, int, str, int]] = []
+        for (a, t), d_slot in self.desired.items():
+            if a != empire_id:
+                continue
+            a_slot = self._mission_slot(a, t)
+            for m in MISSIONS:
+                want = d_slot.get(m, 0)
+                have = a_slot.get(m, 0)
+                if have < want:
+                    gaps.append((t, MISSIONS.index(m), m, want - have))
+        gaps.sort()
+        for t, _idx, m, gap in gaps:
+            n = min(gap, free)
+            if n <= 0:
+                break
+            self._mission_slot(empire_id, t)[m] += n
+            free -= n
 
     def _log(self, msg: str):
         self.log.append(msg)
@@ -153,6 +243,8 @@ class Espionage:
         with get_connection() as conn:
             conn.execute("DELETE FROM spies")
             conn.execute("DELETE FROM spy_missions")
+            conn.execute("DELETE FROM spy_missions_desired")
+            conn.execute("DELETE FROM espionage_settings")
             for eid, count in self.spies.items():
                 if count > 0:
                     conn.execute(
@@ -167,17 +259,45 @@ class Espionage:
                             "VALUES (?, ?, ?, ?)",
                             (atk, tgt, mission, n),
                         )
+            for (atk, tgt), slot in self.desired.items():
+                for mission, n in slot.items():
+                    if n > 0:
+                        conn.execute(
+                            "INSERT INTO spy_missions_desired (attacker, target, mission, count) "
+                            "VALUES (?, ?, ?, ?)",
+                            (atk, tgt, mission, n),
+                        )
+            for eid, target in self.auto_train_target.items():
+                if target > 0:
+                    conn.execute(
+                        "INSERT INTO espionage_settings (empire_id, auto_train_target) "
+                        "VALUES (?, ?)",
+                        (eid, target),
+                    )
             conn.commit()
 
     def load(self):
         self.spies.clear()
         self.missions.clear()
+        self.desired.clear()
+        self.auto_train_target.clear()
         with get_connection() as conn:
             for row in conn.execute("SELECT * FROM spies"):
                 self.spies[row["empire_id"]] = row["count"]
             for row in conn.execute("SELECT * FROM spy_missions"):
                 slot = self._mission_slot(row["attacker"], row["target"])
                 slot[row["mission"]] = row["count"]
+            for row in conn.execute("SELECT * FROM spy_missions_desired"):
+                slot = self._desired_slot(row["attacker"], row["target"])
+                slot[row["mission"]] = row["count"]
+            for row in conn.execute("SELECT * FROM espionage_settings"):
+                if row["auto_train_target"] > 0:
+                    self.auto_train_target[row["empire_id"]] = row["auto_train_target"]
+        # Pre-existing saves had only ``spy_missions`` (active count) —
+        # seed desired from active so the sticky behaviour kicks in on
+        # the next death without losing prior assignments.
+        for key, slot in self.missions.items():
+            self.desired.setdefault(key, dict(slot))
 
 
 # ---- per-turn resolution ----------------------------------------------
@@ -207,8 +327,39 @@ def _empire_colonies(cm, empire_id: int) -> list[int]:
     return [eid for eid, owner in cm.get_all(Owner) if owner.empire_id == empire_id]
 
 
+def _auto_train_pass(game, esp, cm):
+    """Train one spy per empire per turn while ``auto_train_target`` is
+    > current count AND the empire can afford ``SPY_COST``. Caps at +1
+    per turn so an empire with deep treasure can't sprint up to a fleet
+    of spies in a single tick — same cadence as the AI's training
+    heuristic. Player only — AI handles its own training in ``_ai_espionage``."""
+    writes: list[tuple[int, int, int]] = []
+    for _eid, emp in cm.get_all(Empire):
+        # Skip AI; AI training lives in ai.py and the player doesn't get
+        # a free spy on top of its own logic.
+        if not emp.is_player:
+            continue
+        target = esp.auto_train_target_for(emp.id)
+        if target <= 0:
+            continue
+        if esp.spy_count(emp.id) >= target:
+            continue
+        if emp.bc < SPY_COST:
+            continue
+        emp.bc -= SPY_COST
+        esp.train_spy(emp.id)
+        writes.append((emp.id, emp.bc, emp.research_points))
+        esp._log(f"Auto-trained a new spy ({SPY_COST} BC).")
+    if writes:
+        with get_connection() as conn:
+            for eid, bc, rp in writes:
+                update_empire_economy(conn, eid, bc, rp)
+            conn.commit()
+
+
 def espionage_tick(game, new_turn: int):
-    """Turn callback: resolve every offensive spy, then persist."""
+    """Turn callback: auto-train, resolve every offensive spy, then
+    reconcile and persist."""
     esp = getattr(game, "espionage", None)
     if esp is None:
         return
@@ -218,6 +369,11 @@ def espionage_tick(game, new_turn: int):
     unlocked = _unlocked_by_empire(cm)
     player = game.player_empire()
     player_id = player.id if player else None
+
+    # Auto-train pass: one spy per empire per turn while under target +
+    # affordable. Mirrors the cadence of the AI's own training cap so
+    # an auto-trained player can't sprint past 1 spy/turn either.
+    _auto_train_pass(game, esp, cm)
 
     def name(eid):
         emp = _empire_for(cm, eid)

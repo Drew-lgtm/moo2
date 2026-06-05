@@ -154,6 +154,24 @@ def init_db():
             PRIMARY KEY(attacker, target, mission)
         );
 
+        -- Sticky desired-assignment counts: spies that die on a mission
+        -- leave the slot here, so a freshly trained replacement re-fills
+        -- it instead of going to defense.
+        CREATE TABLE IF NOT EXISTS spy_missions_desired (
+            attacker INTEGER NOT NULL,
+            target INTEGER NOT NULL,
+            mission TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY(attacker, target, mission)
+        );
+
+        -- Per-empire espionage prefs (auto-train target). One row per
+        -- empire; absence means auto-train is off.
+        CREATE TABLE IF NOT EXISTS espionage_settings (
+            empire_id INTEGER PRIMARY KEY,
+            auto_train_target INTEGER DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS leaders (
             id INTEGER PRIMARY KEY,
             name TEXT,
@@ -589,6 +607,7 @@ def clear_galaxy():
         for table in ("planet_build_queue", "planet_buildings", "ships",
                       "empire_techs", "planets", "empires", "stars", "meta",
                       "diplomacy", "diplomacy_pending", "empire_explored",
-                      "spies", "spy_missions", "leaders", "empire_locked_techs"):
+                      "spies", "spy_missions", "spy_missions_desired",
+                      "espionage_settings", "leaders", "empire_locked_techs"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

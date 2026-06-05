@@ -91,6 +91,15 @@ class EspionageScene(Scene):
                     f"hint: {SPY_COST} BC for one operative",
                     "hint: untasked spies defend the empire (counter-intel)",
                 ]
+            if action == "auto_train":
+                target = esp.auto_train_target_for(player.id)
+                return [
+                    "Auto-train target",
+                    f"hint: currently {target}",
+                    f"hint: each turn while under target, 1 spy "
+                    f"auto-trained for {SPY_COST} BC",
+                    "hint: set-and-forget replacement for fallen spies",
+                ]
             if action == "mission":
                 target_id, mission, delta = payload
                 from ecs.tooltips import spy_mission_tooltip
@@ -144,6 +153,12 @@ class EspionageScene(Scene):
             else:
                 self.banner = ""
             esp.save()
+        elif action == "auto_train":
+            delta = payload
+            cur = esp.auto_train_target_for(player.id)
+            esp.set_auto_train_target(player.id, cur + delta)
+            esp.save()
+            self.banner = ""
 
     # ------------------------------------------------------------------ draw
 
@@ -182,7 +197,10 @@ class EspionageScene(Scene):
             screen.blit(self.small_font.render("Active: " + ", ".join(tags), True, GOOD_COLOR),
                         (20, 72))
 
-        # Train button.
+        # Train button + auto-train stepper. The Train Spy button is the
+        # one-shot. Below it sits a small "Auto-train: N" picker that
+        # tells the espionage tick to keep replacing fallen spies up to
+        # this count each turn (costs SPY_COST each, paid automatically).
         train_rect = pygame.Rect(sw - 230, 48, 200, 30)
         afford = player.bc >= SPY_COST
         pygame.draw.rect(screen, BTN_BG if afford else (40, 40, 52), train_rect)
@@ -191,6 +209,21 @@ class EspionageScene(Scene):
         tlabel = self.body_font.render(f"Train Spy  ({SPY_COST} BC)", True, tcolor)
         screen.blit(tlabel, tlabel.get_rect(center=train_rect.center))
         self._hits.append(("train", None, train_rect))
+
+        # Auto-train stepper, sitting directly under the train button.
+        at_target = esp.auto_train_target_for(player.id)
+        at_y = train_rect.bottom + 6
+        at_label = self.small_font.render(
+            f"Auto-train target:  {at_target}", True,
+            TEXT_COLOR if at_target > 0 else HINT_COLOR,
+        )
+        screen.blit(at_label, (train_rect.x, at_y))
+        # Two steppers, right side of the row.
+        bx = train_rect.right - 60
+        minus = self._stepper(screen, bx, at_y - 2, "-")
+        plus  = self._stepper(screen, bx + 30, at_y - 2, "+")
+        self._hits.append(("auto_train", -1, minus))
+        self._hits.append(("auto_train", +1, plus))
 
         # Banner.
         if self.banner:
