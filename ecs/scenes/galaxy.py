@@ -427,6 +427,7 @@ class GalaxyScene(Scene):
                 else:
                     self._draw_unexplored_label(screen, position)
 
+        self._draw_trade_routes(screen)
         self._draw_in_transit_ships(screen)
         self._draw_selection_ring(screen)
         self._draw_fleet_pathing(screen)
@@ -831,6 +832,38 @@ class GalaxyScene(Scene):
                 and diplo.treaties(player.id, owner_empire_id)):
             return self.PATH_FRIENDLY
         return self.PATH_HOSTILE
+
+    def _draw_trade_routes(self, screen):
+        """Faint dashed lines from food-surplus colonies to food-deficit
+        ones, showing where the player's freighters are running this
+        turn. Routes are recomputed every frame from the same logic the
+        Trade panel would use — display only, no economy mutation.
+        Player perspective: AI freighter movement isn't surfaced."""
+        player = self.game.player_empire()
+        if player is None:
+            return
+        cm = self.game.component_mgr
+        from ecs.trade import trade_routes
+        from ecs.components import Orbiting, Position
+        routes = trade_routes(self.game, player.id)
+        if not routes:
+            return
+        for src_planet, dst_planet, _amount in routes:
+            src_orbit = cm.get_component(src_planet, Orbiting)
+            dst_orbit = cm.get_component(dst_planet, Orbiting)
+            if src_orbit is None or dst_orbit is None:
+                continue
+            sp = cm.get_component(src_orbit.star_entity, Position)
+            dp = cm.get_component(dst_orbit.star_entity, Position)
+            if sp is None or dp is None:
+                continue
+            # Faint teal dashes — distinct from the green fleet-pathing
+            # preview and the red/yellow detection lines.
+            self._draw_dashed_line(
+                screen, (90, 180, 200),
+                (sp.x, sp.y), (dp.x, dp.y),
+                dash_len=6, gap_len=8, width=1,
+            )
 
     def _draw_in_transit_ships(self, screen):
         """Draw every in-transit fleet's remaining path + position dot.
