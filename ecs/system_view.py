@@ -112,6 +112,11 @@ class SystemView:
         self.logical_w, self.logical_h = logical_size
 
         self.close_button_rect = pygame.Rect(self.logical_w - 100, 20, 80, 30)
+        # "Outpost Here" button — drawn only when ``can_plant_outpost``
+        # returns True for the player at this star. Scene wrapper polls
+        # ``pending_outpost_request`` to actually plant the outpost.
+        self.outpost_button_rect = pygame.Rect(self.logical_w - 240, 20, 130, 30)
+        self.pending_outpost_request: bool = False
         self.star_pos = component_mgr.get_component(star_id, Position)
         # Star colour comes from its spectral class so the system view
         # matches the coloured sprite the player just clicked. Falls
@@ -217,6 +222,10 @@ class SystemView:
             if self.close_button_rect.collidepoint(event.pos):
                 self.is_open = False
                 return
+            if (self._can_plant_outpost_here()
+                    and self.outpost_button_rect.collidepoint(event.pos)):
+                self.pending_outpost_request = True
+                return
             for entity_id, _planet, pos, radius, _rx, _ry in self.planet_layout:
                 hit = max(radius + 6, 14)
                 dx = event.pos[0] - pos[0]
@@ -266,6 +275,14 @@ class SystemView:
         close_text = font.render("Close", True, (255, 255, 255))
         overlay.blit(close_text, (self.close_button_rect.x + 10, self.close_button_rect.y + 5))
 
+        # "Outpost Here" — visible only when the player has an Outpost
+        # Ship parked here and the system is unclaimed.
+        if self._can_plant_outpost_here():
+            pygame.draw.rect(overlay, (40, 80, 40), self.outpost_button_rect)
+            pygame.draw.rect(overlay, (200, 220, 200), self.outpost_button_rect, 1)
+            lbl = font.render("Outpost Here", True, (240, 240, 240))
+            overlay.blit(lbl, lbl.get_rect(center=self.outpost_button_rect.center))
+
         self._draw_fleets_in_system(overlay, font)
         # Hint
         hint = font.render(
@@ -275,6 +292,21 @@ class SystemView:
         overlay.blit(hint, (24, self.logical_h - 32))
 
         self.screen.blit(overlay, (0, 0))
+
+    def _can_plant_outpost_here(self) -> bool:
+        """True if the player can plant an outpost at this star right
+        now. Looks up the player from the ECS so SystemView stays
+        independent of the Game object."""
+        cm = self.component_mgr
+        player_id = None
+        for _eid, emp in cm.get_all(Empire):
+            if emp.is_player:
+                player_id = emp.id
+                break
+        if player_id is None:
+            return False
+        from ecs.colonization import can_plant_outpost
+        return can_plant_outpost(cm, self.star_id, player_id)
 
     def _draw_planet_labels(self, overlay, font, entity_id, planet, pos):
         x, y = pos

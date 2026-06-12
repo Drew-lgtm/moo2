@@ -42,6 +42,15 @@ class SystemViewScene(Scene):
             self.view.pending_planet_click = None
             self.game.scenes.replace("colony")
             return
+        # Outpost button click — plant the outpost and stay on the
+        # system view so the player sees the empty system claim itself.
+        if getattr(self.view, "pending_outpost_request", False):
+            self.view.pending_outpost_request = False
+            player = self.game.player_empire()
+            if player is not None:
+                from ecs.colonization import plant_outpost
+                plant_outpost(self.game, self.view.star_id, player.id)
+            return
         if not self.view.is_open:
             self.game.scenes.replace("galaxy")
 

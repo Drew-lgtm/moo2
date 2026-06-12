@@ -294,10 +294,12 @@ class GalaxyScene(Scene):
 
     def _build_star_ownership(self) -> dict[int, list[tuple[tuple[int, int, int], int]]]:
         """For each star, return a list of (empire_color_rgb, count) for
-        empires that own at least one planet at that star. Empty planets
-        (no Owner component) don't contribute.
+        empires that own at least one planet OR an outpost at that
+        star. Outposts contribute one share so unsettled systems still
+        read as the empire's once claimed.
         """
         cm = self.game.component_mgr
+        from ecs.components import Outpost as _Outpost
         empire_color_by_id = {emp.id: emp.color for _e, emp in cm.get_all(Empire)}
         counts: dict[int, dict[int, int]] = {}
         for planet_entity, owner in cm.get_all(Owner):
@@ -306,6 +308,9 @@ class GalaxyScene(Scene):
                 continue
             star_bucket = counts.setdefault(orbit.star_entity, {})
             star_bucket[owner.empire_id] = star_bucket.get(owner.empire_id, 0) + 1
+        for star_entity, op in cm.get_all(_Outpost):
+            star_bucket = counts.setdefault(star_entity, {})
+            star_bucket[op.empire_id] = star_bucket.get(op.empire_id, 0) + 1
 
         result: dict[int, list[tuple[tuple[int, int, int], int]]] = {}
         for star_entity, by_empire in counts.items():

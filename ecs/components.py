@@ -29,6 +29,14 @@ class Name:
 class Owner:
     empire_id: int
 
+
+@dataclass
+class Outpost:
+    """An empire's claim to a star system without colonizing any of its
+    planets. Attached to the star entity (not to any planet). Provides
+    star-ownership for colouring/sensor purposes; one Outpost per star."""
+    empire_id: int
+
 @dataclass
 class Planet:
     """A planet orbiting a star.

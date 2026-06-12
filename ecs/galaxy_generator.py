@@ -457,3 +457,18 @@ class GalaxyGenerator:
                                 total_turns=total,
                             ),
                         )
+
+            # Outposts — restore claim components on the star entities.
+            # Missing table (very old DBs) → silently skip.
+            try:
+                from ecs.db import get_outposts
+                from ecs.components import Outpost
+                for op in get_outposts(conn):
+                    star_eid = star_entity_by_db_id.get(op["star_id"])
+                    if star_eid is None:
+                        continue
+                    self.component_mgr.add_component(
+                        star_eid, Outpost(empire_id=op["empire_id"])
+                    )
+            except Exception:
+                pass

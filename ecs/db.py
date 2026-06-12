@@ -172,6 +172,16 @@ def init_db():
             auto_train_target INTEGER DEFAULT 0
         );
 
+        -- Outposts claim a star system without colonizing any of its
+        -- planets. One outpost per star; the owning empire gains the
+        -- claim (counts for star-ownership colouring, blocks other
+        -- empires from outposting the same system). Future: extends
+        -- sensor range.
+        CREATE TABLE IF NOT EXISTS outposts (
+            star_id INTEGER PRIMARY KEY,
+            empire_id INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS leaders (
             id INTEGER PRIMARY KEY,
             name TEXT,
@@ -508,6 +518,29 @@ def delete_ship(conn, ship_id):
     conn.execute("DELETE FROM ships WHERE id = ?", (ship_id,))
 
 
+def insert_outpost(conn, star_id, empire_id):
+    """Idempotent: a star can only hold one outpost. Overwrites if the
+    same star is being claimed afresh (shouldn't happen in normal flow
+    but keeps load() safe)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO outposts (star_id, empire_id) VALUES (?, ?)",
+        (star_id, empire_id),
+    )
+
+
+def delete_outpost(conn, star_id):
+    conn.execute("DELETE FROM outposts WHERE star_id = ?", (star_id,))
+
+
+def get_outposts(conn=None):
+    """Return all (star_id, empire_id) rows. Used at galaxy load time."""
+    sql = "SELECT star_id, empire_id FROM outposts"
+    if conn is None:
+        with get_connection() as c:
+            return c.execute(sql).fetchall()
+    return conn.execute(sql).fetchall()
+
+
 def get_stars(conn=None):
     if conn is None:
         with get_connection() as c:
@@ -608,6 +641,7 @@ def clear_galaxy():
                       "empire_techs", "planets", "empires", "stars", "meta",
                       "diplomacy", "diplomacy_pending", "empire_explored",
                       "spies", "spy_missions", "spy_missions_desired",
-                      "espionage_settings", "leaders", "empire_locked_techs"):
+                      "espionage_settings", "outposts", "leaders",
+                      "empire_locked_techs"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()
