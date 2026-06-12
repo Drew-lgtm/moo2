@@ -47,13 +47,14 @@ from ecs.techs import (
 from ecs.races import trait_count, traits_for_empire
 
 
-MISSIONS = ["steal", "sabotage", "assassinate", "incite", "frame"]
+MISSIONS = ["steal", "sabotage", "assassinate", "incite", "frame", "hide"]
 MISSION_NAMES = {
     "steal":       "Steal Tech",
     "sabotage":    "Sabotage",
     "assassinate": "Assassinate",
     "incite":      "Incite Revolt",
     "frame":       "Frame Empire",
+    "hide":        "Hide Spy",
     "defense":     "Defense",
 }
 
@@ -385,6 +386,11 @@ def espionage_tick(game, new_turn: int):
     work: list[tuple[int, int, str]] = []
     for (atk, tgt), slot in esp.missions.items():
         for mission in MISSIONS:
+            # ``hide`` spies sit out the turn entirely — no roll, no catch
+            # risk. They still occupy a desired slot, so they aren't on
+            # defense, but they're cosmetically "on assignment".
+            if mission == "hide":
+                continue
             work.extend([(atk, tgt, mission)] * slot.get(mission, 0))
 
     if not work:

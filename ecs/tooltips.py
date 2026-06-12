@@ -272,6 +272,8 @@ _SPY_MISSION_HINTS = {
                    "assimilation, ground forces wear down.",
     "frame":       "Sabotage with a fall guy: a random THIRD empire "
                    "takes the diplomatic blame. Needs 3+ rivals alive.",
+    "hide":        "Lie low this turn — no action, no risk. Useful when "
+                   "the target has Mind Scan and your spies keep dying.",
     "defense":     "Counter-intel at home. Boosts security against incoming spies.",
 }
 
@@ -286,11 +288,12 @@ def spy_mission_tooltip(mission: str) -> list[str]:
 def spy_row_tooltip(emp, my_spies_here: dict) -> list[str]:
     """Tooltip for an enemy row in the Espionage screen — empire +
     current assignments against them."""
+    from ecs.espionage import MISSIONS, MISSION_NAMES
     lines = [f"Spy ops vs {emp.name}", f"hint: {emp.race_type}"]
-    for mission in ("steal", "sabotage"):
+    for mission in MISSIONS:
         n = my_spies_here.get(mission, 0)
         if n:
-            lines.append(f"{mission.capitalize()}: {n} assigned")
+            lines.append(f"{MISSION_NAMES.get(mission, mission.capitalize())}: {n} assigned")
     if not any(my_spies_here.values()):
         lines.append("hint: no operatives assigned")
     return lines

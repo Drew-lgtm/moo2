@@ -250,7 +250,8 @@ class EspionageScene(Scene):
              ("sabotage",    "Sabotage"),
              ("assassinate", "Assassin")),
             (("incite",      "Incite"),
-             ("frame",       "Frame")),
+             ("frame",       "Frame"),
+             ("hide",        "Hide")),
         ]
         for emp in self._others():
             rect = pygame.Rect(20, y, right_edge - 40, self.ROW_H - 8)
