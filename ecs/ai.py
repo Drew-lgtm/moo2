@@ -26,7 +26,8 @@ from ecs.fleet import start_fleet_movement
 from ecs.fuel import reachable_stars
 from ecs.ships import empire_freighter_capacity
 from ecs.colonization import (
-    COLONY_SHIP_CLASS, colonize_planet, can_colonize,
+    COLONY_SHIP_CLASS, OUTPOST_SHIP_CLASS, colonize_planet, can_colonize,
+    can_plant_outpost, plant_outpost,
 )
 from ecs.invasion import (
     TROOP_TRANSPORT_CLASS, can_invade, invade_planet,
@@ -54,6 +55,7 @@ from ecs.leaders import MAX_LEADERS_PER_EMPIRE
 # ships of a class (parked + in transit) so dispatching a fleet doesn't
 # reopen the build slot every turn.
 AI_MAX_COLONY_SHIPS = 2
+AI_MAX_OUTPOST_SHIPS = 2
 AI_MAX_TROOP_TRANSPORTS = 4
 AI_MAX_WARSHIPS_PER_CLASS = 3
 
@@ -164,8 +166,10 @@ def ai_tick(game, new_turn: int):
 
     # Galaxy-wide colonisation candidates — computed once per tick so
     # every AI can reuse the list (and so we know whether building more
-    # colony ships is worth it).
+    # colony ships is worth it). Same idea for outpost candidates: empty
+    # systems any AI could claim.
     candidate_stars = _unowned_habitable_stars(cm)
+    outpost_candidates = _outpost_candidate_stars(cm)
 
     for _eid, empire in cm.get_all(Empire):
         if empire.is_player:
@@ -179,8 +183,10 @@ def ai_tick(game, new_turn: int):
         planet_ids = empire_planets.get(empire.id, [])
         # Settle planets first — a Colony Ship already at a habitable
         # target should be spent this turn (before production_tick
-        # touches the new colony).
+        # touches the new colony). Same for outpost ships parked at
+        # empty systems.
         _ai_settle_arrived_colony_ships(game, empire, focus)
+        _ai_plant_arrived_outposts(game, empire)
 
         # Aggressive AIs invade enemy worlds with their Troop
         # Transports before doing anything else — settling first means a
@@ -196,7 +202,10 @@ def ai_tick(game, new_turn: int):
         # Decide which ship projects are wanted right now. A ship that
         # isn't wanted is suppressed so the build loop skips past it to
         # the next building instead of rebuilding the same hull forever.
-        suppress = _ai_suppressed_ships(cm, empire, personality, candidate_stars)
+        suppress = _ai_suppressed_ships(
+            cm, empire, personality, candidate_stars,
+            outpost_candidates=outpost_candidates,
+        )
 
         for entity_id in planet_ids:
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
@@ -213,6 +222,7 @@ def ai_tick(game, new_turn: int):
         # distance penalty), limited to fuel range.
         reachable = reachable_stars(game, empire.id)
         _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus, reachable)
+        _ai_dispatch_outpost_ships(cm, empire, outpost_candidates, reachable)
 
         # Diplomacy: gang up on runaways, sign treaties with friends,
         # declare war on hated rivals.
@@ -319,6 +329,26 @@ def _unowned_habitable_stars(cm) -> list[int]:
     return list(seen)
 
 
+def _outpost_candidate_stars(cm) -> list[int]:
+    """Stars worth planting an outpost on: no existing outpost, no
+    planet with an owner, and no habitable colonizable planet (those
+    are colony-ship territory). Returns the star entity ids."""
+    from ecs.components import Outpost as _Outpost, StarVisual as _StarVisual
+    # Set of stars that already have a colony, an outpost, or a
+    # colonizable planet — disqualified.
+    blocked: set[int] = set()
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        planet = cm.get_component(planet_entity, Planet)
+        if planet is None:
+            continue
+        if planet.colonizable or cm.get_component(planet_entity, Owner) is not None:
+            blocked.add(orbit.star_entity)
+    for star_entity, _op in cm.get_all(_Outpost):
+        blocked.add(star_entity)
+    # Walk every star entity and keep those not in `blocked`.
+    return [s for s, _v in cm.get_all(_StarVisual) if s not in blocked]
+
+
 def _count_ships(cm, empire_id: int, ship_class: str) -> int:
     """Total ships of ``empire_id`` + ``ship_class`` the empire owns,
     counting both parked and in-transit hulls. Used for fleet caps so
@@ -334,7 +364,8 @@ def _count_ships(cm, empire_id: int, ship_class: str) -> int:
     return n
 
 
-def _ai_suppressed_ships(cm, empire, personality, candidate_stars) -> tuple:
+def _ai_suppressed_ships(cm, empire, personality, candidate_stars,
+                         outpost_candidates=None) -> tuple:
     """Ship project ids the AI should NOT build this turn. The build
     loop skips suppressed entries, so an unwanted ship in the priority
     list no longer blocks lower-priority buildings."""
@@ -349,6 +380,12 @@ def _ai_suppressed_ships(cm, empire, personality, candidate_stars) -> tuple:
     # enough in the pipeline.
     if not candidate_stars or _count_ships(cm, empire.id, COLONY_SHIP_CLASS) >= AI_MAX_COLONY_SHIPS:
         suppress.add("ship_colony_ship")
+
+    # Outpost ships: stop when there are no empty systems to claim or
+    # the empire already has enough in the pipeline.
+    if (not outpost_candidates
+            or _count_ships(cm, empire.id, OUTPOST_SHIP_CLASS) >= AI_MAX_OUTPOST_SHIPS):
+        suppress.add("ship_outpost_ship")
 
     # Warships: cap per class for every AI so they don't get stuck
     # rebuilding the cheapest hull. Non-aggressive AIs keep only a token
@@ -482,6 +519,69 @@ def _ai_settle_arrived_colony_ships(game, empire, focus: str):
             if not can_colonize(cm, planet_entity, empire.id):
                 break
             colonize_planet(game, planet_entity, empire.id)
+
+
+def _ai_plant_arrived_outposts(game, empire):
+    """Plant outposts at any unclaimed star where an Outpost Ship is
+    parked. Mirrors ``_ai_settle_arrived_colony_ships`` but for the
+    simpler outpost case (one ship → one claim, no per-planet scoring)."""
+    cm = game.component_mgr
+    for ship_entity, at in list(cm.get_all(ShipAt)):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class != OUTPOST_SHIP_CLASS:
+            continue
+        # can_plant_outpost handles all the eligibility gates.
+        if can_plant_outpost(cm, at.star_entity, empire.id):
+            plant_outpost(game, at.star_entity, empire.id)
+
+
+def _ai_dispatch_outpost_ships(cm, empire, outpost_candidates: list[int],
+                                reachable: set[int] | None = None):
+    """Send parked Outpost Ships to the nearest reachable unclaimed
+    star. Distance-only since every candidate is equally valuable as a
+    claim — sensor coverage falls off with distance from owned space,
+    but the AI doesn't reason about that yet."""
+    if not outpost_candidates:
+        return
+    if reachable is not None:
+        outpost_candidates = [s for s in outpost_candidates if s in reachable]
+    if not outpost_candidates:
+        return
+    candidate_set = set(outpost_candidates)
+    ships_by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        ship = cm.get_component(ship_entity, Ship)
+        owner = cm.get_component(ship_entity, ShipOwner)
+        if ship is None or owner is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class != OUTPOST_SHIP_CLASS:
+            continue
+        if at.star_entity in candidate_set:
+            continue  # arrived — plant pass handles it
+        ships_by_star.setdefault(at.star_entity, []).append(ship_entity)
+
+    if not ships_by_star:
+        return
+
+    for src_star, ships in ships_by_star.items():
+        src_pos = cm.get_component(src_star, Position)
+        if src_pos is None:
+            continue
+        best, best_d2 = None, float("inf")
+        for cand in outpost_candidates:
+            if cand == src_star:
+                continue
+            cand_pos = cm.get_component(cand, Position)
+            if cand_pos is None:
+                continue
+            d2 = (cand_pos.x - src_pos.x) ** 2 + (cand_pos.y - src_pos.y) ** 2
+            if d2 < best_d2:
+                best_d2, best = d2, cand
+        if best is not None:
+            start_fleet_movement(cm, ships, src_star, best)
 
 
 # Distance penalty per parsec squared (px²) — keeps the formula in raw

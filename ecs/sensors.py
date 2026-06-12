@@ -14,6 +14,7 @@ import math
 
 from ecs.components import (
     Position, Owner, Orbiting, TechState, ShipAt, ShipOwner, ShipInTransit, Ship,
+    Outpost,
 )
 from ecs.techs import empire_sensor_range, BASE_SENSOR_RANGE
 from ecs.fleet import PIXELS_PER_PARSEC
@@ -42,6 +43,14 @@ def sensor_points(game, empire_id: int) -> list[tuple[float, float]]:
         if orbit is None:
             continue
         pos = cm.get_component(orbit.star_entity, Position)
+        if pos is not None:
+            pts.append((pos.x, pos.y))
+
+    # Outposts — claim the system, project sensors from the star itself.
+    for star_entity, op in cm.get_all(Outpost):
+        if op.empire_id != empire_id:
+            continue
+        pos = cm.get_component(star_entity, Position)
         if pos is not None:
             pts.append((pos.x, pos.y))
 
