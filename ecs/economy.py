@@ -24,6 +24,7 @@ from ecs.db import (
     update_planet_build,
     update_planet_workers,
     insert_planet_building,
+    delete_planet_building,
     save_planet_build_queue,
     update_empire_tech,
     insert_empire_tech,
@@ -534,6 +535,9 @@ def production_tick(game, new_turn: int):
     planet_build_updates: list[tuple[int, str | None, int]] = []
     queue_updates: list[tuple[int, list[str]]] = []
     completed_inserts: list[tuple[int, str]] = []
+    # (planet_id, project_id) pairs scrapped by an upgrade in the same
+    # chain — e.g. a Battlestation completion drops the Star Base.
+    chain_removals: list[tuple[int, str]] = []
     pop_updates: list[tuple[int, int, int, float]] = []  # for max_pop bumps
     # (owner_empire_id, ship_class, current_star_db_id, planet_entity_id, owner_obj)
     ship_spawns: list[tuple[int, str, int, int, Owner]] = []
@@ -580,6 +584,19 @@ def production_tick(game, new_turn: int):
                     if "max_pop" in effects and pop is not None:
                         pop.max += effects["max_pop"]
                         pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
+
+                    # Upgrade chain: a new project in the same chain
+                    # scraps every previous tier on this planet. Used
+                    # for the orbital-defense chain (Star Base →
+                    # Battlestation → Star Fortress).
+                    chain = proj.get("chain")
+                    if chain:
+                        for prev_id in list(build_state.completed):
+                            if prev_id == completed_id:
+                                continue
+                            if PROJECTS.get(prev_id, {}).get("chain") == chain:
+                                build_state.completed.remove(prev_id)
+                                chain_removals.append((planet.id, prev_id))
 
                     # Player-perspective turn log entry.
                     if player_id is not None and owner.empire_id == player_id:
@@ -681,6 +698,10 @@ def production_tick(game, new_turn: int):
             insert_empire_locked_tech(conn, empire_id, tech_id)
         for planet_id, current_project, progress in planet_build_updates:
             update_planet_build(conn, planet_id, current_project, progress)
+        # Scrap previous-tier upgrades BEFORE inserting their successors
+        # so each planet's row set stays consistent if it's read mid-flush.
+        for planet_id, project_id in chain_removals:
+            delete_planet_building(conn, planet_id, project_id)
         for planet_id, project_id in completed_inserts:
             insert_planet_building(conn, planet_id, project_id)
         for planet_id, queue in queue_updates:

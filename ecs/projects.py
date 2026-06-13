@@ -183,23 +183,32 @@ PROJECTS: dict[str, dict] = {
         "effects": {"defense": 5},
         "required_tech": "industrial_engineering",
     },
+    # Orbital defense chain: only one of these can stand at a planet at
+    # a time. Completing a higher tier scraps the lower one (handled in
+    # production_tick via the shared ``chain`` tag). MOO2-faithful —
+    # building the new fortress replaces the old, no refunds.
     "star_base": {
         "id": "star_base", "name": "Star Base", "category": "military",
         "cost": 220, "description": "Orbital platform. +8 defense.",
         "effects": {"defense": 8},
         "required_tech": "advanced_construction",
+        "chain": "orbital_defense",
     },
     "battlestation": {
         "id": "battlestation", "name": "Battlestation", "category": "military",
-        "cost": 380, "description": "Upgraded orbital fortress. +14 defense.",
+        "cost": 380, "description": "Upgraded orbital fortress. +14 defense. "
+                                    "Replaces the Star Base.",
         "effects": {"defense": 14},
         "required_tech": "automated_factories",
+        "chain": "orbital_defense",
     },
     "star_fortress": {
         "id": "star_fortress", "name": "Star Fortress", "category": "military",
-        "cost": 600, "description": "Top-tier system stronghold. +24 defense.",
+        "cost": 600, "description": "Top-tier system stronghold. +24 defense. "
+                                    "Replaces the Battlestation.",
         "effects": {"defense": 24},
         "required_tech": "robo_miners",
+        "chain": "orbital_defense",
     },
 }
 
