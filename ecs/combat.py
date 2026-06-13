@@ -199,14 +199,24 @@ def _resolve_battle(combatants_by_eid, defenses, participants, hostile_fn):
 
 def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                            player_id: int, ships_here: dict[int, list[int]],
-                           ship_stats_full) -> TacticalBattle:
+                           ship_stats_full,
+                           def_here: dict[int, int] | None = None) -> TacticalBattle:
     """Snapshot the ECS state at ``star_entity`` into a TacticalBattle.
 
     Placement: player ships on the left columns (0-2), enemies on the
     right columns (GRID_COLS-3..GRID_COLS-1). Each empire fills its
     columns top-down. If an empire has more ships than column-rows,
     extras stack into the next inward column.
+
+    Stations: any empire in ``def_here`` with a positive defense
+    rating gets a stationary Star Base / Battlestation / Star Fortress
+    placed against its back wall — derived from the highest-tier
+    orbital-defense building completed on the planet (so the chain
+    upgrade is faithful).
     """
+    from ecs.tactical import SHIP_AP, DEFAULT_AP
+    from ecs.ships import SHIPS as _SHIPS
+
     star_name_comp = cm.get_component(star_entity, Name)
     star_name = star_name_comp.value if star_name_comp else "deep space"
 
@@ -222,19 +232,26 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
         ships = ships_here.get(eid, [])
         if slot_idx == 0:
             cols = [0, 1, 2]
+            back_col = 0  # station rides the back wall for the player
         else:
-            # Spread non-player empires across the right edge. Each
-            # extra empire gets the next column inward so multi-empire
-            # brawls don't crash into each other.
             base = GRID_COLS - 1 - (slot_idx - 1) * 3
             cols = [max(0, base), max(0, base - 1), max(0, base - 2)]
+            back_col = base
         for i, ship_entity in enumerate(ships):
             ship = cm.get_component(ship_entity, Ship)
             if ship is None:
                 continue
             stats = ship_stats_full(ship_entity)
-            hull = max(1, int(stats.get("hull", 1)))
+            # Total hull = ship_class base + equipment hull bonus.
+            base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
+            hull = max(1, int(base_hull + stats.get("hull", 0)))
             attack = max(0, int(stats.get("attack", 0)))
+            shield_max = max(0, int(stats.get("shield_capacity", 0)))
+            shield_regen = max(0, int(stats.get("shield_regen", 0)))
+            # 'defense' in stats_from_ship is an evasion-style flat —
+            # we surface it as the armor damage reduction here.
+            armor = max(0, int(stats.get("defense", 0)))
+            speed = SHIP_AP.get(ship.ship_class, DEFAULT_AP)
             col = cols[i % len(cols)]
             row = i % GRID_ROWS
             battle.ships.append(TacticalShip(
@@ -245,8 +262,80 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                 col=col, row=row,
                 hull=hull, max_hull=hull,
                 attack=attack,
+                speed=speed, moves_left=speed,
+                shield_max=shield_max, shield_current=shield_max,
+                shield_regen=shield_regen,
+                armor=armor,
             ))
+
+        # Station from planetary defense rating, if any. Derived stats
+        # are tuned so a Star Fortress is significantly more painful
+        # than a battleship without being unkillable for a fleet.
+        if def_here and def_here.get(eid, 0) > 0:
+            station = _make_station_for(cm, star_entity, eid, def_here[eid], back_col)
+            if station is not None:
+                # Place at the back row so it doesn't sit on top of a
+                # fleet ship — search the back column for a free row.
+                for row in range(GRID_ROWS):
+                    if battle.ship_at(station.col, row) is None:
+                        station.row = row
+                        break
+                battle.ships.append(station)
     return battle
+
+
+def _make_station_for(cm, star_entity: int, empire_id: int,
+                      defense_rating: int, back_col: int):
+    """Build a station TacticalShip whose strength tracks the highest
+    orbital-defense building present on any planet at this star owned
+    by ``empire_id``. Returns None if no qualifying planet found.
+    """
+    from ecs.tactical import TacticalShip as _TS
+    # Find the strongest defense building present.
+    highest_tier = None
+    for planet_entity, owner in cm.get_all(Owner):
+        if owner.empire_id != empire_id:
+            continue
+        orbit = cm.get_component(planet_entity, Orbiting)
+        if orbit is None or orbit.star_entity != star_entity:
+            continue
+        bs = cm.get_component(planet_entity, BuildState)
+        if bs is None:
+            continue
+        for tier in ("star_fortress", "battlestation", "star_base"):
+            if tier in bs.completed:
+                if (highest_tier is None
+                        or _STATION_RANK[tier] > _STATION_RANK[highest_tier]):
+                    highest_tier = tier
+                break
+    if highest_tier is None:
+        return None
+    stats = _STATION_STATS[highest_tier]
+    return _TS(
+        entity_id=-1,  # stations aren't backed by ECS ship entities
+        empire_id=empire_id,
+        ship_class=highest_tier,
+        name=stats["name"],
+        col=back_col, row=0,  # row filled in by caller
+        hull=stats["hull"], max_hull=stats["hull"],
+        attack=stats["attack"],
+        speed=0, moves_left=0,
+        shield_max=stats["shield"], shield_current=stats["shield"],
+        shield_regen=stats["regen"],
+        armor=stats["armor"],
+        is_station=True,
+    )
+
+
+_STATION_RANK = {"star_base": 1, "battlestation": 2, "star_fortress": 3}
+_STATION_STATS = {
+    "star_base":     {"name": "Star Base",     "hull": 60,  "attack": 8,
+                       "shield": 30, "regen": 5,  "armor": 4},
+    "battlestation": {"name": "Battlestation", "hull": 90,  "attack": 14,
+                       "shield": 50, "regen": 8,  "armor": 6},
+    "star_fortress": {"name": "Star Fortress", "hull": 130, "attack": 24,
+                       "shield": 80, "regen": 12, "armor": 8},
+}
 
 
 def combat_tick(game, new_turn: int):
@@ -368,6 +457,7 @@ def combat_tick(game, new_turn: int):
             tactical_queue.append(_build_tactical_battle(
                 cm, star_entity, new_turn, player_id,
                 ships_here, _ship_stats_full,
+                def_here=def_here,
             ))
             continue
 

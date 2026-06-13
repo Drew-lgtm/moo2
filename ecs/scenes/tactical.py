@@ -161,13 +161,18 @@ class TacticalScene(Scene):
         if self.selected is None or self.selected.empire_id != player_id:
             return
         if target_ship is not None and target_ship.empire_id != player_id:
-            # Attack — no range model in Stage 1.
-            if self.selected.has_fired:
-                self._log(f"{self.selected.name} has already fired this round.")
+            result = self.battle.attack(self.selected, target_ship, self._rng)
+            if not result["fired"]:
+                self._log(f"{self.selected.name}: {result['reason']}.")
                 return
-            dmg = self.battle.attack(self.selected, target_ship, self._rng)
-            note = "" if not target_ship.destroyed else " — DESTROYED!"
-            self._log(f"{self.selected.name} hits {target_ship.name} for {dmg}{note}")
+            tag = " — DESTROYED!" if result["destroyed"] else ""
+            detail_bits = []
+            if result["to_shield"]:
+                detail_bits.append(f"{result['to_shield']} shield")
+            if result["to_hull"]:
+                detail_bits.append(f"{result['to_hull']} hull")
+            detail = ", ".join(detail_bits) if detail_bits else f"{result['damage']}"
+            self._log(f"{self.selected.name} hits {target_ship.name} ({detail}){tag}")
             self._check_winner_and_maybe_finish()
             return
         # Empty hex — try to move.
@@ -303,14 +308,22 @@ class TacticalScene(Scene):
         in_grid = (hover[0] < PANEL_X and hover[1] >= ORIGIN_Y
                    and hover[1] < LOG_TOP_Y)
         hover_hex = self._hex_under(hover) if in_grid else (-1, -1)
-        # Player's selected ship: precompute reachable & enemy targets.
+        # Player's selected ship: precompute reachable hexes (movement
+        # range) and in-firing-range targets (so we can paint them).
         in_move_range: set[tuple[int, int]] = set()
-        if self.selected is not None and not self.selected.has_moved:
+        in_short_range: set[tuple[int, int]] = set()
+        in_long_range: set[tuple[int, int]] = set()
+        if self.selected is not None and not self.selected.is_station:
+            sel = self.selected
             for col in range(GRID_COLS):
                 for row in range(GRID_ROWS):
-                    if hex_distance(self.selected.col, self.selected.row,
-                                    col, row) <= self.selected.speed:
+                    d = hex_distance(sel.col, sel.row, col, row)
+                    if 0 < d <= sel.moves_left:
                         in_move_range.add((col, row))
+                    if 0 < d <= 4:  # SHORT_RANGE
+                        in_short_range.add((col, row))
+                    elif d <= 8:    # LONG_RANGE
+                        in_long_range.add((col, row))
         for col in range(GRID_COLS):
             for row in range(GRID_ROWS):
                 center = hex_to_pixel(col, row, ORIGIN_X, ORIGIN_Y)
@@ -319,16 +332,35 @@ class TacticalScene(Scene):
                 if (col, row) == hover_hex:
                     fill = HOVER_FILL
                 pygame.draw.polygon(screen, fill, points)
-                # Movement range overlay for selected ship.
-                if (col, row) in in_move_range and self.selected is not None:
-                    if self.battle.ship_at(col, row) is None:
-                        overlay = pygame.Surface((HEX_WIDTH * 2, HEX_SIZE * 2), pygame.SRCALPHA)
-                        ox, oy = center
-                        local = [(p[0] - ox + HEX_WIDTH, p[1] - oy + HEX_SIZE)
-                                 for p in points]
-                        pygame.draw.polygon(overlay, MOVE_RANGE_FILL, local)
-                        screen.blit(overlay, (ox - HEX_WIDTH, oy - HEX_SIZE))
+                # Layered overlays (drawn before the hex outline):
+                #   1. Long range — faint pink ring of in-range cells
+                #   2. Short range — slightly stronger red overlay
+                #   3. Movement range — blue if the cell is empty
+                # Cells that the selected ship occupies get nothing.
+                if self.selected is not None:
+                    self_cell = (col == self.selected.col and row == self.selected.row)
+                    if not self_cell:
+                        if (col, row) in in_long_range:
+                            self._fill_hex(screen, center, points,
+                                            (200, 80, 80, 35))
+                        if (col, row) in in_short_range:
+                            self._fill_hex(screen, center, points,
+                                            ATTACK_TARGET_FILL)
+                        if ((col, row) in in_move_range
+                                and self.battle.ship_at(col, row) is None):
+                            self._fill_hex(screen, center, points,
+                                            MOVE_RANGE_FILL)
                 pygame.draw.polygon(screen, GRID_LINE, points, 1)
+
+    def _fill_hex(self, screen, center, corners, color_rgba):
+        """Alpha-blit a coloured hex over the existing fill so range
+        and movement overlays can stack."""
+        ox, oy = center
+        overlay = pygame.Surface((HEX_WIDTH * 2, HEX_SIZE * 2), pygame.SRCALPHA)
+        local = [(p[0] - ox + HEX_WIDTH, p[1] - oy + HEX_SIZE)
+                 for p in corners]
+        pygame.draw.polygon(overlay, color_rgba, local)
+        screen.blit(overlay, (ox - HEX_WIDTH, oy - HEX_SIZE))
 
     def _draw_ships(self, screen):
         for ship in self.battle.ships:
@@ -337,20 +369,40 @@ class TacticalScene(Scene):
             cx, cy = hex_to_pixel(ship.col, ship.row, ORIGIN_X, ORIGIN_Y)
             color = self._empire_color(ship.empire_id)
             r = self._ship_radius()
-            pygame.draw.circle(screen, color, (int(cx), int(cy)), r)
-            pygame.draw.circle(screen, (0, 0, 0), (int(cx), int(cy)), r + 1, 1)
-            if ship is self.selected:
-                pygame.draw.circle(screen, SELECT_RING,
-                                    (int(cx), int(cy)), r + 4, 2)
-            # Ship-class glyph: first letter, white, centred.
-            glyph = self.small_font.render(ship.ship_class[0].upper(),
-                                            True, (255, 255, 255))
+            # Stations draw as squares so they read as "fortified
+            # structure" rather than "ship". Selection ring is a square
+            # too for consistency.
+            if ship.is_station:
+                rect = pygame.Rect(int(cx - r), int(cy - r), r * 2, r * 2)
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, (0, 0, 0), rect, 1)
+                if ship is self.selected:
+                    pygame.draw.rect(screen, SELECT_RING,
+                                      rect.inflate(8, 8), 2)
+            else:
+                pygame.draw.circle(screen, color, (int(cx), int(cy)), r)
+                pygame.draw.circle(screen, (0, 0, 0), (int(cx), int(cy)), r + 1, 1)
+                if ship is self.selected:
+                    pygame.draw.circle(screen, SELECT_RING,
+                                        (int(cx), int(cy)), r + 4, 2)
+            glyph_char = "★" if ship.is_station else ship.ship_class[0].upper()
+            glyph = self.small_font.render(glyph_char, True, (255, 255, 255))
             screen.blit(glyph, glyph.get_rect(center=(int(cx), int(cy))))
-            # Hull bar under the ship.
+
+            # Shield ring above the hull bar. Subtle blue arc whose
+            # length tracks shield_current / shield_max.
             bar_w = int(HEX_WIDTH * 0.7)
             bar_h = 4
             bar_x = int(cx - bar_w / 2)
             bar_y = int(cy + r + 4)
+            if ship.shield_max > 0:
+                sh_pct = ship.shield_current / max(1, ship.shield_max)
+                pygame.draw.rect(screen, (30, 30, 30),
+                                  (bar_x, bar_y, bar_w, bar_h))
+                pygame.draw.rect(screen, (110, 170, 240),
+                                  (bar_x, bar_y, int(bar_w * sh_pct), bar_h))
+                bar_y += bar_h + 1
+            # Hull bar.
             pct = ship.hull / max(1, ship.max_hull)
             hp_color = (
                 (110, 220, 110) if pct > 0.6
@@ -379,14 +431,18 @@ class TacticalScene(Scene):
         else:
             emp = self._empire(s.empire_id)
             ename = emp.name if emp else "?"
+            cls_label = (s.ship_class.replace("_", " ").title()
+                          if not s.is_station else "Station")
             for line in (
                 f"{s.name}",
-                f"{s.ship_class.title()}",
+                cls_label,
                 f"Owner: {ename}",
+                f"Shield: {s.shield_current}/{s.shield_max}"
+                + (f"  (+{s.shield_regen}/rd)" if s.shield_regen else ""),
+                f"Armor:  {s.armor}",
                 f"Hull:   {s.hull}/{s.max_hull}",
                 f"Attack: {s.attack}",
-                f"Speed:  {s.speed} hexes/round",
-                f"Moved:  {'yes' if s.has_moved else 'no'}",
+                f"Move:   {s.moves_left}/{s.speed} MP",
                 f"Fired:  {'yes' if s.has_fired else 'no'}",
             ):
                 screen.blit(self.body_font.render(line, True, TEXT_COLOR),

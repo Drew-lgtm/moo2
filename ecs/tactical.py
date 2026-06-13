@@ -3,27 +3,35 @@
 A battle is a single-star engagement between two or more empires. The
 strategic combat layer (``ecs/combat.py``) detects the engagement; if
 the player is one of the participants, it queues a ``TacticalBattle``
-on ``game.pending_tactical_battles`` instead of auto-resolving. The
-galaxy scene routes to the tactical scene, which lets the player drive
-ship movement and weapons fire one round at a time. AI-vs-AI battles
-the player isn't in stay on the strategic resolver.
+on ``game.pending_engagements``. The Combat Options screen lets the
+player pick Attack / Auto / Retreat; the tactical scene only runs on
+Attack. AI-vs-AI battles the player isn't in stay on the strategic
+resolver.
 
-**Stage 1 scope** (this commit):
+**Stage 2 model** (current):
 - 14×7 hex grid, MOO2-like dimensions
-- Click to select, click empty hex to move, click enemy to attack
-- One move + one attack per ship per round
-- Basic enemy AI: each enemy ship moves toward the nearest player
-  ship and attacks if any opposing ship is within reach
+- Per-ship movement points spent per hex moved; each ship can fire
+  *once* per round (so AP only constrains movement, not attacks)
+- Range bands with damage falloff:
+  - 1..SHORT_RANGE hexes → full damage
+  - SHORT_RANGE+1..LONG_RANGE → ``LONG_RANGE_MULT`` damage
+  - beyond LONG_RANGE → can't fire
+- Damage flows through three layers: shields (regen) → armor (flat
+  reduction per hit) → hull (death at 0)
+- Initiative — higher-speed side goes first, displayed in the panel
+- Stationary stations represent planetary defense (Star Base /
+  Battlestation / Star Fortress). Stations occupy hexes, have high
+  shield+armor+hull and big guns, but never move. Damage to a station
+  is forgotten at battle end — strategically they remain in place
+  per the existing chain of orbital defense buildings.
 - Auto button falls back to strategic resolve
-- Battle ends when one side has zero ships standing
+- Battle ends when one side has zero standing combatants
 
-**Future stages** (not yet implemented):
-- Initiative order + action points per ship
-- Weapon range falloff
-- Shield / armor / hull damage layers
-- Missiles, fighters, point defense
-- Planetary defense as stationary unit
-- Special equipment (cloak, transporter, stasis)
+**Future stages** (Stage 3+, not yet implemented):
+- Missiles flying across the grid, point defense, fighters
+- Special equipment (cloak, transporter, stasis, displacement)
+- Retreat as a tactical action with relocation cost
+- Mounts (Normal / Heavy / Point-Defense weapon variants)
 
 State here is in-memory only — a tactical battle resolves within a
 single turn and never spans a save/load boundary, just like MOO2.
@@ -50,17 +58,50 @@ HEX_V_SPACING = HEX_SIZE * 1.5
 DAMAGE_MIN_MULT = 0.7
 DAMAGE_MAX_MULT = 1.3
 
-# Maximum hexes a ship can step per move action. Stage 1 doesn't model
-# AP, but caps movement so a frigate can't traverse the whole grid in
-# one click. Distance is the offset-hex axial distance.
-MAX_MOVE_PER_ROUND = 4
+# Per-class movement points. MOO2 had this driven by drive tech + a
+# ship's tactical-combat speed stat; for Stage 2 we map ship class to
+# a flat value. Small ships dart, capital ships lumber.
+SHIP_AP = {
+    "scout":           7,
+    "frigate":          6,
+    "freighter":        4,
+    "outpost_ship":     3,
+    "colony_ship":      3,
+    "troop_transport":  4,
+    "carrier":          5,
+    "cruiser":          5,
+    "battleship":       4,
+    "dreadnought":      3,
+}
+# Default if a class isn't listed (custom ships, future classes).
+DEFAULT_AP = 5
+
+# Range bands in hexes. Computed via cube-distance ``hex_distance``.
+SHORT_RANGE = 4   # 1..SHORT_RANGE: full damage
+LONG_RANGE = 8    # SHORT_RANGE+1..LONG_RANGE: long-range falloff
+LONG_RANGE_MULT = 0.5
+
+
+def weapon_range_mult(distance: int) -> float:
+    """Damage multiplier for a shot at ``distance`` hexes. Returns 0
+    when the target is out of range — callers should treat this as
+    "can't fire" rather than "deals nothing"."""
+    if distance <= 0:
+        return 1.0
+    if distance <= SHORT_RANGE:
+        return 1.0
+    if distance <= LONG_RANGE:
+        return LONG_RANGE_MULT
+    return 0.0
 
 
 @dataclass
 class TacticalShip:
     """A combatant on the tactical grid. Backed by an ECS ship entity in
-    the strategic layer — we keep the entity id so post-battle the same
-    ship can be destroyed (or not) up there."""
+    the strategic layer for normal ships; stations have ``is_station``
+    set and don't map to any ECS entity (their building lives on the
+    planet — see ``combat.py`` for placement).
+    """
     entity_id: int
     empire_id: int
     ship_class: str
@@ -70,10 +111,27 @@ class TacticalShip:
     hull: int
     max_hull: int
     attack: int
-    speed: int = MAX_MOVE_PER_ROUND
-    has_moved: bool = False
+    # Movement allowance per round, spent one-for-one per hex.
+    speed: int = DEFAULT_AP
+    moves_left: int = DEFAULT_AP
+    # Defensive layers in front of the hull.
+    shield_max: int = 0
+    shield_current: int = 0
+    shield_regen: int = 0
+    armor: int = 0
+    # Stationary defensive platforms (Star Base / Battlestation /
+    # Star Fortress) — can fire, can be damaged, but never move and
+    # don't persist damage into the strategic layer.
+    is_station: bool = False
     has_fired: bool = False
     destroyed: bool = False
+
+    @property
+    def has_moved(self) -> bool:
+        # Backwards-compatible read for code that still asks "moved?"
+        # — a ship has effectively moved this round once it can't move
+        # any further (no AP left).
+        return self.moves_left < self.speed
 
 
 @dataclass
@@ -113,54 +171,101 @@ class TacticalBattle:
     # -- mechanics ---------------------------------------------------
 
     def move_ship(self, ship: TacticalShip, col: int, row: int) -> bool:
-        """Move ``ship`` to ``(col, row)`` if it's a legal step this
-        round. Returns True on success. The hex must be in-grid, empty,
-        and within the ship's per-round step budget; the ship must not
-        have moved already this round."""
-        if ship.destroyed or ship.has_moved:
+        """Move ``ship`` to ``(col, row)`` if it has enough movement
+        points left. Returns True on success. Each hex stepped costs
+        one MP. Stations (``is_station``) never move regardless of
+        speed value."""
+        if ship.destroyed or ship.is_station:
             return False
         if not (0 <= col < GRID_COLS and 0 <= row < GRID_ROWS):
             return False
         if self.ship_at(col, row) is not None:
             return False
-        if hex_distance(ship.col, ship.row, col, row) > ship.speed:
+        cost = hex_distance(ship.col, ship.row, col, row)
+        if cost == 0:
+            return False
+        if cost > ship.moves_left:
             return False
         ship.col, ship.row = col, row
-        ship.has_moved = True
+        ship.moves_left -= cost
         return True
 
     def attack(self, attacker: TacticalShip, target: TacticalShip,
-               rng: random.Random | None = None) -> int:
-        """Resolve one shot. Returns damage dealt. Sets ``has_fired``
-        on the attacker; marks the target ``destroyed`` if hull <= 0.
-        Stage 1: no range falloff, no shields, no point defense — pure
-        attack × random multiplier vs hull."""
+               rng: random.Random | None = None) -> dict:
+        """Resolve one shot. Returns a result dict::
+
+            {"fired": bool, "damage": int, "to_shield": int,
+             "to_hull": int, "destroyed": bool, "reason": str | None}
+
+        ``fired`` is False if the attacker can't fire — either already
+        fired this round, attacker/target dead, or out of range — and
+        ``reason`` carries a short human-readable cause for the UI.
+
+        Damage layers: raw ← attack × random × range-multiplier; armor
+        applies as flat reduction (min 1 damage gets through); the
+        residual drains shields first, then hull.
+        """
         if attacker.destroyed or target.destroyed:
-            return 0
+            return {"fired": False, "damage": 0, "to_shield": 0,
+                    "to_hull": 0, "destroyed": False, "reason": "no target"}
         if attacker.has_fired:
-            return 0
+            return {"fired": False, "damage": 0, "to_shield": 0,
+                    "to_hull": 0, "destroyed": False,
+                    "reason": "already fired this round"}
+        dist = hex_distance(attacker.col, attacker.row, target.col, target.row)
+        range_mult = weapon_range_mult(dist)
+        if range_mult <= 0:
+            return {"fired": False, "damage": 0, "to_shield": 0,
+                    "to_hull": 0, "destroyed": False,
+                    "reason": "out of range"}
         rng = rng or random
         roll = rng.uniform(DAMAGE_MIN_MULT, DAMAGE_MAX_MULT)
-        dmg = max(1, int(round(attacker.attack * roll)))
-        target.hull -= dmg
+        raw = max(1, int(round(attacker.attack * roll * range_mult)))
+        # Armor: flat reduction, but always at least 1 damage gets in.
+        after_armor = max(1, raw - target.armor)
+        # Shield absorbs first.
+        to_shield = min(target.shield_current, after_armor)
+        target.shield_current -= to_shield
+        to_hull = after_armor - to_shield
+        target.hull -= to_hull
         attacker.has_fired = True
+        destroyed = False
         if target.hull <= 0:
             target.hull = 0
             target.destroyed = True
-        return dmg
+            destroyed = True
+        return {"fired": True, "damage": after_armor,
+                "to_shield": to_shield, "to_hull": to_hull,
+                "destroyed": destroyed, "reason": None}
 
     def end_round(self):
-        """Reset per-round flags. Increment the round counter. Check
-        for a winner — if only one empire still has live ships, the
-        battle is over."""
+        """Reset per-round flags. Regenerate each ship's shield up to
+        its max. Increment the round counter. If only one empire still
+        has live combatants, mark the battle finished."""
         for s in self.ships:
-            s.has_moved = False
+            if s.destroyed:
+                continue
             s.has_fired = False
+            s.moves_left = s.speed
+            if s.shield_max > 0:
+                s.shield_current = min(s.shield_max,
+                                        s.shield_current + s.shield_regen)
         self.round += 1
         empires = self.empires_present()
         if len(empires) <= 1:
             self.finished = True
             self.winner_id = next(iter(empires), None)
+
+    def initiative_order(self) -> list[int]:
+        """Empire ids sorted by combined speed of standing ships,
+        highest first. Just for display in the side panel."""
+        scores: dict[int, int] = {}
+        for s in self.ships:
+            if s.destroyed:
+                continue
+            scores[s.empire_id] = scores.get(s.empire_id, 0) + s.speed
+        return [eid for eid, _ in sorted(scores.items(),
+                                          key=lambda r: -r[1])]
 
 
 # ---- hex math ----------------------------------------------------------
@@ -209,14 +314,13 @@ def hex_distance(c1: int, r1: int, c2: int, r2: int) -> int:
 
 def ai_take_turn(battle: TacticalBattle, controlling_empire_id: int,
                  rng: random.Random | None = None) -> list[str]:
-    """One AI side acts: every ship moves toward the nearest live
-    opposing ship and fires if any opponent is within
-    ``MAX_MOVE_PER_ROUND`` after the move. Returns a list of log
-    strings so the scene can show what happened.
+    """One AI side acts: every ship picks the nearest opponent, moves
+    into SHORT_RANGE if it can, then fires (if the target is now in
+    LONG_RANGE at worst). Stations skip the movement step. Returns
+    log lines so the scene can show what happened.
 
-    Crude on purpose — Stage 1 is about establishing the play loop,
-    not chess-grade tactics. Later stages can swap this for a proper
-    A* + scoring search.
+    Crude on purpose — later stages can swap for an A* + scoring
+    search if we want craftier AI.
     """
     rng = rng or random
     log: list[str] = []
@@ -231,32 +335,42 @@ def ai_take_turn(battle: TacticalBattle, controlling_empire_id: int,
                    if s.empire_id != controlling_empire_id and not s.destroyed]
         if not enemies:
             return log
-        # Pick the nearest enemy as our target this turn.
         target = min(enemies, key=lambda e: hex_distance(
             ship.col, ship.row, e.col, e.row))
-        dist = hex_distance(ship.col, ship.row, target.col, target.row)
-        # Move closer if needed. Pick the best in-range hex that's
-        # empty and minimises distance to target.
-        if dist > 1 and not ship.has_moved:
-            best_dest = None
-            best_remaining = dist
-            for col in range(GRID_COLS):
-                for row in range(GRID_ROWS):
-                    if hex_distance(ship.col, ship.row, col, row) > ship.speed:
-                        continue
-                    if battle.ship_at(col, row) is not None:
-                        continue
-                    d = hex_distance(col, row, target.col, target.row)
-                    if d < best_remaining:
-                        best_remaining = d
-                        best_dest = (col, row)
-            if best_dest is not None:
-                battle.move_ship(ship, *best_dest)
-        # Now fire if the target is still alive — no range falloff yet.
+        # Move (stations can't, ships try to close to SHORT_RANGE).
+        if not ship.is_station and ship.moves_left > 0:
+            dist = hex_distance(ship.col, ship.row, target.col, target.row)
+            if dist > SHORT_RANGE:
+                # Pick the reachable empty hex with the lowest distance
+                # to the target. Try to land inside SHORT_RANGE when
+                # possible; otherwise just close as much as we can.
+                best_dest = None
+                best_remaining = dist
+                for col in range(GRID_COLS):
+                    for row in range(GRID_ROWS):
+                        cost = hex_distance(ship.col, ship.row, col, row)
+                        if cost == 0 or cost > ship.moves_left:
+                            continue
+                        if battle.ship_at(col, row) is not None:
+                            continue
+                        d = hex_distance(col, row, target.col, target.row)
+                        if d < best_remaining:
+                            best_remaining = d
+                            best_dest = (col, row)
+                if best_dest is not None:
+                    battle.move_ship(ship, *best_dest)
+        # Fire if in range.
         if not target.destroyed and not ship.has_fired:
-            dmg = battle.attack(ship, target, rng)
-            log.append(
-                f"{ship.name} hits {target.name} for {dmg}"
-                + (" — DESTROYED!" if target.destroyed else "")
-            )
+            result = battle.attack(ship, target, rng)
+            if result["fired"]:
+                tag = " — DESTROYED!" if result["destroyed"] else ""
+                detail = []
+                if result["to_shield"]:
+                    detail.append(f"{result['to_shield']} shield")
+                if result["to_hull"]:
+                    detail.append(f"{result['to_hull']} hull")
+                detail_s = ", ".join(detail) if detail else f"{result['damage']}"
+                log.append(
+                    f"{ship.name} hits {target.name} ({detail_s}){tag}"
+                )
     return log
