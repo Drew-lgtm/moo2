@@ -17,9 +17,10 @@ from __future__ import annotations
 
 from ecs.components import (
     Ship, ShipOwner, ShipAt, ShipInTransit, TechState, Owner, Orbiting, Position,
-    BuildState, Name,
+    BuildState, Name, Empire,
 )
 from ecs.turn_log import log as turn_log, CAT_COMBAT
+from ecs.tactical import TacticalBattle, TacticalShip, GRID_COLS, GRID_ROWS
 from ecs.ships import SHIPS
 from ecs.races import trait_count, traits_for_empire
 from ecs.techs import empire_attack_bonus, empire_hull_bonus
@@ -196,6 +197,58 @@ def _resolve_battle(combatants_by_eid, defenses, participants, hostile_fn):
                                      c["shield_hp"] + c["shield_regen"])
 
 
+def _build_tactical_battle(cm, star_entity: int, new_turn: int,
+                           player_id: int, ships_here: dict[int, list[int]],
+                           ship_stats_full) -> TacticalBattle:
+    """Snapshot the ECS state at ``star_entity`` into a TacticalBattle.
+
+    Placement: player ships on the left columns (0-2), enemies on the
+    right columns (GRID_COLS-3..GRID_COLS-1). Each empire fills its
+    columns top-down. If an empire has more ships than column-rows,
+    extras stack into the next inward column.
+    """
+    star_name_comp = cm.get_component(star_entity, Name)
+    star_name = star_name_comp.value if star_name_comp else "deep space"
+
+    battle = TacticalBattle(
+        star_entity=star_entity, star_name=star_name, turn=new_turn,
+        player_id=player_id,
+    )
+
+    # Stable ordering: player first, then everyone else.
+    empire_order = ([player_id] +
+                    [eid for eid in ships_here if eid != player_id])
+    for slot_idx, eid in enumerate(empire_order):
+        ships = ships_here.get(eid, [])
+        if slot_idx == 0:
+            cols = [0, 1, 2]
+        else:
+            # Spread non-player empires across the right edge. Each
+            # extra empire gets the next column inward so multi-empire
+            # brawls don't crash into each other.
+            base = GRID_COLS - 1 - (slot_idx - 1) * 3
+            cols = [max(0, base), max(0, base - 1), max(0, base - 2)]
+        for i, ship_entity in enumerate(ships):
+            ship = cm.get_component(ship_entity, Ship)
+            if ship is None:
+                continue
+            stats = ship_stats_full(ship_entity)
+            hull = max(1, int(stats.get("hull", 1)))
+            attack = max(0, int(stats.get("attack", 0)))
+            col = cols[i % len(cols)]
+            row = i % GRID_ROWS
+            battle.ships.append(TacticalShip(
+                entity_id=ship_entity,
+                empire_id=eid,
+                ship_class=ship.ship_class,
+                name=f"{ship.ship_class.title()} #{ship.id}",
+                col=col, row=row,
+                hull=hull, max_hull=hull,
+                attack=attack,
+            ))
+    return battle
+
+
 def combat_tick(game, new_turn: int):
     """Resolve combat at every star where two or more *at-war* empires
     have ships. Empires at peace (or under a non-aggression pact) can
@@ -278,6 +331,19 @@ def combat_tick(game, new_turn: int):
     def _ship_loadout_atk(eid: int, ship_entity: int) -> int:
         return _ship_stats_full(ship_entity).get("attack", 0)
 
+    # Player empire id (cached). When the player is in an engagement,
+    # the strategic auto-resolver hands off to the tactical hex scene
+    # instead — we queue a TacticalBattle here, skip auto-resolve for
+    # that star, and let the player play the battle out after the
+    # tick.
+    player = None
+    for _e, emp in cm.get_all(Empire):
+        if emp.is_player:
+            player = emp
+            break
+    player_id = player.id if player else None
+    tactical_queue: list[TacticalBattle] = []
+
     # Every star with ships and/or planetary defenses is a possible
     # battlefield.
     for star_entity in set(by_star) | set(by_star_defense):
@@ -290,6 +356,19 @@ def combat_tick(game, new_turn: int):
         plist = list(participants)
         if not any(_hostile(plist[i], plist[j])
                    for i in range(len(plist)) for j in range(i + 1, len(plist))):
+            continue
+
+        # Tactical handoff: if the player has ships at this star and at
+        # least one opposing empire is hostile, build a TacticalBattle
+        # and skip auto-resolve. AI-vs-AI battles keep the fast path.
+        if (player_id is not None
+                and player_id in ships_here
+                and any(_hostile(player_id, other)
+                        for other in participants if other != player_id)):
+            tactical_queue.append(_build_tactical_battle(
+                cm, star_entity, new_turn, player_id,
+                ships_here, _ship_stats_full,
+            ))
             continue
 
         # Round-based combat with shields:
@@ -410,3 +489,8 @@ def combat_tick(game, new_turn: int):
                                 f"Battle at {star_name}: lost "
                                 f"{my_side['lost']}, {my_side['remaining']} left",
                             )
+
+    # Hand off any player-involved engagements to the tactical scene.
+    if tactical_queue:
+        existing = getattr(game, "pending_tactical_battles", None) or []
+        game.pending_tactical_battles = list(existing) + tactical_queue

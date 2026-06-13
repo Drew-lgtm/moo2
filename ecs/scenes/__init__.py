@@ -7,6 +7,7 @@ from ecs.scenes.research import ResearchScene
 from ecs.scenes.diplomacy import DiplomacyScene
 from ecs.scenes.council import CouncilScene
 from ecs.scenes.combat_report import CombatReportScene
+from ecs.scenes.tactical import TacticalScene
 from ecs.scenes.idle_colonies import IdleColoniesScene
 from ecs.scenes.game_over import GameOverScene
 from ecs.scenes.saves import SaveSlotScene
@@ -31,6 +32,7 @@ __all__ = [
     "DiplomacyScene",
     "CouncilScene",
     "CombatReportScene",
+    "TacticalScene",
     "IdleColoniesScene",
     "GameOverScene",
     "SaveSlotScene",

@@ -57,9 +57,12 @@ class GalaxyScene(Scene):
         if getattr(self.game, "pending_endgame", None) is not None:
             self.game.scenes.replace("game_over")
             return
-        # Start-of-turn attention flow (MOO2-style): resolve combat
-        # reports → Galactic Council → idle-colony review → free play.
-        if getattr(self.game, "pending_combat_reports", None):
+        # Start-of-turn attention flow (MOO2-style): resolve tactical
+        # battles the player is in → combat reports → Galactic Council
+        # → idle-colony review → free play.
+        if getattr(self.game, "pending_tactical_battles", None):
+            self.game.scenes.replace("tactical")
+        elif getattr(self.game, "pending_combat_reports", None):
             self.game.scenes.replace("combat_report")
         elif getattr(self.game, "pending_council", None) is not None:
             self.game.scenes.replace("council")
