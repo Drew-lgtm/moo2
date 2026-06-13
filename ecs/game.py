@@ -73,9 +73,10 @@ class Game:
         # GalaxyScene shows a combat report screen for them.
         self.pending_combat_reports: list | None = None
         # Set by combat_tick when the player is involved in an
-        # engagement — the GalaxyScene routes to the tactical hex scene
-        # so the player can drive the fight one round at a time.
-        self.pending_tactical_battles: list | None = None
+        # engagement — the GalaxyScene routes to the Combat Options
+        # decision scene first, which lets the player pick Attack,
+        # Auto-resolve, or Retreat per engagement.
+        self.pending_engagements: list | None = None
         # Rolling record of recent battles for review.
         self.last_combats: list = []
         # Player-perspective turn log (in-memory). Populated by

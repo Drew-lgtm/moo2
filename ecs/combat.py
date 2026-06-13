@@ -490,7 +490,9 @@ def combat_tick(game, new_turn: int):
                                 f"{my_side['lost']}, {my_side['remaining']} left",
                             )
 
-    # Hand off any player-involved engagements to the tactical scene.
+    # Hand off any player-involved engagements to the combat-options
+    # decision scene. The player picks Attack / Auto / Retreat per
+    # engagement; only the ones they Attack reach the tactical scene.
     if tactical_queue:
-        existing = getattr(game, "pending_tactical_battles", None) or []
-        game.pending_tactical_battles = list(existing) + tactical_queue
+        existing = getattr(game, "pending_engagements", None) or []
+        game.pending_engagements = list(existing) + tactical_queue

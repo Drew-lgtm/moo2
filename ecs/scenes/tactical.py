@@ -82,7 +82,7 @@ class TacticalScene(Scene):
     # --------------------------------------------------------------- lifecycle
 
     def on_enter(self):
-        queue = getattr(self.game, "pending_tactical_battles", None) or []
+        queue = getattr(self.game, "pending_engagements", None) or []
         if not queue:
             self.game.scenes.replace("galaxy")
             return
@@ -96,11 +96,11 @@ class TacticalScene(Scene):
         # the destroyed entity ids so combat.py can flush them.
         if self.battle is None:
             return
-        queue = getattr(self.game, "pending_tactical_battles", None) or []
+        queue = getattr(self.game, "pending_engagements", None) or []
         if queue and queue[0] is self.battle:
             queue.pop(0)
         if not queue:
-            self.game.pending_tactical_battles = None
+            self.game.pending_engagements = None
 
     # --------------------------------------------------------------- helpers
 
@@ -262,16 +262,16 @@ class TacticalScene(Scene):
                 conn.commit()
             for ship_entity in destroyed_entities:
                 _destroy_ship(self.game, ship_entity)
-        # Pop battle off the queue and route — if more battles are
-        # pending, re-enter tactical, else back to galaxy.
-        queue = getattr(self.game, "pending_tactical_battles", None) or []
+        # Pop battle off the queue and route — if more engagements are
+        # pending, hand back to the decision scene, else to galaxy.
+        queue = getattr(self.game, "pending_engagements", None) or []
         if queue and queue[0] is self.battle:
             queue.pop(0)
         if queue:
             self.battle = None  # on_exit won't double-pop
-            self.game.scenes.replace("tactical")
+            self.game.scenes.replace("combat_decision")
         else:
-            self.game.pending_tactical_battles = None
+            self.game.pending_engagements = None
             self.battle = None
             self.game.scenes.replace("galaxy")
 
