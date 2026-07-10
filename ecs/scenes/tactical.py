@@ -202,44 +202,12 @@ class TacticalScene(Scene):
         self._check_winner_and_maybe_finish()
 
     def _auto_resolve(self):
-        """Fall back to the strategic resolver. Builds destroyed_ids
-        from a quick deterministic attrition: in each side's total
-        attack vs the other side's hull pool, ships pop in order until
-        the side that has the bigger sustained attack wins. We then
-        proceed to finalise the battle."""
-        from ecs.tactical import DAMAGE_MIN_MULT, DAMAGE_MAX_MULT
-        rng = self._rng
-        live_by_eid = {eid: [s for s in self.battle.ships_for(eid)]
-                       for eid in self.battle.empires_present()}
-        # Round-by-round: each side fires its total attack at a random
-        # ship on the other side. Cap rounds so a stalemate ends.
-        for _ in range(20):
-            empires = [eid for eid, ships in live_by_eid.items() if ships]
-            if len(empires) <= 1:
-                break
-            attack_by_eid = {eid: sum(s.attack for s in ships)
-                             for eid, ships in live_by_eid.items()}
-            for eid in empires:
-                others = [other for other in empires if other != eid]
-                if not others:
-                    continue
-                # Spread the damage across opposing ships.
-                dmg = int(attack_by_eid[eid] * rng.uniform(DAMAGE_MIN_MULT, DAMAGE_MAX_MULT))
-                while dmg > 0:
-                    targets = [t for o in others for t in live_by_eid[o]]
-                    if not targets:
-                        break
-                    target = rng.choice(targets)
-                    bite = min(dmg, target.hull)
-                    target.hull -= bite
-                    dmg -= bite
-                    if target.hull <= 0:
-                        target.destroyed = True
-                        live_by_eid[target.empire_id].remove(target)
-        # Winner: side with surviving ships, if any.
-        survivors = [eid for eid, ships in live_by_eid.items() if ships]
-        self.battle.finished = True
-        self.battle.winner_id = survivors[0] if len(survivors) == 1 else None
+        """Hand the rest of the fight to the shared auto-resolver
+        (``tactical.auto_resolve`` → ``battle.resolve_auto``), so the
+        Auto button and a manually-played battle obey the same damage
+        model. Then finalise."""
+        from ecs.tactical import auto_resolve
+        auto_resolve(self.battle, self._rng)
         self._log("Auto-resolved.")
         self._finalise()
 

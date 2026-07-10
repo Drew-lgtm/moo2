@@ -130,41 +130,17 @@ class CombatDecisionScene(Scene):
             return
 
     def _auto_resolve(self, battle):
-        """Strategic resolver: each side deals its summed attack across
-        the other side's ships in random order, repeated until one side
-        is wiped or both run out of damage to dish out. Mirrors the
-        tactical Auto-resolve button so the maths match."""
-        from ecs.tactical import DAMAGE_MIN_MULT, DAMAGE_MAX_MULT
-        rng = self._rng
-        live_by_eid = {eid: list(battle.ships_for(eid))
-                       for eid in battle.empires_present()}
-        attack_by_eid_before = {eid: sum(s.attack for s in ships)
-                                for eid, ships in live_by_eid.items()}
-        for _ in range(20):
-            empires = [eid for eid, ships in live_by_eid.items() if ships]
-            if len(empires) <= 1:
-                break
-            attack_by_eid = {eid: sum(s.attack for s in ships)
-                             for eid, ships in live_by_eid.items()}
-            for eid in empires:
-                others = [other for other in empires if other != eid]
-                if not others:
-                    continue
-                dmg = int(attack_by_eid[eid] * rng.uniform(DAMAGE_MIN_MULT, DAMAGE_MAX_MULT))
-                while dmg > 0:
-                    targets = [t for o in others for t in live_by_eid[o]]
-                    if not targets:
-                        break
-                    target = rng.choice(targets)
-                    bite = min(dmg, target.hull)
-                    target.hull -= bite
-                    dmg -= bite
-                    if target.hull <= 0:
-                        target.destroyed = True
-                        live_by_eid[target.empire_id].remove(target)
-        survivors = [eid for eid, ships in live_by_eid.items() if ships]
-        battle.finished = True
-        battle.winner_id = survivors[0] if len(survivors) == 1 else None
+        """Resolve the engagement without opening the hex grid, using the
+        shared ``tactical.auto_resolve`` → ``battle.resolve_auto`` so the
+        Auto button here, the Auto button inside tactical, and the
+        strategic AI-vs-AI path all obey one damage model."""
+        from ecs.tactical import auto_resolve
+        # Snapshot pre-battle attack for the combat report before ships die.
+        attack_by_eid_before = {
+            eid: sum(s.attack for s in battle.ships_for(eid))
+            for eid in battle.empires_present()
+        }
+        auto_resolve(battle, self._rng)
 
         # Apply destruction to the strategic layer.
         from ecs.combat import _destroy_ship

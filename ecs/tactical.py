@@ -54,9 +54,9 @@ HEX_WIDTH = HEX_SIZE * math.sqrt(3)
 HEX_HEIGHT = HEX_SIZE * 2.0
 HEX_V_SPACING = HEX_SIZE * 1.5
 
-# Random multiplier on damage rolls so battles aren't fully deterministic.
-DAMAGE_MIN_MULT = 0.7
-DAMAGE_MAX_MULT = 1.3
+# Damage-roll spread lives in the canonical model (ecs/battle.py). Re-
+# exported here for any legacy importer; do not redefine — one source.
+from ecs.battle import DAMAGE_MIN_MULT, DAMAGE_MAX_MULT  # noqa: F401
 
 # Per-class movement points. MOO2 had this driven by drive tech + a
 # ship's tactical-combat speed stat; for Stage 2 we map ship class to
@@ -218,25 +218,20 @@ class TacticalBattle:
             return {"fired": False, "damage": 0, "to_shield": 0,
                     "to_hull": 0, "destroyed": False,
                     "reason": "out of range"}
+        # Damage math routes through the canonical model in ecs.battle so
+        # a tactical shot and an auto-resolved shot use identical rules.
+        from ecs import battle as _battle
         rng = rng or random
-        roll = rng.uniform(DAMAGE_MIN_MULT, DAMAGE_MAX_MULT)
-        raw = max(1, int(round(attacker.attack * roll * range_mult)))
-        # Armor: flat reduction, but always at least 1 damage gets in.
-        after_armor = max(1, raw - target.armor)
-        # Shield absorbs first.
-        to_shield = min(target.shield_current, after_armor)
-        target.shield_current -= to_shield
-        to_hull = after_armor - to_shield
-        target.hull -= to_hull
+        raw = _battle.roll_damage(attacker.attack, rng, range_mult)
+        view = _combatant_view(target)
+        result = _battle.apply_hit(view, raw)
+        target.shield_current = view.shield
+        target.hull = view.hull
+        target.destroyed = view.destroyed
         attacker.has_fired = True
-        destroyed = False
-        if target.hull <= 0:
-            target.hull = 0
-            target.destroyed = True
-            destroyed = True
-        return {"fired": True, "damage": after_armor,
-                "to_shield": to_shield, "to_hull": to_hull,
-                "destroyed": destroyed, "reason": None}
+        return {"fired": True, "damage": result["damage"],
+                "to_shield": result["to_shield"], "to_hull": result["to_hull"],
+                "destroyed": view.destroyed, "reason": None}
 
     def end_round(self):
         """Reset per-round flags. Regenerate each ship's shield up to
@@ -311,6 +306,53 @@ def hex_distance(c1: int, r1: int, c2: int, r2: int) -> int:
 
 
 # ---- AI -----------------------------------------------------------------
+
+def _combatant_view(ship: "TacticalShip"):
+    """A ``battle.Combatant`` mirror of a TacticalShip, so the canonical
+    damage functions can operate on it. Field names differ (TacticalShip
+    predates the unified model) — this bridges them. The caller copies
+    the mutated shield/hull/destroyed back onto the ship."""
+    from ecs.battle import Combatant
+    return Combatant(
+        key=ship, empire_id=ship.empire_id, attack=ship.attack,
+        hull=ship.hull, hull_max=ship.max_hull,
+        shield=ship.shield_current, shield_max=ship.shield_max,
+        shield_regen=ship.shield_regen, defense=ship.armor,
+    )
+
+
+def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None):
+    """Resolve a whole tactical battle non-interactively via the shared
+    ``battle.resolve_auto``. Mutates the TacticalShips in place (hull /
+    shield / destroyed) and stamps ``finished`` + ``winner_id``.
+
+    Stations participate as ordinary combatants here (the fortress can be
+    overwhelmed within a tactical engagement); strategic indestructibility
+    is a separate concern handled by the orbital-defense building chain.
+    """
+    from ecs import battle as _battle
+    rng = rng or random
+    by_eid: dict[int, list] = {}
+    for s in tbattle.ships:
+        if s.destroyed:
+            continue
+        by_eid.setdefault(s.empire_id, []).append(_combatant_view(s))
+
+    def hostile(a, b):
+        return a != b
+
+    _battle.resolve_auto(by_eid, {}, hostile, rng)
+    for side in by_eid.values():
+        for c in side:
+            ship = c.key
+            ship.hull = c.hull
+            ship.shield_current = c.shield
+            if c.destroyed:
+                ship.destroyed = True
+    tbattle.finished = True
+    empires = tbattle.empires_present()
+    tbattle.winner_id = next(iter(empires), None) if len(empires) == 1 else None
+
 
 def ai_take_turn(battle: TacticalBattle, controlling_empire_id: int,
                  rng: random.Random | None = None) -> list[str]:

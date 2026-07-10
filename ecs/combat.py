@@ -15,6 +15,8 @@ change.
 """
 from __future__ import annotations
 
+import random
+
 from ecs.components import (
     Ship, ShipOwner, ShipAt, ShipInTransit, TechState, Owner, Orbiting, Position,
     BuildState, Name, Empire,
@@ -28,6 +30,8 @@ from ecs.invasion import _planet_defense_rating
 from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from ecs.db import get_connection, delete_ship
 from ecs.ship_design import stats_from_ship
+from ecs import battle
+from ecs.battle import Combatant
 
 
 def _empire_bonuses(component_mgr, empire_id: int) -> tuple[int, int]:
@@ -85,19 +89,20 @@ MAX_COMBAT_ROUNDS = 5
 
 def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
                       ship_atk_fn, ship_stats_full_fn):
-    """Snapshot every ship into a mutable combatant dict for the battle:
+    """Snapshot every ship into a canonical ``battle.Combatant`` for the
+    engagement. ``key`` is the ECS ship entity id so losses map back.
 
-    {entity, attack, hull_max, hull_hp, shield_max, shield_regen,
-     shield_hp, destroyed}
-
-    Also returns the per-empire intact attack pool (used as the first-
-    round attack figure in the combat report)."""
-    combatants_by_eid: dict[int, list[dict]] = {}
+    Also returns the per-empire intact attack pool (the first-round
+    attack figure shown in the combat report). Note: armor-tech hull is
+    already inside ``stats.hull``; the special evasion stat becomes the
+    combatant's flat ``defense`` (per-hit reduction), matching the
+    tactical path and the canonical model in ``ecs/battle.py``."""
+    combatants_by_eid: dict[int, list[Combatant]] = {}
     intact_attack: dict[int, int] = {}
     for eid, ships in ships_here.items():
         atk_bonus, hull_bonus = bonuses_fn(eid)
         side_attack = 0
-        roster: list[dict] = []
+        roster: list[Combatant] = []
         for e in ships:
             ship_atk = _attack_of(component_mgr, e, atk_bonus, leader_map,
                                   ship_atk_fn(eid, e))
@@ -108,93 +113,22 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
             base_hull = SHIPS.get(
                 component_mgr.get_component(e, Ship).ship_class, {}
             ).get("hull", 0)
-            hull_max = (base_hull + hull_bonus + leader_hull
-                        + full.get("hull", 0) + full.get("defense", 0))
-            cap = full.get("shield_capacity", 0)
-            regen = full.get("shield_regen", 0)
-            roster.append({
-                "entity": e,
-                "attack": ship_atk,
-                "hull_max": hull_max,
-                "hull_hp": hull_max,
-                "shield_max": cap,
-                "shield_regen": regen,
-                "shield_hp": cap,
-                "destroyed": False,
-            })
+            hull_max = base_hull + hull_bonus + leader_hull + full.get("hull", 0)
+            roster.append(Combatant(
+                key=e,
+                empire_id=eid,
+                attack=ship_atk,
+                hull=hull_max,
+                hull_max=hull_max,
+                shield=full.get("shield_capacity", 0),
+                shield_max=full.get("shield_capacity", 0),
+                shield_regen=full.get("shield_regen", 0),
+                defense=full.get("defense", 0),
+            ))
             side_attack += ship_atk
         combatants_by_eid[eid] = roster
         intact_attack[eid] = side_attack
     return combatants_by_eid, intact_attack
-
-
-def _apply_damage(roster, damage):
-    """Apply a damage pool to one side's roster. Focus-fires the weakest
-    surviving ship first (lowest shield + hull). Shields absorb before
-    hull; excess from one ship spills onto the next."""
-    if damage <= 0:
-        return
-    while damage > 0:
-        target = None
-        target_total = None
-        for c in roster:
-            if c["destroyed"]:
-                continue
-            total = c["shield_hp"] + c["hull_hp"]
-            if total <= 0:
-                continue
-            if target is None or total < target_total:
-                target, target_total = c, total
-        if target is None:
-            return  # nothing left to hit
-        absorbed = min(damage, target["shield_hp"])
-        target["shield_hp"] -= absorbed
-        damage -= absorbed
-        if damage > 0:
-            hit = min(damage, target["hull_hp"])
-            target["hull_hp"] -= hit
-            damage -= hit
-            if target["hull_hp"] <= 0:
-                target["destroyed"] = True
-
-
-def _resolve_battle(combatants_by_eid, defenses, participants, hostile_fn):
-    """Run multi-round combat. Mutates combatant dicts in place
-    (destroyed flag + transient HP). Planetary defenses fire every round
-    but can't be destroyed in space."""
-    for _round in range(MAX_COMBAT_ROUNDS):
-        living_sides = [
-            eid for eid in participants
-            if any(not c["destroyed"] for c in combatants_by_eid.get(eid, []))
-            or defenses.get(eid, 0) > 0
-        ]
-        if len(living_sides) < 2:
-            return
-        # Any active war pair left? If everyone present is at peace,
-        # nothing happens (treaties hold even within the same star).
-        if not any(hostile_fn(a, b)
-                   for i, a in enumerate(living_sides)
-                   for b in living_sides[i + 1:]):
-            return
-
-        side_attack = {
-            eid: sum(c["attack"] for c in combatants_by_eid.get(eid, [])
-                     if not c["destroyed"])
-                 + defenses.get(eid, 0)
-            for eid in living_sides
-        }
-        for eid in living_sides:
-            damage = sum(side_attack[other] for other in living_sides
-                         if other != eid and hostile_fn(eid, other))
-            _apply_damage(combatants_by_eid.get(eid, []), damage)
-
-        # End of round: shields regen on surviving ships.
-        for roster in combatants_by_eid.values():
-            for c in roster:
-                if c["destroyed"]:
-                    continue
-                c["shield_hp"] = min(c["shield_max"],
-                                     c["shield_hp"] + c["shield_regen"])
 
 
 def _build_tactical_battle(cm, star_entity: int, new_turn: int,
@@ -478,9 +412,11 @@ def combat_tick(game, new_turn: int):
             eid: attack_by_eid_round1.get(eid, 0) + def_here.get(eid, 0)
             for eid in participants
         }
-        _resolve_battle(combatants_by_eid, def_here, participants, _hostile)
+        battle.resolve_auto(combatants_by_eid, def_here, _hostile,
+                            random.Random(new_turn * 1009 + star_entity),
+                            max_rounds=MAX_COMBAT_ROUNDS)
         side_losses: dict[int, list[int]] = {
-            eid: [c["entity"] for c in combatants_by_eid.get(eid, []) if c["destroyed"]]
+            eid: [c.key for c in combatants_by_eid.get(eid, []) if c.destroyed]
             for eid in participants
         }
         side_attack = first_round_attack
