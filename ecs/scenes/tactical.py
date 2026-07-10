@@ -1,16 +1,23 @@
-"""Tactical hex-grid combat scene — Stage 1.
+"""Tactical hex-grid combat scene.
 
-Picks up a ``TacticalBattle`` from ``game.pending_tactical_battles``,
-lets the player drive one engagement, then applies the result back to
-the strategic layer and returns to galaxy.
+Picks up a ``TacticalBattle`` from ``game.pending_engagements`` (queued
+by the strategic ``combat_tick`` and reached only when the player picks
+"Attack" on the Combat Options screen), lets the player drive one
+engagement, then applies the result back to the strategic layer and
+routes to the next engagement or back to galaxy.
 
-Mechanics (Stage 1):
+Mechanics:
 - Click your own ship to select it (cyan ring).
-- Click an in-range empty hex to move that ship (one move per round).
-- Click any enemy ship to fire (one shot per round).
-- End Turn button runs the enemy AI, then advances the round.
-- Auto button falls back to the strategic resolver and ends the
-  battle immediately.
+- Click an in-range empty hex to move (spends movement points).
+- Click any enemy ship to fire (one shot per round, range-gated).
+- End Turn runs the enemy AI, then advances the round (shields regen).
+- Auto hands the rest of the fight to the shared auto-resolver.
+
+Damage obeys the canonical model in ``ecs/battle.py`` — identical to
+the auto-resolve and strategic paths.
+
+There is deliberately no Escape-to-forfeit: a committed battle plays to
+a decision (MOO2 behaviour). The queue is owned by ``_finalise``.
 
 Layout:
 - Hex grid on the left, side panel on the right with selected-ship
@@ -89,18 +96,20 @@ class TacticalScene(Scene):
         self.battle = queue[0]
         self.selected = None
         self.log_lines = []
+        # Snapshot each side's total attack before anyone dies, for the
+        # post-battle combat report.
+        self._attack_before = {
+            eid: sum(s.attack for s in self.battle.ships_for(eid))
+            for eid in self.battle.empires_present()
+        }
         self._log(f"Engagement at {self.battle.star_name} — round 1")
 
     def on_exit(self):
-        # Battle resolved (or auto'd) — pop it off the queue and stash
-        # the destroyed entity ids so combat.py can flush them.
-        if self.battle is None:
-            return
-        queue = getattr(self.game, "pending_engagements", None) or []
-        if queue and queue[0] is self.battle:
-            queue.pop(0)
-        if not queue:
-            self.game.pending_engagements = None
+        # NOTE: the queue is owned exclusively by ``_finalise`` — do NOT
+        # pop it here. on_exit fires on every scene transition (including
+        # a legitimate finalise route), so popping here would double-pop,
+        # and transiently leaving the scene would forfeit the battle.
+        return
 
     # --------------------------------------------------------------- helpers
 
@@ -134,9 +143,10 @@ class TacticalScene(Scene):
     def handle_event(self, event):
         if self.battle is None:
             return
+        # No Escape-to-forfeit: a committed battle must be resolved via
+        # End Turn or Auto. (Leaving the scene would strand the battle
+        # at the head of the queue.) Swallow Escape so it's a no-op.
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            # Esc opens pause — battle paused but state preserved.
-            self.game.scenes.replace("pause")
             return
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return
@@ -235,6 +245,15 @@ class TacticalScene(Scene):
                 conn.commit()
             for ship_entity in destroyed_entities:
                 _destroy_ship(self.game, ship_entity)
+
+        # Queue a combat-report row so the player gets the same
+        # post-battle summary an auto-resolved fight produces.
+        from ecs.tactical import battle_report
+        report = battle_report(self.battle,
+                               getattr(self, "_attack_before", {}))
+        existing = getattr(self.game, "pending_combat_reports", None) or []
+        self.game.pending_combat_reports = list(existing) + [report]
+
         # Pop battle off the queue and route — if more engagements are
         # pending, hand back to the decision scene, else to galaxy.
         queue = getattr(self.game, "pending_engagements", None) or []

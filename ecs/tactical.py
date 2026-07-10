@@ -354,6 +354,44 @@ def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None):
     tbattle.winner_id = next(iter(empires), None) if len(empires) == 1 else None
 
 
+def battle_report(tbattle: TacticalBattle,
+                  attack_by_eid_before: dict[int, int]) -> dict:
+    """Build a combat-report row (same schema as the strategic
+    ``combat.py`` log entry) from a resolved TacticalBattle. Shared by
+    the tactical scene's finalise and the Combat Options auto-resolve so
+    the post-battle summary looks identical whichever path ran."""
+    sides = []
+    empires = {s.empire_id for s in tbattle.ships}
+    for eid in empires:
+        by_class: dict[str, int] = {}
+        total = 0
+        lost = 0
+        for s in tbattle.ships:
+            if s.empire_id != eid:
+                continue
+            by_class[s.ship_class] = by_class.get(s.ship_class, 0) + 1
+            total += 1
+            if s.destroyed:
+                lost += 1
+        sides.append({
+            "empire_id": eid,
+            "attack": attack_by_eid_before.get(eid, 0),
+            "defense": 0,
+            "ships_before": by_class,
+            "total_before": total,
+            "lost": lost,
+            "remaining": total - lost,
+        })
+    return {
+        "turn": tbattle.turn,
+        "star_entity": tbattle.star_entity,
+        "sides": sides,
+        "losses_by_empire": {s["empire_id"]: s["lost"] for s in sides if s["lost"]},
+        "attack_by_empire": {s["empire_id"]: s["attack"] for s in sides},
+        "observed": False,
+    }
+
+
 def ai_take_turn(battle: TacticalBattle, controlling_empire_id: int,
                  rng: random.Random | None = None) -> list[str]:
     """One AI side acts: every ship picks the nearest opponent, moves

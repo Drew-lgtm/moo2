@@ -159,37 +159,10 @@ class CombatDecisionScene(Scene):
                 _destroy_ship(self.game, ship_entity)
 
         # Add a combat-report row so the player sees the outcome after
-        # all engagements are decided.
-        sides = []
-        for eid in battle.empires_present() | {s.empire_id for s in battle.ships}:
-            # ships_before counts: from the original snapshot in
-            # battle.ships (includes destroyed ones).
-            by_class_total: dict[str, int] = {}
-            total = 0
-            for s in battle.ships:
-                if s.empire_id != eid:
-                    continue
-                by_class_total[s.ship_class] = by_class_total.get(s.ship_class, 0) + 1
-                total += 1
-            lost = sum(1 for s in battle.ships
-                       if s.empire_id == eid and s.destroyed)
-            sides.append({
-                "empire_id": eid,
-                "attack": attack_by_eid_before.get(eid, 0),
-                "defense": 0,
-                "ships_before": by_class_total,
-                "total_before": total,
-                "lost": lost,
-                "remaining": total - lost,
-            })
-        report = {
-            "turn": battle.turn,
-            "star_entity": battle.star_entity,
-            "sides": sides,
-            "losses_by_empire": {s["empire_id"]: s["lost"] for s in sides if s["lost"]},
-            "attack_by_empire": {s["empire_id"]: s["attack"] for s in sides},
-            "observed": False,
-        }
+        # all engagements are decided (shared builder with the tactical
+        # scene's finalise so the summary is identical either way).
+        from ecs.tactical import battle_report
+        report = battle_report(battle, attack_by_eid_before)
         existing = getattr(self.game, "pending_combat_reports", None) or []
         self.game.pending_combat_reports = list(existing) + [report]
         # Brief turn log line.
