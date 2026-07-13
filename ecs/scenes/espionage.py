@@ -69,10 +69,11 @@ class EspionageScene(Scene):
         return set()
 
     def _others(self):
+        from ecs.antaran import is_antaran
         player = self._player()
         pid = player.id if player else None
         return [emp for _eid, emp in self.game.component_mgr.get_all(Empire)
-                if emp.id != pid]
+                if emp.id != pid and not is_antaran(emp.id)]
 
     # ------------------------------------------------------------------ input
 

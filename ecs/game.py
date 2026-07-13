@@ -31,6 +31,7 @@ from ecs.tooltip import Tooltip
 from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
 from ecs.turn_log import TurnLog
+from ecs.antaran import antaran_tick as _antaran_tick
 from assets.loader import load_random_background
 
 
@@ -153,6 +154,8 @@ class Game:
         # Colonies bombarded this turn — one orbital volley per colony
         # per turn. Cleared at the top of each advance_turn.
         self.bombarded_this_turn: set[int] = set()
+        # Active Antaran raid (or None) — transient end-game threat.
+        self.antaran_raid = None
 
     def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal",
                        galaxy_age="average"):
@@ -238,10 +241,12 @@ class Game:
         # fleet movement -> combat -> diplomacy. Combat runs before
         # diplomacy so a fresh war's first battle resolves, then the
         # diplomacy tick ages treaties and decays attitudes.
+        # ``_antaran_tick`` runs BEFORE combat so a freshly-spawned raid
+        # fleet fights in the same turn it arrives.
         for cb in (ai_tick, _autobuild_tick, pop_growth_tick, production_tick,
-                   _leaders_tick, fleet_tick, combat_tick, _exploration_tick,
-                   _espionage_tick, _assimilation_tick, _events_tick,
-                   _diplomacy_tick):
+                   _leaders_tick, fleet_tick, _antaran_tick, combat_tick,
+                   _exploration_tick, _espionage_tick, _assimilation_tick,
+                   _events_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 

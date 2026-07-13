@@ -90,7 +90,9 @@ class DiplomacyScene(Scene):
     def _other_empires(self) -> list:
         player = self._player()
         pid = player.id if player else None
-        return [e for _eid, e in self.game.component_mgr.get_all(Empire) if e.id != pid]
+        from ecs.antaran import is_antaran
+        return [e for _eid, e in self.game.component_mgr.get_all(Empire)
+                if e.id != pid and not is_antaran(e.id)]
 
     def _empire_by_id(self, eid):
         for _e, emp in self.game.component_mgr.get_all(Empire):

@@ -298,6 +298,10 @@ def combat_tick(game, new_turn: int):
                 leader_map[l.assigned_ship_id] = ship_effect(l)
 
     def _hostile(a: int, b: int) -> bool:
+        # Antaran raiders are hostile to everyone, always.
+        from ecs.antaran import is_antaran
+        if is_antaran(a) or is_antaran(b):
+            return a != b
         # No diplomacy object (e.g. old save) → fall back to the old
         # "everyone fights everyone" behaviour so nothing silently
         # becomes invincible.
