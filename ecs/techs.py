@@ -182,7 +182,7 @@ TECHS: dict[str, dict] = {
         "id": "artificial_planet", "name": "Artificial Planet",
         "field": "construction", "tier": 6, "tier_group": _t("construction", 6),
         "cost": 1600, "prereqs": ["adamantium_armor"],
-        "description": "Construct planetoid colonies", "effect_stub": True,
+        "description": "Construct planetoid colonies",
     },
     "xeno_hull": {
         "id": "xeno_hull", "name": "Xeno-Composite Hull",
@@ -318,7 +318,7 @@ TECHS: dict[str, dict] = {
         "id": "atmospheric_terraforming", "name": "Atmospheric Terraforming",
         "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
         "cost": 400, "prereqs": ["tritanium_armor"],
-        "description": "Reshape toxic / radiated worlds", "effect_stub": True,
+        "description": "Reshape toxic / radiated worlds",
     },
     "merculite_missile": {
         "id": "merculite_missile", "name": "Merculite Missile",
@@ -338,7 +338,7 @@ TECHS: dict[str, dict] = {
         "id": "irradiation_resistance", "name": "Irradiation Resistance",
         "field": "chemistry", "tier": 4, "tier_group": _t("chemistry", 4),
         "cost": 700, "prereqs": ["atmospheric_terraforming"],
-        "description": "Colonize Radiated worlds", "effect_stub": True,
+        "description": "Colonize Radiated worlds",
     },
     "neutronium_armor": {
         "id": "neutronium_armor", "name": "Neutronium Armor",
@@ -568,13 +568,13 @@ TECHS: dict[str, dict] = {
         "id": "biomorphic_fungi", "name": "Biomorphic Fungi",
         "field": "biology", "tier": 4, "tier_group": _t("biology", 4),
         "cost": 600, "prereqs": ["cloning"],
-        "description": "Pop on hostile worlds", "effect_stub": True,
+        "description": "Pop on hostile worlds",
     },
     "gaia_transformation": {
         "id": "gaia_transformation", "name": "Gaia Transformation",
         "field": "biology", "tier": 5, "tier_group": _t("biology", 5),
         "cost": 1000, "prereqs": ["terraforming"],
-        "description": "Convert worlds to Gaia", "effect_stub": True,
+        "description": "Convert worlds to Gaia",
     },
     "evolutionary_mutation": {
         "id": "evolutionary_mutation", "name": "Evolutionary Mutation",

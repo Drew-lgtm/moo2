@@ -161,6 +161,44 @@ PROJECTS: dict[str, dict] = {
         "effects": {"max_pop": 3},
         "required_tech": "terraforming",
     },
+    # Habitability chain — each unlocked by a formerly-stub tech. These
+    # reuse the standard max_pop / food completion effects; the tech's
+    # gameplay payoff IS unlocking the buildable project (MOO2 model).
+    "atmospheric_terraforming_b": {
+        "id": "atmospheric_terraforming_b", "name": "Atmosphere Terraforming",
+        "category": "farming",
+        "cost": 300, "description": "Reshape the air (+2 max pop, +growth)",
+        "effects": {"max_pop": 2, "growth_rate": 0.10},
+        "required_tech": "atmospheric_terraforming",
+    },
+    "radiation_shielding": {
+        "id": "radiation_shielding", "name": "Radiation Shielding",
+        "category": "farming",
+        "cost": 400, "description": "Habitats for hostile worlds (+3 max pop)",
+        "effects": {"max_pop": 3},
+        "required_tech": "irradiation_resistance",
+    },
+    "biomorphic_farms": {
+        "id": "biomorphic_farms", "name": "Biomorphic Farms",
+        "category": "farming",
+        "cost": 450, "description": "Engineered crops (+3 food, +1 max pop)",
+        "effects": {"food": 3, "max_pop": 1},
+        "required_tech": "biomorphic_fungi",
+    },
+    "gaia_transformation_b": {
+        "id": "gaia_transformation_b", "name": "Gaia Transformation",
+        "category": "farming",
+        "cost": 700, "description": "Terraform to a garden world (+5 max pop, +growth)",
+        "effects": {"max_pop": 5, "growth_rate": 0.15},
+        "required_tech": "gaia_transformation",
+    },
+    "artificial_planet_b": {
+        "id": "artificial_planet_b", "name": "Artificial Planet",
+        "category": "economy",
+        "cost": 900, "description": "Vast orbital habitats (+6 max pop)",
+        "effects": {"max_pop": 6},
+        "required_tech": "artificial_planet",
+    },
     # ---- Military (planetary defenses) ---------------------------------
     # MOO2-style ground/orbital defense buildings. Effects are flat
     # planet bonuses for now; ``defense`` value is reserved for the
