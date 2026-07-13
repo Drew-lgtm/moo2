@@ -112,6 +112,23 @@ def test_auto_resolve_stronger_wins_and_finishes():
     assert 20 in b.destroyed_entity_ids()
 
 
+def test_battle_report_excludes_stations():
+    # A destroyed station must NOT show up as a fleet loss — it's a
+    # planetary structure re-manned each turn, not a ship.
+    from ecs.tactical import battle_report
+    ship = _ship(1, 2, 13, 2, hull=0, attack=4)
+    ship.destroyed = True
+    station = _ship(2, 2, 13, 4, ship_class="star_fortress", hull=0,
+                    attack=24, is_station=True)
+    station.destroyed = True
+    b = _battle(ship, station)
+    rep = battle_report(b, {2: 28})
+    side = next(s for s in rep["sides"] if s["empire_id"] == 2)
+    assert side["total_before"] == 1        # only the frigate counts
+    assert side["lost"] == 1
+    assert "star_fortress" not in side["ships_before"]
+
+
 def test_auto_resolve_deterministic_seed():
     def build():
         return _battle(_ship(1, 1, 0, 2, hull=12, attack=6, shield_max=6,

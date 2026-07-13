@@ -369,6 +369,11 @@ def battle_report(tbattle: TacticalBattle,
         for s in tbattle.ships:
             if s.empire_id != eid:
                 continue
+            # Stations are planetary structures, not fleet — they're
+            # re-manned from the orbital-defense building each turn, so
+            # they never count as a ship loss in the report.
+            if s.is_station:
+                continue
             by_class[s.ship_class] = by_class.get(s.ship_class, 0) + 1
             total += 1
             if s.destroyed:

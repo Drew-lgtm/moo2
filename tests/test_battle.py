@@ -50,7 +50,8 @@ def test_roll_damage_half_range():
 def test_hit_shield_absorbs_first():
     t = _c(hull=10, shield=8, regen=0)
     r = apply_hit(t, 5)
-    assert r == {"damage": 5, "to_shield": 5, "to_hull": 0, "destroyed": False}
+    assert r["damage"] == 5 and r["to_shield"] == 5 and r["to_hull"] == 0
+    assert r["destroyed"] is False and r["after_def"] == 5
     assert t.shield == 3 and t.hull == 10
 
 
@@ -113,6 +114,27 @@ def test_pool_terminates_on_empty_roster():
     dead = _c(hull=0)
     dead.destroyed = True
     apply_damage_pool([dead], 100, random.Random(0))  # must return
+
+
+def test_pool_defense_actually_mitigates():
+    # REGRESSION: the pool drain must consume the defense-mitigated
+    # slice, otherwise a high-defense survivor takes full damage. A lone
+    # hull-100 / defense-10 ship hit by a pool of 50 should take 40.
+    t = _c(hull=100, defense=10)
+    apply_damage_pool([t], 50, random.Random(0))
+    assert t.hull == 60, "defense was ignored in the pooled path"
+
+
+def test_pool_defense_across_multiple_survivors():
+    # Three hull-20 / defense-8 ships, pool 30. Focus-fire the first:
+    # 30-8 = 22 caps at 20 hull → that ship dies, leftover 2 spills to
+    # the next (2-8 floored to 1). Total hull removed across the side is
+    # far less than the raw 30 — defense matters per hit.
+    ships = [_c(key=i, hull=20, defense=8) for i in range(3)]
+    apply_damage_pool(ships, 30, random.Random(0))
+    total_lost = sum(20 - s.hull for s in ships)
+    assert total_lost < 30  # defense reduced aggregate damage
+    assert total_lost >= 20  # but the focus target still died
 
 
 # ---- regen -------------------------------------------------------------

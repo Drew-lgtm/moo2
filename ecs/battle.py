@@ -96,7 +96,7 @@ def apply_hit(target: Combatant, raw_damage: int) -> dict:
     """
     if raw_damage <= 0 or target.destroyed:
         return {"damage": 0, "to_shield": 0, "to_hull": 0,
-                "destroyed": target.destroyed}
+                "after_def": 0, "destroyed": target.destroyed}
     after_def = max(1, raw_damage - target.defense)
     to_shield = min(target.shield, after_def)
     target.shield -= to_shield
@@ -112,8 +112,12 @@ def apply_hit(target: Combatant, raw_damage: int) -> dict:
         target.hull = 0
         target.destroyed = True
         destroyed = True
+    # ``after_def`` is the post-defense damage this hit *tried* to deal.
+    # The pool resolver drains by it (not by absorbed ``damage``) so the
+    # defense-mitigated slice actually leaves the pool — otherwise the
+    # 1-damage floor chips it back and defense protects nothing.
     return {"damage": to_shield + to_hull, "to_shield": to_shield,
-            "to_hull": to_hull, "destroyed": destroyed}
+            "to_hull": to_hull, "after_def": after_def, "destroyed": destroyed}
 
 
 def _weakest_target(roster: list[Combatant]) -> Combatant | None:
@@ -152,11 +156,15 @@ def apply_damage_pool(roster: list[Combatant], pool: int,
         if target is None:
             return
         result = apply_hit(target, remaining)
-        # Drain the pool by what this ship actually absorbed (shield +
-        # hull), so overkill spills onto the next target. ``max(1, …)``
-        # guards against a zero-absorb infinite loop (can't happen while
-        # a live target exists, but cheap insurance).
-        remaining -= max(1, result["damage"])
+        # Drain by the post-defense amount the hit represented
+        # (``after_def``), NOT by what the ship absorbed. This consumes
+        # the defense-mitigated slice too — so a high-evasion ship
+        # genuinely reduces total damage taken — while true overkill
+        # (after_def minus what a dying ship could soak) still spills to
+        # the next target. ``max(1, …)`` guards the zero-progress case.
+        remaining = result["after_def"] - result["damage"]
+        if remaining <= 0:
+            return
 
 
 def regen_shields(roster: list[Combatant]) -> None:
