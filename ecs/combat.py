@@ -61,20 +61,6 @@ def _attack_of(component_mgr, ship_entity: int, attack_bonus: int = 0,
     return SHIPS.get(ship.ship_class, {}).get("attack", 0) + attack_bonus + extra + loadout_atk
 
 
-def _hull_of(component_mgr, ship_entity: int, hull_bonus: int = 0,
-             leader_map: dict | None = None,
-             loadout_hull: int = 0) -> int:
-    """Effective hull = base + race/trait bonus + ship leader + loadout
-    (armor + shield-defense + special hull/defense). Shields are folded
-    into hull for the loss-computation pass since damage doesn't carry
-    between turns."""
-    ship = component_mgr.get_component(ship_entity, Ship)
-    if ship is None:
-        return 0
-    extra = leader_map.get(ship.id, (0, 0))[1] if leader_map else 0
-    return SHIPS.get(ship.ship_class, {}).get("hull", 0) + hull_bonus + extra + loadout_hull
-
-
 def _destroy_ship(game, ship_entity: int):
     cm = game.component_mgr
     for comp_type in (Ship, ShipOwner, ShipAt, ShipInTransit):
