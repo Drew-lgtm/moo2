@@ -34,6 +34,11 @@ from ecs.invasion import (
     MARINES_PER_TRANSPORT, MILITIA_PER_MILLION_POP, _planet_defense_rating,
 )
 from ecs.races import traits_for_empire
+from ecs.ship_design import (
+    compute_loadout, loadout_to_ship_fields,
+    design_space_used, hull_space_budget,
+)
+from ecs.designs import design_project_id
 from ecs.diplomacy import (
     NON_AGGRESSION, TRADE, RESEARCH, ALLIANCE, DEFENSIVE_PACT,
     would_accept_treaty, empire_strength, TREATY_ACCEPT_THRESHOLD,
@@ -207,11 +212,18 @@ def ai_tick(game, new_turn: int):
             outpost_candidates=outpost_candidates,
         )
 
+        # Author/refresh this empire's warship blueprints and get a
+        # {class: design_project_id} map so the build loop builds the
+        # empire's own designs (with personality-chosen mounts) instead
+        # of the generic auto hull.
+        design_map = _ai_ensure_designs(game, empire, personality, unlocked)
+
         for entity_id in planet_ids:
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
             _ai_queue_building(
                 cm, entity_id, personality["build_priority"], unlocked,
                 pending_writes, suppress=suppress, traits=traits,
+                design_map=design_map,
             )
 
         if tech_state is not None:
@@ -292,8 +304,87 @@ def _ai_rebalance_workers(cm, entity_id, worker_pct, pending_writes):
     pending_writes.append(("workers", (planet.id, farmers, workers, scientists)))
 
 
+# Hull classes the AI authors blueprints for. Its build priority still
+# lists ``ship_<class>``; the design map swaps in the empire's own
+# design at queue time.
+AI_DESIGN_CLASSES = ["frigate", "carrier", "cruiser", "battleship", "dreadnought"]
+
+
+def _ai_ensure_designs(game, empire, personality, unlocked) -> dict:
+    """Ensure the empire has one 'Auto <Class>' blueprint per warship
+    class, reflecting its current best tech and a personality-driven
+    weapon mount. Reuses/updates a single design per class (no
+    proliferation) and returns a {class: design_project_id} map for the
+    build loop. Empty for classes with no weapon tech yet — those fall
+    back to the generic auto hull.
+
+    Aggressive empires favour Heavy mounts (more punch, fewer guns);
+    everyone else stays Normal. Heavy doubles weapon space, so the gun
+    count is trimmed until the design fits the hull budget.
+    """
+    mgr = getattr(game, "ship_designs", None)
+    if mgr is None:
+        return {}
+    prefer_heavy = bool(personality.get("aggressive"))
+    mount = "heavy" if prefer_heavy else "normal"
+
+    # Index this empire's existing auto-designs by class for reuse.
+    existing = {}
+    for d in mgr.for_empire(empire.id):
+        if d.name.startswith("Auto "):
+            existing[d.ship_class] = d
+
+    design_map: dict[str, str] = {}
+    dirty = False
+    for cls in AI_DESIGN_CLASSES:
+        lo = compute_loadout(cls, unlocked)
+        if not lo.get("weapon"):
+            continue  # no weapon tech for this hull yet → use auto hull
+        fields = loadout_to_ship_fields(lo)
+        fields["weapon_mount"] = mount
+        # Trim gun count until the loadout fits the hull (Heavy mounts
+        # cost double weapon space).
+        count = fields.get("weapon_count", 0)
+        specials = fields.get("specials", [])
+        budget = hull_space_budget(cls, specials, unlocked)
+        while count > 1 and design_space_used(
+                fields.get("armor_tech"), fields.get("shield_tech"),
+                fields.get("weapon_tech"), count, mount, specials) > budget:
+            count -= 1
+        fields["weapon_count"] = count
+
+        d = existing.get(cls)
+        if d is None:
+            d = mgr.create(empire.id, f"Auto {cls.title()}", cls,
+                           armor_tech=fields.get("armor_tech"),
+                           shield_tech=fields.get("shield_tech"),
+                           weapon_tech=fields.get("weapon_tech"),
+                           weapon_count=count, weapon_mount=mount,
+                           specials=list(specials))
+            dirty = True
+        else:
+            # Refresh in place if tech / mount moved on.
+            new = (fields.get("armor_tech"), fields.get("shield_tech"),
+                   fields.get("weapon_tech"), count, mount, tuple(specials))
+            old = (d.armor_tech, d.shield_tech, d.weapon_tech,
+                   d.weapon_count, d.weapon_mount, tuple(d.specials))
+            if new != old:
+                (d.armor_tech, d.shield_tech, d.weapon_tech,
+                 d.weapon_count, d.weapon_mount) = (
+                    fields.get("armor_tech"), fields.get("shield_tech"),
+                    fields.get("weapon_tech"), count, mount)
+                d.specials = list(specials)
+                dirty = True
+        design_map[cls] = design_project_id(d.id)
+
+    if dirty:
+        mgr.save()
+    return design_map
+
+
 def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
-                        pending_writes, suppress: tuple = (), traits=None):
+                        pending_writes, suppress: tuple = (), traits=None,
+                        design_map=None):
     build_state = cm.get_component(entity_id, BuildState)
     planet = cm.get_component(entity_id, Planet)
     if build_state is None or planet is None:
@@ -301,6 +392,7 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
     if build_state.current_project or build_state.queue:
         return
 
+    design_map = design_map or {}
     completed = set(build_state.completed)
     suppressed = set(suppress)
     for proj_id in build_priority:
@@ -308,10 +400,19 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
             continue
         if proj_id in completed:
             continue
-        if not project_is_available(proj_id, unlocked, traits):
+        # A warship in the priority builds the empire's own design (with
+        # its chosen mount) when one exists — cap / suppress checks still
+        # key off the generic ``ship_<class>`` id above. Designs are
+        # always buildable, so skip the tech-availability gate for them.
+        queue_id = proj_id
+        if proj_id.startswith("ship_"):
+            cls = proj_id[len("ship_"):]
+            if cls in design_map:
+                queue_id = design_map[cls]
+        if queue_id == proj_id and not project_is_available(proj_id, unlocked, traits):
             continue
-        build_state.current_project = proj_id
-        pending_writes.append(("build", (planet.id, proj_id, build_state.progress)))
+        build_state.current_project = queue_id
+        pending_writes.append(("build", (planet.id, queue_id, build_state.progress)))
         return
 
 
