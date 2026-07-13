@@ -347,16 +347,33 @@ def _ai_ensure_designs(game, empire, personality, unlocked) -> dict:
         if not lo.get("weapon"):
             continue  # no weapon tech for this hull yet → use auto hull
         fields = loadout_to_ship_fields(lo)
-        fields["weapon_mount"] = mount
-        # Trim gun count until the loadout fits the hull (Heavy mounts
-        # cost double weapon space).
-        count = fields.get("weapon_count", 0)
+        # Per-hull mount — start from the empire preference; a small hull
+        # may force it down. Never mutate the empire-level ``mount``.
+        hull_mount = mount
         specials = fields.get("specials", [])
         budget = hull_space_budget(cls, specials, unlocked)
-        while count > 1 and design_space_used(
-                fields.get("armor_tech"), fields.get("shield_tech"),
-                fields.get("weapon_tech"), count, mount, specials) > budget:
+
+        def _used(c, m):
+            return design_space_used(fields.get("armor_tech"),
+                                     fields.get("shield_tech"),
+                                     fields.get("weapon_tech"), c, m, specials)
+
+        count = fields.get("weapon_count", 0)
+        while count > 1 and _used(count, hull_mount) > budget:
             count -= 1
+        # A single Heavy-mount gun can still overflow a small hull (Heavy
+        # doubles weapon space). Rather than author an over-budget design
+        # the spawn would honour verbatim, drop back to a Normal mount —
+        # keeping the AI's blueprints valid like the player designer's.
+        if _used(count, hull_mount) > budget and hull_mount != "normal":
+            hull_mount = "normal"
+            count = fields.get("weapon_count", 0)
+            while count > 1 and _used(count, hull_mount) > budget:
+                count -= 1
+        # If even one Normal gun won't fit (pathological), skip this hull.
+        if count >= 1 and _used(count, hull_mount) > budget:
+            continue
+        fields["weapon_mount"] = hull_mount
         fields["weapon_count"] = count
 
         d = existing.get(cls)
@@ -365,20 +382,20 @@ def _ai_ensure_designs(game, empire, personality, unlocked) -> dict:
                            armor_tech=fields.get("armor_tech"),
                            shield_tech=fields.get("shield_tech"),
                            weapon_tech=fields.get("weapon_tech"),
-                           weapon_count=count, weapon_mount=mount,
+                           weapon_count=count, weapon_mount=hull_mount,
                            specials=list(specials))
             dirty = True
         else:
             # Refresh in place if tech / mount moved on.
             new = (fields.get("armor_tech"), fields.get("shield_tech"),
-                   fields.get("weapon_tech"), count, mount, tuple(specials))
+                   fields.get("weapon_tech"), count, hull_mount, tuple(specials))
             old = (d.armor_tech, d.shield_tech, d.weapon_tech,
                    d.weapon_count, d.weapon_mount, tuple(d.specials))
             if new != old:
                 (d.armor_tech, d.shield_tech, d.weapon_tech,
                  d.weapon_count, d.weapon_mount) = (
                     fields.get("armor_tech"), fields.get("shield_tech"),
-                    fields.get("weapon_tech"), count, mount)
+                    fields.get("weapon_tech"), count, hull_mount)
                 d.specials = list(specials)
                 dirty = True
         design_map[cls] = design_project_id(d.id)

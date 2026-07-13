@@ -79,6 +79,22 @@ def test_aggressive_uses_heavy_mount_and_fits(temp_db):
         assert d.fits(WEAPON_TECH), f"{d.ship_class} design over budget"
 
 
+def test_aggressive_designs_always_fit_even_with_huge_weapons(temp_db):
+    """REGRESSION (review finding): an aggressive AI with a big weapon
+    (Mauler, size 4) must not author an over-budget Heavy design on a
+    small hull — it should fall back toward a Normal mount so the design
+    always fits. Nothing the AI builds may exceed its hull budget."""
+    game = _game()
+    emp = Empire(id=1, name="AI", race_type="Humans", color="red",
+                 tech_level=0, home_star_id=1, is_player=False)
+    # Mauler + battle pods researched — the exact over-budget trap.
+    teched = {"mauler_device", "battle_pods", "heavy_armor", "class_i_shield"}
+    _ai_ensure_designs(game, emp, {"aggressive": True}, teched)
+    for d in game.ship_designs.for_empire(1):
+        assert d.fits(teched), (
+            f"{d.ship_class} {d.weapon_mount} x{d.weapon_count} over budget")
+
+
 def test_no_weapon_tech_no_designs(temp_db):
     game = _game()
     emp = Empire(id=1, name="AI", race_type="Humans", color="red",
