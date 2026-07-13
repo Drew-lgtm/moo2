@@ -33,6 +33,7 @@ from ecs.invasion import (
     TROOP_TRANSPORT_CLASS, can_invade, invade_planet,
     MARINES_PER_TRANSPORT, MILITIA_PER_MILLION_POP, _planet_defense_rating,
 )
+from ecs.bombard import can_bombard, bombard_planet
 from ecs.races import traits_for_empire
 from ecs.ship_design import (
     compute_loadout, loadout_to_ship_fields,
@@ -253,8 +254,10 @@ def ai_tick(game, new_turn: int):
         reachable = reachable_stars(game, empire.id)
 
         if personality.get("aggressive"):
-            # Send idle Troop Transports toward enemy planets, then
-            # warships at the player's homeworld.
+            # Soften enemy colonies from orbit with any warships already
+            # in position, then send idle Troop Transports at enemy
+            # planets and warships at the player's homeworld.
+            _ai_bombard(game, empire)
             _ai_dispatch_troop_transports(cm, empire, reachable)
             _ai_dispatch_ships(cm, empire, reachable)
 
@@ -840,6 +843,25 @@ def _weakest_enemy_planet_at_star(cm, planet_entities: list[int]) -> int | None:
         if best_def is None or defense < best_def:
             best, best_def = planet_entity, defense
     return best
+
+
+def _ai_bombard(game, empire):
+    """Bombard enemy colonies the empire's warships are already sitting
+    over. Only worlds owned by an empire we're actually at war with —
+    bombardment declares war, and the AI shouldn't open new fronts by
+    shelling neutrals. One volley per colony per turn (enforced by
+    ``bombard_planet`` via ``game.bombarded_this_turn``)."""
+    cm = game.component_mgr
+    diplo = getattr(game, "diplomacy", None)
+    if diplo is None:
+        return
+    for planet_entity, owner in list(cm.get_all(Owner)):
+        if owner.empire_id == empire.id:
+            continue
+        if not diplo.at_war(empire.id, owner.empire_id):
+            continue
+        if can_bombard(cm, planet_entity, empire.id):
+            bombard_planet(game, planet_entity, empire.id)
 
 
 def _ai_invade_with_transports(game, empire):

@@ -112,6 +112,29 @@ def test_once_per_turn(temp_db):
     assert not r2["success"] and r2["reason"] == "already_bombarded_this_turn"
 
 
+def test_ai_bombards_only_at_war(temp_db):
+    from ecs.ai import _ai_bombard
+
+    class FakeDiplo:
+        def __init__(self, war): self._war = war
+        def at_war(self, a, b): return self._war
+        def note_invasion(self, *a, **k): pass
+
+    # At war → AI bombards, pop drops.
+    game, cm, planet = _world(defender_pop=10, attacker_ships=["dreadnought"])
+    game.diplomacy = FakeDiplo(True)
+    emp1 = next(e for _x, e in cm.get_all(Empire) if e.id == 1)
+    _ai_bombard(game, emp1)
+    assert cm.get_component(planet, Population).current < 10
+
+    # At peace → AI leaves it alone.
+    game2, cm2, planet2 = _world(defender_pop=10, attacker_ships=["dreadnought"])
+    game2.diplomacy = FakeDiplo(False)
+    emp1b = next(e for _x, e in cm2.get_all(Empire) if e.id == 1)
+    _ai_bombard(game2, emp1b)
+    assert cm2.get_component(planet2, Population).current == 10
+
+
 def test_bombard_to_destruction_clears_colony(temp_db):
     # Tiny pop, massive fleet → colony destroyed, ownership cleared.
     game, cm, planet = _world(defender_pop=1,
