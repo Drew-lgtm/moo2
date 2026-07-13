@@ -21,6 +21,7 @@ from ecs.projects import PROJECTS
 from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT
 from ecs.colonization import can_colonize, colonize_planet
 from ecs.invasion import can_invade, invade_planet
+from ecs.bombard import can_bombard, bombard_planet
 from ecs.refit import plan_refit, refit_ships_at_star
 from ecs.autobuild import cycle_profile, profile_label
 from ecs.db import (
@@ -53,6 +54,8 @@ class ColonyScene(Scene):
         self._build_rect = pygame.Rect(0, 0, 0, 0)
         self._colonize_rect = pygame.Rect(0, 0, 0, 0)
         self._invade_rect = pygame.Rect(0, 0, 0, 0)
+        self._bombard_rect = pygame.Rect(0, 0, 0, 0)
+        self._bombard_result = None
         self._refit_rect = pygame.Rect(0, 0, 0, 0)
         self._auto_rect = pygame.Rect(0, 0, 0, 0)
         # Per-completed-building hit rects, rebuilt every draw.
@@ -75,6 +78,7 @@ class ColonyScene(Scene):
             return
         self._invasion_log = None
         self._refit_result = None
+        self._bombard_result = None
         self._layout()
 
     def on_exit(self):
@@ -108,6 +112,9 @@ class ColonyScene(Scene):
         # Invade button — shown on enemy planets when the player has
         # Troop Transports parked at the star. Same slot as Colonize.
         self._invade_rect = pygame.Rect(sw - 100 - 130, 16, 120, 32)
+        # Bombard button — enemy planets with the player's warships in
+        # orbit. Sits just below Invade (both can apply).
+        self._bombard_rect = pygame.Rect(sw - 100 - 130, 16 + 40, 120, 32)
 
         # Worker pickers across the upper third.
         self._worker_widgets.clear()
@@ -172,6 +179,20 @@ class ColonyScene(Scene):
         if empire_id is None:
             return False
         return can_invade(self.game.component_mgr, self._planet_entity, empire_id)
+
+    def _can_bombard_here(self) -> bool:
+        """True when the planet is enemy-owned and the player has a
+        warship in orbit, and hasn't already bombarded it this turn."""
+        if self._planet_entity is None:
+            return False
+        empire_id = self._player_empire_id()
+        if empire_id is None:
+            return False
+        planet = self.game.component_mgr.get_component(self._planet_entity, Planet)
+        if planet is not None and planet.id in getattr(
+                self.game, "bombarded_this_turn", set()):
+            return False
+        return can_bombard(self.game.component_mgr, self._planet_entity, empire_id)
 
     def tooltip_at(self, pos):
         """Right-click an action button or a completed building on the
@@ -250,12 +271,20 @@ class ColonyScene(Scene):
                     self._return_to_system()
                 return
         elif (owner is not None and player_id is not None
-              and owner.empire_id != player_id and self._can_invade_here()):
-            if self._invade_rect.collidepoint(event.pos):
+              and owner.empire_id != player_id):
+            if self._can_invade_here() and self._invade_rect.collidepoint(event.pos):
                 if self._planet_entity is not None:
                     self._invasion_log = invade_planet(
                         self.game, self._planet_entity, player_id,
                     )
+                return
+            if self._can_bombard_here() and self._bombard_rect.collidepoint(event.pos):
+                if self._planet_entity is not None:
+                    self._bombard_result = bombard_planet(
+                        self.game, self._planet_entity, player_id,
+                    )
+                    if self._bombard_result.get("colony_destroyed"):
+                        self._return_to_system()
                 return
         elif owner is not None and player_id is not None and owner.empire_id == player_id:
             if self._build_rect.collidepoint(event.pos):
@@ -344,6 +373,7 @@ class ColonyScene(Scene):
             self._draw_colonize_button(screen, planet)
         elif player_id is not None and owner.empire_id != player_id:
             self._draw_invade_button(screen, planet)
+            self._draw_bombard_button(screen, planet)
         else:
             self._draw_build_button(screen, owner)
             self._draw_refit_button(screen, owner)
@@ -431,6 +461,40 @@ class ColonyScene(Scene):
             )
             screen.blit(hint_surf, hint_surf.get_rect(midtop=(
                 self._invade_rect.centerx, self._invade_rect.bottom + 4,
+            )))
+
+    def _draw_bombard_button(self, screen, planet):
+        """Below Invade: bombard the colony from orbit with warships.
+        Orange treatment; shows the last volley's result under it."""
+        able = self._can_bombard_here()
+        already = (planet.id in getattr(self.game, "bombarded_this_turn", set()))
+        if able:
+            bg, border, fg = (120, 70, 20), (240, 190, 120), TEXT_COLOR
+        else:
+            bg, border, fg = (40, 44, 56), (120, 110, 90), (160, 150, 130)
+        pygame.draw.rect(screen, bg, self._bombard_rect)
+        pygame.draw.rect(screen, border, self._bombard_rect, 1)
+        label = self.body_font.render("Bombard", True, fg)
+        screen.blit(label, label.get_rect(center=self._bombard_rect.center))
+        # Sub-line: result of the last volley, or why it's unavailable.
+        msg = None
+        if self._bombard_result and self._bombard_result.get("success"):
+            r = self._bombard_result
+            if r.get("colony_destroyed"):
+                msg = "Colony destroyed!"
+            elif r.get("effective", 0) <= 0:
+                msg = "Repelled by planetary defense"
+            else:
+                bd = " · building wrecked" if r.get("building_destroyed") else ""
+                msg = f"-{r.get('pop_lost', 0)}M pop{bd}"
+        elif already:
+            msg = "Already bombarded this turn"
+        elif not able:
+            msg = "Need a warship in orbit"
+        if msg:
+            hint_surf = self.body_font.render(msg, True, HINT_COLOR)
+            screen.blit(hint_surf, hint_surf.get_rect(midtop=(
+                self._bombard_rect.centerx, self._bombard_rect.bottom + 4,
             )))
 
     def _draw_invasion_log(self, screen):

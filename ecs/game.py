@@ -150,6 +150,9 @@ class Game:
         self.ui_bar = BottomUIBar(self.screen_width, self.screen_height)
         # Per-run turn log; previous game's entries shouldn't bleed in.
         self.turn_log = TurnLog()
+        # Colonies bombarded this turn — one orbital volley per colony
+        # per turn. Cleared at the top of each advance_turn.
+        self.bombarded_this_turn: set[int] = set()
 
     def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal",
                        galaxy_age="average"):
@@ -304,6 +307,8 @@ class Game:
     def advance_turn(self):
         if self.galaxy is None:
             return None
+        # Fresh turn: colonies can be bombarded once more.
+        self.bombarded_this_turn = set()
         new_turn = self.galaxy.advance_turn()
         for cb in self.turn_callbacks:
             cb(self, new_turn)
