@@ -120,6 +120,12 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     """
     spec = SHIPS.get(ship_class, {})
     total_space = spec.get("space", 0)
+    # Molecular Compression (computers): miniaturisation expands every
+    # hull's equipment budget by a flat percentage.
+    from ecs.techs import empire_ship_space_bonus_pct
+    space_pct = empire_ship_space_bonus_pct(unlocked)
+    if space_pct:
+        total_space += int(round(total_space * space_pct / 100))
     is_military = spec.get("ship_class_kind", "military") == "military"
 
     armor = _best_armor(unlocked)

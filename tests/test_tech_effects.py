@@ -131,3 +131,41 @@ def test_energy_absorber_reaches_combatant_shield():
     rosters2, _ = combat._build_combatants(
         cm2, {1: [10]}, bonuses, {}, lambda eid, e: 2, stats_full)
     assert rosters2[1][0].shield_max == 0
+
+
+# ---- Batch 4: espionage missions --------------------------------------
+
+def test_batch4_stubs_cleared():
+    assert not TECHS["subterfuge"].get("effect_stub")
+    assert not TECHS["assassination"].get("effect_stub")
+
+
+def test_espionage_general_offense():
+    from ecs.techs import empire_spy_offense
+    assert empire_spy_offense({"subterfuge"}) == 2
+    assert empire_spy_offense({"assassination"}) == 2
+
+
+def test_espionage_mission_bonus_fields():
+    assert TECHS["subterfuge"].get("frame_bonus") == 4
+    assert TECHS["assassination"].get("assassinate_bonus") == 4
+
+
+# ---- Batch 5: ship space + bioweapon ----------------------------------
+
+def test_batch5_stubs_cleared():
+    assert not TECHS["molecular_compression"].get("effect_stub")
+    assert not TECHS["bio_terminators"].get("effect_stub")
+
+
+def test_molecular_compression_expands_hull_budget():
+    from ecs.ship_design import compute_loadout
+    base = compute_loadout("cruiser", set())["stats"]["space_total"]
+    boosted = compute_loadout("cruiser", {"molecular_compression"})["stats"]["space_total"]
+    # +20% budget. Cruiser base space is 20 → +4 = 24.
+    assert boosted == base + int(round(base * 0.20))
+    assert boosted > base
+
+
+def test_bio_terminators_field():
+    assert TECHS["bio_terminators"].get("bio_militia_pct") == 40

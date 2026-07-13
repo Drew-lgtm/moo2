@@ -483,7 +483,7 @@ TECHS: dict[str, dict] = {
         "id": "molecular_compression", "name": "Molecular Compression",
         "field": "computers", "tier": 4, "tier_group": _t("computers", 4),
         "cost": 700, "prereqs": ["galactic_networks"],
-        "description": "Mass-energy storage", "effect_stub": True,
+        "description": "Mass-energy storage", "ship_space_pct": 20,
     },
     "cybertronic_computer": {
         "id": "cybertronic_computer", "name": "Cybertronic Computer",
@@ -555,7 +555,7 @@ TECHS: dict[str, dict] = {
         "id": "bio_terminators", "name": "Bio Terminators",
         "field": "biology", "tier": 3, "tier_group": _t("biology", 3),
         "cost": 300, "prereqs": ["soil_enrichment"],
-        "description": "Anti-bio strike weapons", "effect_stub": True,
+        "description": "Anti-bio strike weapons", "bio_militia_pct": 40,
     },
     "terraforming": {
         "id": "terraforming", "name": "Terraforming",
@@ -778,7 +778,7 @@ TECHS: dict[str, dict] = {
         "id": "subterfuge", "name": "Subterfuge",
         "field": "espionage", "tier": 2, "tier_group": _t("espionage", 2),
         "cost": 280, "prereqs": ["spy_network"],
-        "description": "Frame rival empires on capture", "effect_stub": True,
+        "description": "Frame rival empires on capture", "spy_offense": 2, "frame_bonus": 4,
     },
     "mind_scan": {
         "id": "mind_scan", "name": "Mind Scan",
@@ -791,7 +791,7 @@ TECHS: dict[str, dict] = {
         "id": "assassination", "name": "Assassination",
         "field": "espionage", "tier": 3, "tier_group": _t("espionage", 3),
         "cost": 420, "prereqs": ["spy_network"],
-        "description": "Eliminate enemy leaders", "effect_stub": True,
+        "description": "Eliminate enemy leaders", "spy_offense": 2, "assassinate_bonus": 4,
     },
     "neural_scrambler": {
         "id": "neural_scrambler", "name": "Neural Scrambler",

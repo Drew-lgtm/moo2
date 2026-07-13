@@ -404,8 +404,17 @@ def espionage_tick(game, new_turn: int):
             # pick (Darloks at +2 from two stacks).
             attacker_traits = traits_for_empire(cm, atk)
             atk_trait_bonus = trait_count(attacker_traits, "spymaster")
+            # Mission-specific tech: Subterfuge sharpens Frame Empire,
+            # Assassination sharpens Assassinate. Both read from the
+            # tech's own bonus field so tuning lives in the catalog.
+            from ecs.techs import TECHS as _TECHS
+            mission_bonus = 0
+            if mission == "frame" and "subterfuge" in atk_set:
+                mission_bonus += _TECHS["subterfuge"].get("frame_bonus", 0)
+            if mission == "assassinate" and "assassination" in atk_set:
+                mission_bonus += _TECHS["assassination"].get("assassinate_bonus", 0)
             atk_skill = (BASE_SPY_SKILL + empire_spy_offense(atk_set)
-                         + atk_trait_bonus + rng.randint(0, 4))
+                         + atk_trait_bonus + mission_bonus + rng.randint(0, 4))
             defenders = esp.defense_count(tgt)
             # Defender race traits — Hive Mind (+2 per stack), Mind
             # Link (+1 per stack, telepathic awareness), Spymaster

@@ -160,6 +160,13 @@ def invade_planet(game, planet_entity: int, empire_id: int) -> dict:
     raw_attack = n_transports * atk_per_marine
     defender_pop_at_start = pop.current if pop else 0  # captured pre-mutation for the report
     militia = defender_pop_at_start * def_per_militia
+    # Bio Terminators (biology): an orbital bio-strike thins the defending
+    # militia before marines land. Reduces effective militia by a percent.
+    from ecs.techs import TECHS as _TECHS
+    bio_pct = _TECHS.get("bio_terminators", {}).get("bio_militia_pct", 0) \
+        if "bio_terminators" in attacker_unlocked else 0
+    if bio_pct:
+        militia = int(round(militia * (1 - bio_pct / 100)))
     defense_buildings = _planet_defense_rating(build_state)
     raw_defense = militia + defense_buildings
 
