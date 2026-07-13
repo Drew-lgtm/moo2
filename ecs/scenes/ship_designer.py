@@ -192,6 +192,7 @@ class ShipDesignerScene(Scene):
         elif action == "delete":
             mgr = self.game.ship_designs
             if mgr is not None:
+                self._purge_design_from_queues(payload)
                 mgr.delete(payload)
                 mgr.save()
         elif action == "load":
@@ -219,6 +220,37 @@ class ShipDesignerScene(Scene):
                    weapon_mount=self.weapon_mount, specials=list(self.specials))
         mgr.save()
         self.banner, self.banner_color = f"Saved '{name}'.", GOOD
+
+    def _purge_design_from_queues(self, design_id):
+        """Remove a design's build orders from every planet before the
+        design is deleted, so no colony is left pointing at a dead
+        blueprint. (The economy tick also self-heals dead orders, but
+        cleaning up here avoids wasting even one turn of industry.)"""
+        from ecs.components import BuildState, Planet
+        from ecs.designs import design_project_id
+        from ecs.db import (
+            get_connection, update_planet_build, save_planet_build_queue,
+        )
+        pid = design_project_id(design_id)
+        cm = self.game.component_mgr
+        with get_connection() as conn:
+            for entity_id, bs in cm.get_all(BuildState):
+                planet = cm.get_component(entity_id, Planet)
+                if planet is None:
+                    continue
+                changed = False
+                if pid in bs.queue:
+                    bs.queue = [q for q in bs.queue if q != pid]
+                    save_planet_build_queue(conn, planet.id, list(bs.queue))
+                    changed = True
+                if bs.current_project == pid:
+                    bs.current_project = bs.queue.pop(0) if bs.queue else None
+                    bs.progress = 0
+                    update_planet_build(conn, planet.id,
+                                        bs.current_project, bs.progress)
+                    if changed:
+                        save_planet_build_queue(conn, planet.id, list(bs.queue))
+            conn.commit()
 
     def _load_design(self, design_id):
         mgr = self.game.ship_designs

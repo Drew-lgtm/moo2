@@ -164,6 +164,67 @@ def test_design_backed_build_spawns_frozen_loadout(temp_db):
     assert ship.armor_tech == "heavy_armor"
 
 
+def test_dead_design_order_does_not_softlock_planet(temp_db):
+    """REGRESSION: a build order pointing at a deleted design must NOT
+    stall the planet forever — the economy tick drops it and advances
+    (or idles), converting industry to BC instead of burning it."""
+    from types import SimpleNamespace
+    from ecs.entity_manager import EntityManager
+    from ecs.component_manager import ComponentManager
+    from ecs.components import (
+        Empire, TechState, Owner, Planet, Population, BuildState,
+        Orbiting, StarRef,
+    )
+    from ecs.designs import ShipDesignManager
+    from ecs.economy import production_tick
+    from ecs.db import get_connection, insert_star, insert_empire
+
+    with get_connection() as conn:
+        insert_star(conn, "Sol", 0, 0, "G", "s.png", 30)
+        insert_empire(conn, "P", "Humans", "blue", 1, 0)
+        conn.commit()
+
+    em = EntityManager()
+    cm = ComponentManager()
+    emp_e = em.create_entity()
+    cm.add_component(emp_e, Empire(id=1, name="P", race_type="Humans",
+                                   color="blue", tech_level=0, home_star_id=1,
+                                   bc=0, research_points=0, is_player=True))
+    cm.add_component(emp_e, TechState(empire_id=1, unlocked=[]))
+    star_e = em.create_entity()
+    cm.add_component(star_e, StarRef(db_id=1))
+    planet_e = em.create_entity()
+    cm.add_component(planet_e, Planet(id=1, planet_type="Terran", size="Medium",
+                                      colonizable=True))
+    cm.add_component(planet_e, Owner(empire_id=1))
+    cm.add_component(planet_e, Population(current=4, max=12, workers=4))
+    cm.add_component(planet_e, Orbiting(star_entity=star_e))
+    # Point the build at a design that does NOT exist (deleted/dead ref).
+    cm.add_component(planet_e, BuildState(current_project="design:999",
+                                          progress=100))
+
+    designs = ShipDesignManager()  # empty — design:999 is unresolvable
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em, ship_designs=designs,
+                           leaders=None, diplomacy=None, turn_log=None,
+                           galaxy=SimpleNamespace(difficulty="normal"))
+
+    from ecs.components import Ship
+    emp = next(e for _x, e in cm.get_all(Empire))
+
+    production_tick(game, new_turn=2)
+    bs = cm.get_component(planet_e, BuildState)
+    # Order dropped (queue empty → idle), not stuck on the dead design.
+    assert bs.current_project != "design:999"
+    # No phantom ship spawned from the dead order.
+    assert not any(True for _e, _s in cm.get_all(Ship))
+
+    # The planet is NOT frozen: a now-idle colony keeps producing, so a
+    # second tick must raise BC further (industry → BC on an idle world).
+    bc_after_first = emp.bc
+    production_tick(game, new_turn=3)
+    assert emp.bc > bc_after_first, "planet soft-locked: no output after drop"
+
+
 def test_manager_save_load_roundtrip(temp_db):
     from ecs.designs import ShipDesignManager
     m = ShipDesignManager()

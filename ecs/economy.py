@@ -564,12 +564,23 @@ def production_tick(game, new_turn: int):
             # cheap buildings + big industry can finish multiple per turn).
             while True:
                 cur = build_state.current_project
-                proj = PROJECTS.get(cur) if cur else None
+                if not cur:
+                    break
+                proj = PROJECTS.get(cur)
                 # design:<id> orders aren't in PROJECTS — resolve them
                 # against the empire's saved blueprints.
-                if proj is None and cur:
+                if proj is None:
                     proj = design_project_spec(cur, getattr(game, "ship_designs", None))
-                if proj is None or build_state.progress < proj["cost"]:
+                if proj is None:
+                    # Unresolvable order — the design was deleted (or the
+                    # save references a dead one). Drop it and advance the
+                    # queue instead of stalling the planet forever.
+                    build_state.current_project = (
+                        build_state.queue.pop(0) if build_state.queue else None)
+                    build_state.progress = 0
+                    queue_changed = True
+                    continue
+                if build_state.progress < proj["cost"]:
                     break
                 completed_id = build_state.current_project
                 proj_type = proj.get("type", "building")
