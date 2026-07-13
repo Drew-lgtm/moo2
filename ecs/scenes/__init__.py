@@ -3,6 +3,7 @@ from ecs.scenes.galaxy import GalaxyScene
 from ecs.scenes.system_view import SystemViewScene
 from ecs.scenes.colony import ColonyScene
 from ecs.scenes.build import BuildScene
+from ecs.scenes.ship_designer import ShipDesignerScene
 from ecs.scenes.research import ResearchScene
 from ecs.scenes.diplomacy import DiplomacyScene
 from ecs.scenes.council import CouncilScene
@@ -29,6 +30,7 @@ __all__ = [
     "SystemViewScene",
     "ColonyScene",
     "BuildScene",
+    "ShipDesignerScene",
     "ResearchScene",
     "DiplomacyScene",
     "CouncilScene",

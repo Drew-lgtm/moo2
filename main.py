@@ -8,6 +8,7 @@ from ecs.scenes import (
     SystemViewScene,
     ColonyScene,
     BuildScene,
+    ShipDesignerScene,
     ResearchScene,
     DiplomacyScene,
     CouncilScene,
@@ -40,6 +41,7 @@ def main():
     game.scenes.register("system", SystemViewScene(game))
     game.scenes.register("colony", ColonyScene(game))
     game.scenes.register("build", BuildScene(game))
+    game.scenes.register("ship_designer", ShipDesignerScene(game))
     game.scenes.register("research", ResearchScene(game))
     game.scenes.register("diplomacy", DiplomacyScene(game))
     game.scenes.register("council", CouncilScene(game))

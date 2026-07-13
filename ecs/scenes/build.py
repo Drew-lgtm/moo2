@@ -25,6 +25,10 @@ from ecs.projects import (
 )
 from ecs.techs import TECHS
 from ecs.ship_design import loadout_summary
+from ecs.ships import SHIPS
+from ecs.designs import (
+    design_project_id, design_project_spec, parse_design_project,
+)
 from ecs.db import get_connection, update_planet_build, save_planet_build_queue
 
 
@@ -63,6 +67,7 @@ class BuildScene(Scene):
 
         # Layout rects (rebuilt on enter).
         self._close_rect = pygame.Rect(0, 0, 0, 0)
+        self._design_rect = pygame.Rect(0, 0, 0, 0)
         self._search_rect = pygame.Rect(0, 0, 0, 0)
         self._tab_rects: list[tuple[str, pygame.Rect]] = []
         # (project_id, row_rect, available)
@@ -89,6 +94,8 @@ class BuildScene(Scene):
     def _layout(self):
         sw, sh = self.game.screen_width, self.game.screen_height
         self._close_rect = pygame.Rect(sw - 100, 16, 80, 32)
+        # "Design Ships" button sits left of Close.
+        self._design_rect = pygame.Rect(sw - 100 - 148, 16, 140, 32)
 
         # Search field below the title row, full width on the left
         # portion (so categories can sit beneath it).
@@ -147,6 +154,42 @@ class BuildScene(Scene):
         pid = self._player_empire_id()
         return traits_for_empire(self.game.component_mgr, pid) if pid else []
 
+    def _resolve_project(self, project_id) -> dict:
+        """PROJECTS entry, or a design:<id> spec, or {} — so the queue
+        panel and click handling work for both catalog and design orders."""
+        proj = PROJECTS.get(project_id)
+        if proj is not None:
+            return proj
+        spec = design_project_spec(project_id, getattr(self.game, "ship_designs", None))
+        return spec or {}
+
+    def _design_rows(self) -> list[dict]:
+        """The player's saved ship designs as project-shaped dicts for
+        the Ships tab. Each shows its own frozen loadout, not the auto
+        one."""
+        mgr = getattr(self.game, "ship_designs", None)
+        pid = self._player_empire_id()
+        if mgr is None or pid is None:
+            return []
+        rows = []
+        for d in mgr.for_empire(pid):
+            kind = SHIPS.get(d.ship_class, {}).get("ship_class_kind", "military")
+            st = d.stats()
+            rows.append({
+                "id": design_project_id(d.id),
+                "name": d.name,
+                "category": "ships",
+                "ship_kind": kind,
+                "cost": self._resolve_project(design_project_id(d.id)).get("cost", 0),
+                "type": "ship",
+                "ship_class": d.ship_class,
+                "description": f"{d.ship_class.title()} · atk {st['attack']} · hull {st['hull']}",
+                "is_design": True,
+                "design_id": d.id,
+            })
+        rows.sort(key=lambda r: r["name"].lower())
+        return rows
+
     def _filtered_projects(self, build_state, unlocked) -> list[dict]:
         """Projects shown in the list, after category + search filter.
 
@@ -162,11 +205,13 @@ class BuildScene(Scene):
                 if needle in p["name"].lower()
                 or needle in p.get("description", "").lower()
             ]
+            items += [d for d in self._design_rows() if needle in d["name"].lower()]
             items.sort(key=lambda p: p["name"].lower())
             return items
         if self.active_category == "ships":
             # Civilian first (Scout/Freighter/Outpost/Colony), then
-            # Military (Troop Transport + Frigate→Dreadnought).
+            # Military (Troop Transport + Frigate→Dreadnought), then the
+            # player's saved designs at the bottom of the military group.
             # Alphabetical within each group.
             civ = sorted(
                 (p for p in PROJECTS.values()
@@ -178,7 +223,7 @@ class BuildScene(Scene):
                  if p.get("category") == "ships" and p.get("ship_kind") == "military"),
                 key=lambda p: p["name"].lower(),
             )
-            return civ + mil
+            return civ + mil + self._design_rows()
         return projects_in_category(self.active_category)
 
     # ------------------------------------------------------------------ input
@@ -190,6 +235,11 @@ class BuildScene(Scene):
         from ecs.tooltips import project_tooltip
         for project_id, row_rect, _avail in self._row_hits:
             if row_rect.collidepoint(pos):
+                if parse_design_project(project_id) is not None:
+                    spec = self._resolve_project(project_id)
+                    return [spec.get("name", "Design"),
+                            f"hint:{spec.get('description', '')}",
+                            f"hint:{spec.get('cost', 0)} production"]
                 return project_tooltip(project_id,
                                        unlocked_techs=self._player_unlocked_techs())
         return None
@@ -229,6 +279,9 @@ class BuildScene(Scene):
             if self._close_rect.collidepoint(pos):
                 self._return_to_colony()
                 return
+            if self._design_rect.collidepoint(pos):
+                self.game.scenes.replace("ship_designer")
+                return
             if self._search_rect.collidepoint(pos):
                 self.search_focused = True
                 return
@@ -257,13 +310,17 @@ class BuildScene(Scene):
         planet, build_state, owner = self._planet_components()
         if planet is None or build_state is None or not self._player_owns_this(owner):
             return
-        proj = PROJECTS.get(project_id)
-        if proj is None:
+        is_design = parse_design_project(project_id) is not None
+        proj = self._resolve_project(project_id)
+        if not proj:
             return
         is_ship = proj.get("type") == "ship"
         if not is_ship and project_id in build_state.completed:
             return
-        if not project_is_available(project_id, self._player_unlocked_techs(), self._player_traits()):
+        # Designs are player-authored and always buildable; only catalog
+        # projects go through the tech/trait availability gate.
+        if not is_design and not project_is_available(
+                project_id, self._player_unlocked_techs(), self._player_traits()):
             return
         if not is_ship and build_state.current_project == project_id:
             return
@@ -326,6 +383,7 @@ class BuildScene(Scene):
         self._draw_list(screen, build_state)
         self._draw_queue_panel(screen, build_state)
         self._draw_close_button(screen)
+        self._draw_design_button(screen)
 
         hint = self.small_font.render(
             "Click to queue.  Type to search.  Esc returns to colony.",
@@ -436,11 +494,14 @@ class BuildScene(Scene):
 
     def _draw_row(self, screen, proj, area, row_top, build_state, unlocked):
         is_ship = proj.get("type") == "ship"
+        is_design = proj.get("is_design", False)
         proj_id = proj["id"]
         already_built = build_state is not None and (not is_ship) and proj_id in build_state.completed
         currently_building = build_state is not None and build_state.current_project == proj_id
         queued = build_state is not None and proj_id in build_state.queue
-        tech_locked = not project_is_available(proj_id, unlocked, self._player_traits())
+        # Designs are always available; catalog items obey the tech gate.
+        tech_locked = (not is_design
+                       and not project_is_available(proj_id, unlocked, self._player_traits()))
         available = not tech_locked and not already_built
 
         rect = pygame.Rect(area.x, row_top, area.width, self.ROW_H - 4)
@@ -480,7 +541,9 @@ class BuildScene(Scene):
         # player sees what their ships will actually be equipped with.
         desc_color = HINT_COLOR if available else (120, 120, 140)
         desc_text = proj.get("description", "")
-        if proj.get("type") == "ship":
+        # Auto ship rows show the live auto-loadout; design rows keep
+        # their own (frozen) loadout summary set in _design_rows.
+        if proj.get("type") == "ship" and not is_design:
             ship_class = proj.get("ship_class")
             if ship_class:
                 desc_text = loadout_summary(ship_class, unlocked)
@@ -544,7 +607,7 @@ class BuildScene(Scene):
             y += 28
         else:
             current = build_state.current_project
-            proj = PROJECTS.get(current, {})
+            proj = self._resolve_project(current)
             screen.blit(self.body_font.render("Building:", True, HINT_COLOR), (rect.x + 14, y))
             y += 20
             line = f"{proj.get('name', current)}  {build_state.progress}/{proj.get('cost', '?')}"
@@ -555,7 +618,7 @@ class BuildScene(Scene):
             screen.blit(self.body_font.render("Next:", True, HINT_COLOR), (rect.x + 14, y))
             y += 22
             for i, pid in enumerate(build_state.queue):
-                proj = PROJECTS.get(pid, {})
+                proj = self._resolve_project(pid)
                 row = pygame.Rect(rect.x + 14, y, rect.width - 28, 24)
                 pygame.draw.rect(screen, (24, 28, 42), row)
                 pygame.draw.rect(screen, (90, 100, 130), row, 1)
@@ -575,3 +638,11 @@ class BuildScene(Scene):
         pygame.draw.rect(screen, (240, 240, 240), self._close_rect, 1)
         label = self.body_font.render("Close", True, (240, 240, 240))
         screen.blit(label, label.get_rect(center=self._close_rect.center))
+
+    def _draw_design_button(self, screen):
+        rect = self._design_rect
+        hovered = rect.collidepoint(pygame.mouse.get_pos())
+        pygame.draw.rect(screen, (60, 66, 96) if hovered else (44, 50, 76), rect)
+        pygame.draw.rect(screen, (150, 160, 205), rect, 1)
+        label = self.body_font.render("Design Ships", True, TEXT_COLOR)
+        screen.blit(label, label.get_rect(center=rect.center))
