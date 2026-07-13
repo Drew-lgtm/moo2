@@ -25,7 +25,10 @@ from ecs.turn_log import log as turn_log, CAT_COMBAT
 from ecs.tactical import TacticalBattle, TacticalShip, GRID_COLS, GRID_ROWS
 from ecs.ships import SHIPS
 from ecs.races import trait_count, traits_for_empire
-from ecs.techs import empire_attack_bonus, empire_hull_bonus
+from ecs.techs import (
+    empire_attack_bonus, empire_hull_bonus,
+    empire_ship_shield_bonus, empire_planetary_shield_bonus,
+)
 from ecs.invasion import _planet_defense_rating
 from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from ecs.db import get_connection, delete_ship
@@ -61,6 +64,19 @@ def _attack_of(component_mgr, ship_entity: int, attack_bonus: int = 0,
     return SHIPS.get(ship.ship_class, {}).get("attack", 0) + attack_bonus + extra + loadout_atk
 
 
+def _empire_unlocked_techs(component_mgr, empire_id: int) -> set:
+    for _eid, tech in component_mgr.get_all(TechState):
+        if tech.empire_id == empire_id:
+            return set(tech.unlocked)
+    return set()
+
+
+def _empire_ship_shield_bonus(component_mgr, empire_id: int) -> int:
+    """Flat shield-capacity bonus every combat ship of this empire gets
+    from power techs (Energy Absorber). 0 if none unlocked."""
+    return empire_ship_shield_bonus(_empire_unlocked_techs(component_mgr, empire_id))
+
+
 def _destroy_ship(game, ship_entity: int):
     cm = game.component_mgr
     for comp_type in (Ship, ShipOwner, ShipAt, ShipInTransit):
@@ -87,6 +103,9 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
     intact_attack: dict[int, int] = {}
     for eid, ships in ships_here.items():
         atk_bonus, hull_bonus = bonuses_fn(eid)
+        # Energy Absorber (power tech): flat shield-capacity bonus on
+        # every one of this empire's ships in the battle.
+        shield_bonus = _empire_ship_shield_bonus(component_mgr, eid)
         side_attack = 0
         roster: list[Combatant] = []
         for e in ships:
@@ -100,14 +119,15 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
                 component_mgr.get_component(e, Ship).ship_class, {}
             ).get("hull", 0)
             hull_max = base_hull + hull_bonus + leader_hull + full.get("hull", 0)
+            shield_cap = full.get("shield_capacity", 0) + shield_bonus
             roster.append(Combatant(
                 key=e,
                 empire_id=eid,
                 attack=ship_atk,
                 hull=hull_max,
                 hull_max=hull_max,
-                shield=full.get("shield_capacity", 0),
-                shield_max=full.get("shield_capacity", 0),
+                shield=shield_cap,
+                shield_max=shield_cap,
                 shield_regen=full.get("shield_regen", 0),
                 defense=full.get("defense", 0),
             ))
@@ -150,6 +170,8 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                     [eid for eid in ships_here if eid != player_id])
     for slot_idx, eid in enumerate(empire_order):
         ships = ships_here.get(eid, [])
+        # Energy Absorber shield bonus, same as the strategic path.
+        shield_bonus = _empire_ship_shield_bonus(cm, eid)
         if slot_idx == 0:
             cols = [0, 1, 2]
             back_col = 0  # station rides the back wall for the player
@@ -166,7 +188,7 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
             base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
             hull = max(1, int(base_hull + stats.get("hull", 0)))
             attack = max(0, int(stats.get("attack", 0)))
-            shield_max = max(0, int(stats.get("shield_capacity", 0)))
+            shield_max = max(0, int(stats.get("shield_capacity", 0))) + shield_bonus
             shield_regen = max(0, int(stats.get("shield_regen", 0)))
             # 'defense' in stats_from_ship is an evasion-style flat —
             # we surface it as the armor damage reduction here.
@@ -297,14 +319,33 @@ def combat_tick(game, new_turn: int):
     # those structures can't be destroyed by space combat — only taken
     # by ground invasion.
     by_star_defense: dict[int, dict[int, int]] = {}
+    # Planetary Barrier Shield (force-field tech): a flat defensive
+    # contribution at every star where the empire holds a colony, even
+    # with no defence buildings. Cached per empire.
+    _barrier_cache: dict[int, int] = {}
+
+    def _barrier(eid: int) -> int:
+        if eid not in _barrier_cache:
+            _barrier_cache[eid] = empire_planetary_shield_bonus(
+                _empire_unlocked_techs(cm, eid))
+        return _barrier_cache[eid]
+
+    _colony_stars: set[tuple[int, int]] = set()  # (star_entity, empire_id)
     for planet_entity, owner in cm.get_all(Owner):
         orbit = cm.get_component(planet_entity, Orbiting)
         if orbit is None:
             continue
+        _colony_stars.add((orbit.star_entity, owner.empire_id))
         rating = _planet_defense_rating(cm.get_component(planet_entity, BuildState))
         if rating:
             d = by_star_defense.setdefault(orbit.star_entity, {})
             d[owner.empire_id] = d.get(owner.empire_id, 0) + rating
+    # Barrier shield adds once per (star, empire) that holds a colony.
+    for star_entity, empire_id in _colony_stars:
+        bonus = _barrier(empire_id)
+        if bonus:
+            d = by_star_defense.setdefault(star_entity, {})
+            d[empire_id] = d.get(empire_id, 0) + bonus
 
     log: list[dict] = []
     destroyed_ids: list[int] = []

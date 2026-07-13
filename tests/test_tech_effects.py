@@ -70,3 +70,64 @@ def test_bc_pct_tech():
 def test_research_pct_tech():
     assert empire_research_pct_tech({"federation"}) == 15
     assert empire_research_pct_tech(set()) == 0
+
+
+# ---- Batch 3: combat / defense / sensors / assimilation ---------------
+
+def test_batch3_stubs_cleared():
+    for tid in ("planetary_barrier_shield", "energy_absorber",
+                "galactic_unification", "subspace_communications"):
+        assert not TECHS[tid].get("effect_stub"), tid
+
+
+def test_batch3_helpers():
+    from ecs.techs import (
+        empire_planetary_shield_bonus, empire_ship_shield_bonus,
+        empire_assimilation_bonus, empire_sensor_range,
+    )
+    assert empire_planetary_shield_bonus({"planetary_barrier_shield"}) == 20
+    assert empire_ship_shield_bonus({"energy_absorber"}) == 20
+    assert empire_assimilation_bonus({"galactic_unification"}) == 4
+    # Subspace Communications raises sensor range above the base of 6.
+    assert empire_sensor_range({"subspace_communications"}) == 10
+    assert empire_sensor_range(set()) == 6
+
+
+def test_energy_absorber_reaches_combatant_shield():
+    # Integration: _build_combatants must fold the Energy Absorber bonus
+    # into each ship's shield. Uses a minimal fake component manager.
+    from ecs.components import Ship, TechState
+    import ecs.combat as combat
+
+    class FakeCM:
+        def __init__(self, unlocked):
+            self._ship = Ship(id=1, ship_class="frigate", armor_tech=None,
+                              shield_tech=None, weapon_tech=None,
+                              weapon_count=0, specials=[])
+            self._ts = TechState(empire_id=1, current_target=None, progress=0,
+                                 unlocked=list(unlocked), locked_out=[])
+
+        def get_all(self, comp):
+            return [(999, self._ts)] if comp is TechState else []
+
+        def get_component(self, entity, comp):
+            return self._ship if comp is Ship else None
+
+    def bonuses(_eid):
+        return (0, 0)
+
+    def stats_full(_e):
+        return {"attack": 2, "hull": 0, "defense": 0,
+                "shield_capacity": 0, "shield_regen": 0}
+
+    # With Energy Absorber → shield 0 + 20 = 20.
+    cm = FakeCM({"energy_absorber"})
+    rosters, _ = combat._build_combatants(
+        cm, {1: [10]}, bonuses, {}, lambda eid, e: 2, stats_full)
+    assert rosters[1][0].shield_max == 20
+
+    # Without it → shield 0.
+    cm2 = FakeCM(set())
+    rosters2, _ = combat._build_combatants(
+        cm2, {1: [10]}, bonuses, {}, lambda eid, e: 2, stats_full)
+    assert rosters2[1][0].shield_max == 0

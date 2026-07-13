@@ -226,7 +226,7 @@ TECHS: dict[str, dict] = {
         "id": "subspace_communications", "name": "Subspace Communications",
         "field": "power", "tier": 2, "tier_group": _t("power", 2),
         "cost": 150, "prereqs": ["nuclear_drives"],
-        "description": "Real-time fleet command", "effect_stub": True,
+        "description": "Real-time fleet command", "sensor_range": 10,
     },
     "ion_drives": {
         "id": "ion_drives", "name": "Ion Drives",
@@ -252,7 +252,7 @@ TECHS: dict[str, dict] = {
         "id": "energy_absorber", "name": "Energy Absorber",
         "field": "power", "tier": 4, "tier_group": _t("power", 4),
         "cost": 500, "prereqs": ["ion_drives"],
-        "description": "Convert incoming energy to shields", "effect_stub": True,
+        "description": "Convert incoming energy to shields", "ship_shield_bonus": 20,
     },
     "hyper_drives": {
         "id": "hyper_drives", "name": "Hyper Drives",
@@ -412,7 +412,7 @@ TECHS: dict[str, dict] = {
         "id": "galactic_unification", "name": "Galactic Unification",
         "field": "sociology", "tier": 5, "tier_group": _t("sociology", 5),
         "cost": 800, "prereqs": ["virtual_reality_network"],
-        "description": "Bind worlds into one polity", "effect_stub": True,
+        "description": "Bind worlds into one polity", "assimilation_bonus": 4,
     },
     "xeno_psychology": {
         "id": "xeno_psychology", "name": "Xeno Psychology",
@@ -712,7 +712,7 @@ TECHS: dict[str, dict] = {
         "id": "planetary_barrier_shield", "name": "Planetary Barrier Shield",
         "field": "force_fields", "tier": 3, "tier_group": _t("force_fields", 3),
         "cost": 450, "prereqs": ["class_iii_shield"],
-        "description": "Build planet-wide shield", "effect_stub": True,
+        "description": "Build planet-wide shield", "planetary_defense_bonus": 20,
     },
     "stasis_field": {
         "id": "stasis_field", "name": "Stasis Field",

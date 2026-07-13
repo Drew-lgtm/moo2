@@ -200,6 +200,9 @@ def assimilation_tick(game, new_turn: int):
         # Owner's Warlord race a touch faster (iron-fist policy).
         owner_traits = traits_for_empire(cm, owner.empire_id)
         rate += trait_count(owner_traits, "warlord")
+        # Galactic Unification tech binds captured worlds faster.
+        from ecs.techs import empire_assimilation_bonus
+        rate += empire_assimilation_bonus(_empire_unlocked(cm, owner.empire_id))
         planet.assimilation_progress = min(100, planet.assimilation_progress + rate)
         if planet.assimilation_progress >= 100:
             # Fully absorbed — population now identifies with new race.
