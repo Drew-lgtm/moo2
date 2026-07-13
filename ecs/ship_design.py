@@ -26,6 +26,43 @@ from ecs.ships import SHIPS
 from ecs.techs import TECHS
 
 
+# ---- weapon mounts (MOO2) ---------------------------------------------
+#
+# A manual ship design may fit its weapon bank on one of three mounts.
+# Auto-built ships always use "normal". The multipliers apply to the
+# weapon's per-shot attack, its space cost, and (in tactical combat) its
+# range band. Point-Defense trades reach + punch for the ability to
+# engage missiles/fighters (that interception lands in a later stage;
+# for now it's a cheap, short-range, weak mount).
+MOUNTS: dict[str, dict] = {
+    "normal": {
+        "name": "Normal", "attack_mult": 1.0, "space_mult": 1.0,
+        "range_mult": 1.0,
+    },
+    "heavy": {
+        "name": "Heavy", "attack_mult": 2.0, "space_mult": 2.0,
+        "range_mult": 1.5,
+    },
+    "point_defense": {
+        "name": "Point-Defense", "attack_mult": 0.5, "space_mult": 1.0,
+        "range_mult": 0.5, "point_defense": True,
+    },
+}
+MOUNT_ORDER = ["normal", "heavy", "point_defense"]
+
+
+def mount_attack_mult(mount: str) -> float:
+    return MOUNTS.get(mount, MOUNTS["normal"])["attack_mult"]
+
+
+def mount_space_mult(mount: str) -> float:
+    return MOUNTS.get(mount, MOUNTS["normal"])["space_mult"]
+
+
+def mount_range_mult(mount: str) -> float:
+    return MOUNTS.get(mount, MOUNTS["normal"])["range_mult"]
+
+
 # Specials are sorted to prefer combat-stat ones before flavour ones.
 # (A higher number means "fit me sooner". Cloaks and ones with no
 # direct stat go last.)
@@ -247,7 +284,8 @@ def stats_from_ship(ship) -> dict:
         shield_capacity += shield["equipment"].get("capacity", 0)
         shield_regen += shield["equipment"].get("regen", 0)
     if weapon.get("equipment"):
-        atk += weapon["equipment"].get("attack", 0) * (ship.weapon_count or 0)
+        base = weapon["equipment"].get("attack", 0) * (ship.weapon_count or 0)
+        atk += int(round(base * mount_attack_mult(getattr(ship, "weapon_mount", "normal"))))
     for sp_id in (ship.specials or []):
         eq = TECHS.get(sp_id, {}).get("equipment", {})
         atk += eq.get("attack", 0)
@@ -257,6 +295,43 @@ def stats_from_ship(ship) -> dict:
         "attack": atk, "hull": hull, "defense": defense,
         "shield_capacity": shield_capacity, "shield_regen": shield_regen,
     }
+
+
+def _equip_size(tech_id) -> int:
+    if not tech_id:
+        return 0
+    return TECHS.get(tech_id, {}).get("equipment", {}).get("size", 0)
+
+
+def hull_space_budget(ship_class: str, specials=None, unlocked=None) -> int:
+    """Total equipment budget for a hull, mirroring ``compute_loadout``:
+    base hull space, + Molecular Compression percentage (if the empire
+    has it), + Battle Pods bonuses from any fitted special. Used to
+    validate / display manual designs."""
+    base = SHIPS.get(ship_class, {}).get("space", 0)
+    if unlocked:
+        from ecs.techs import empire_ship_space_bonus_pct
+        pct = empire_ship_space_bonus_pct(unlocked)
+        base += int(round(base * pct / 100))
+    budget = base
+    for sp in (specials or []):
+        eq = TECHS.get(sp, {}).get("equipment", {})
+        budget += eq.get("space_bonus", 0)
+        budget += int(round(base * eq.get("space_bonus_pct", 0) / 100))
+    return budget
+
+
+def design_space_used(armor_tech=None, shield_tech=None, weapon_tech=None,
+                      weapon_count=0, weapon_mount="normal", specials=None) -> int:
+    """Space consumed by a manual loadout. Weapons cost
+    ``size × count × mount_space_mult``; everything else is flat size."""
+    used = _equip_size(armor_tech) + _equip_size(shield_tech)
+    for sp in (specials or []):
+        used += _equip_size(sp)
+    if weapon_tech and weapon_count:
+        wsize = _equip_size(weapon_tech)
+        used += int(round(wsize * weapon_count * mount_space_mult(weapon_mount)))
+    return used
 
 
 def loadout_to_ship_fields(loadout: dict) -> dict:

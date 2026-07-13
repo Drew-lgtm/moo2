@@ -173,6 +173,10 @@ class Ship:
     weapon_tech: str | None = None
     weapon_count: int = 0
     specials: list[str] = field(default_factory=list)
+    # Weapon mount: "normal" | "heavy" | "point_defense". Set by a
+    # manual ship design; auto-built ships use "normal". Scales the
+    # weapon's attack / space via ecs.ship_design.MOUNTS.
+    weapon_mount: str = "normal"
 
 
 @dataclass

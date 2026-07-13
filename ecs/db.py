@@ -182,6 +182,22 @@ def init_db():
             empire_id INTEGER NOT NULL
         );
 
+        -- Manual ship designs. Each empire authors named blueprints for
+        -- a hull class with a chosen loadout; build orders reference a
+        -- design so the spawned ship freezes that exact loadout.
+        CREATE TABLE IF NOT EXISTS ship_designs (
+            id INTEGER PRIMARY KEY,
+            empire_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            ship_class TEXT NOT NULL,
+            armor_tech TEXT,
+            shield_tech TEXT,
+            weapon_tech TEXT,
+            weapon_count INTEGER DEFAULT 0,
+            weapon_mount TEXT DEFAULT 'normal',
+            specials TEXT DEFAULT ''
+        );
+
         CREATE TABLE IF NOT EXISTS leaders (
             id INTEGER PRIMARY KEY,
             name TEXT,
@@ -216,7 +232,17 @@ def init_db():
         _migrate_planets(conn)
         _migrate_ships(conn)
         _migrate_hall_of_fame(conn)
+        # Stamp the schema version so a future *breaking* change can
+        # detect and refuse an incompatible save. Additive changes are
+        # handled by the _migrate_* helpers and don't bump this.
+        set_meta(conn, "schema_version", SCHEMA_VERSION)
         conn.commit()
+
+
+# Current schema version. Bump only on a genuinely breaking change that
+# the additive _migrate_* helpers can't cover; pair the bump with a
+# guard in the load path.
+SCHEMA_VERSION = 1
 
 
 def _migrate_empires(conn):
@@ -262,6 +288,8 @@ def _migrate_ships(conn):
         conn.execute("ALTER TABLE ships ADD COLUMN weapon_count INTEGER DEFAULT 0")
     if "specials" not in existing:
         conn.execute("ALTER TABLE ships ADD COLUMN specials TEXT DEFAULT ''")
+    if "weapon_mount" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN weapon_mount TEXT DEFAULT 'normal'")
 
 
 def _migrate_planets(conn):
@@ -487,16 +515,18 @@ def get_empire_locked_techs(conn, empire_id):
 
 def insert_ship(conn, owner_empire_id, ship_class, current_star_id, *,
                 armor_tech=None, shield_tech=None, weapon_tech=None,
-                weapon_count=0, specials="") -> int:
+                weapon_count=0, specials="", weapon_mount="normal") -> int:
     """Insert a ship with its frozen loadout. The loadout is captured at
     construction time so older hulls don't auto-benefit from later
     research — you have to actually build the new generation."""
     cursor = conn.execute(
         "INSERT INTO ships (owner_empire_id, ship_class, current_star_id, "
-        "armor_tech, shield_tech, weapon_tech, weapon_count, specials) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "armor_tech, shield_tech, weapon_tech, weapon_count, specials, "
+        "weapon_mount) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (owner_empire_id, ship_class, current_star_id,
-         armor_tech, shield_tech, weapon_tech, weapon_count, specials),
+         armor_tech, shield_tech, weapon_tech, weapon_count, specials,
+         weapon_mount),
     )
     result = cursor.lastrowid
     assert result is not None
@@ -505,6 +535,35 @@ def insert_ship(conn, owner_empire_id, ship_class, current_star_id, *,
 
 def get_ships(conn):
     return conn.execute("SELECT * FROM ships").fetchall()
+
+
+# ---- ship designs -----------------------------------------------------
+
+def insert_ship_design(conn, empire_id, name, ship_class, *,
+                       armor_tech=None, shield_tech=None, weapon_tech=None,
+                       weapon_count=0, weapon_mount="normal", specials="") -> int:
+    cursor = conn.execute(
+        "INSERT INTO ship_designs (empire_id, name, ship_class, armor_tech, "
+        "shield_tech, weapon_tech, weapon_count, weapon_mount, specials) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (empire_id, name, ship_class, armor_tech, shield_tech, weapon_tech,
+         weapon_count, weapon_mount, specials),
+    )
+    result = cursor.lastrowid
+    assert result is not None
+    return result
+
+
+def get_ship_designs(conn=None):
+    sql = "SELECT * FROM ship_designs"
+    if conn is None:
+        with get_connection() as c:
+            return c.execute(sql).fetchall()
+    return conn.execute(sql).fetchall()
+
+
+def delete_ship_design(conn, design_id):
+    conn.execute("DELETE FROM ship_designs WHERE id = ?", (design_id,))
 
 
 def update_ship_transit(conn, ship_id, current_star_id, dest_star_id, turns_remaining):
@@ -641,7 +700,7 @@ def clear_galaxy():
                       "empire_techs", "planets", "empires", "stars", "meta",
                       "diplomacy", "diplomacy_pending", "empire_explored",
                       "spies", "spy_missions", "spy_missions_desired",
-                      "espionage_settings", "outposts", "leaders",
-                      "empire_locked_techs"):
+                      "espionage_settings", "outposts", "ship_designs",
+                      "leaders", "empire_locked_techs"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

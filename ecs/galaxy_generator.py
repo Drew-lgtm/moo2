@@ -429,6 +429,9 @@ class GalaxyGenerator:
                         weapon_tech=ship_row["weapon_tech"] if "weapon_tech" in ship_row.keys() else None,
                         weapon_count=ship_row["weapon_count"] if "weapon_count" in ship_row.keys() else 0,
                         specials=specials_list,
+                        weapon_mount=(ship_row["weapon_mount"]
+                                      if "weapon_mount" in ship_row.keys()
+                                      and ship_row["weapon_mount"] else "normal"),
                     )
                 )
                 self.component_mgr.add_component(

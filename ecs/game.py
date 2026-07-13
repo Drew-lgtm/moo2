@@ -26,6 +26,7 @@ from ecs.diplomacy import Diplomacy, diplomacy_tick as _diplomacy_tick
 from ecs.exploration import Exploration, exploration_tick as _exploration_tick
 from ecs.espionage import Espionage, espionage_tick as _espionage_tick
 from ecs.leaders import LeadersManager, leaders_tick as _leaders_tick
+from ecs.designs import ShipDesignManager
 from ecs.tooltip import Tooltip
 from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
@@ -66,6 +67,8 @@ class Game:
         self.espionage: Espionage | None = None
         # Leaders / heroes (colony + ship officers). None until a game runs.
         self.leaders: LeadersManager | None = None
+        # Manual ship designs (player + AI blueprints). None until running.
+        self.ship_designs: ShipDesignManager | None = None
         # Set by advance_turn when the Galactic Council convenes; the
         # GalaxyScene picks it up and switches to the council screen.
         self.pending_council: dict | None = None
@@ -178,6 +181,9 @@ class Game:
         for _ in range(2):
             self.leaders.generate_candidate()
         self.leaders.save()
+        # Fresh ship-design store — empty until the player authors one.
+        self.ship_designs = ShipDesignManager()
+        self.ship_designs.save()
         self._bind_game_ui()
 
     def load_game(self):
@@ -199,6 +205,8 @@ class Game:
         self.espionage.load()
         self.leaders = LeadersManager()
         self.leaders.load()
+        self.ship_designs = ShipDesignManager()
+        self.ship_designs.load()
         self._bind_game_ui()
 
     def _bind_game_ui(self):
