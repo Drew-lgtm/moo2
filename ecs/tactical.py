@@ -72,6 +72,8 @@ SHIP_AP = {
     "cruiser":          5,
     "battleship":       4,
     "dreadnought":      3,
+    "titan":            3,
+    "doom_star":        2,
 }
 # Default if a class isn't listed (custom ships, future classes).
 DEFAULT_AP = 5

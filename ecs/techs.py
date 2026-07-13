@@ -197,6 +197,22 @@ TECHS: dict[str, dict] = {
         "cost": 2000, "prereqs": ["xeno_hull"],
         "description": "Solar mirrors in orbit — perpetual summer below",
     },
+    # Apex-hull unlock techs. Each is its own tier group (no alternative
+    # to lock out) so a player can pursue big warships without giving up
+    # armor / economy picks. They gate the Titan / Doom Star ship
+    # projects via the hull's ``required_tech``.
+    "titan_construction": {
+        "id": "titan_construction", "name": "Titan Construction",
+        "field": "construction", "tier": 6, "tier_group": "construction_titan",
+        "cost": 1500, "prereqs": ["robo_miners"],
+        "description": "Enables the Titan hull — colossal warship frame",
+    },
+    "doom_star_construction": {
+        "id": "doom_star_construction", "name": "Doom Star Construction",
+        "field": "construction", "tier": 7, "tier_group": "construction_doom",
+        "cost": 2400, "prereqs": ["titan_construction"],
+        "description": "Enables the Doom Star — apex mobile battle station",
+    },
 
     # ===================================================================
     # Power — drives, fuel, energy systems

@@ -66,7 +66,8 @@ AI_MAX_WARSHIPS_PER_CLASS = 3
 
 # Combat ships the AI sends to attack the player (excludes Troop
 # Transports, which have their own invasion logic, and civilian hulls).
-WARSHIP_CLASSES = {"frigate", "carrier", "cruiser", "battleship", "dreadnought"}
+WARSHIP_CLASSES = {"frigate", "carrier", "cruiser", "battleship",
+                   "dreadnought", "titan", "doom_star"}
 
 
 # ---- Planet scoring for colonisation ----------------------------------
@@ -307,7 +308,8 @@ def _ai_rebalance_workers(cm, entity_id, worker_pct, pending_writes):
 # Hull classes the AI authors blueprints for. Its build priority still
 # lists ``ship_<class>``; the design map swaps in the empire's own
 # design at queue time.
-AI_DESIGN_CLASSES = ["frigate", "carrier", "cruiser", "battleship", "dreadnought"]
+AI_DESIGN_CLASSES = ["frigate", "carrier", "cruiser", "battleship",
+                     "dreadnought", "titan", "doom_star"]
 
 
 def _ai_ensure_designs(game, empire, personality, unlocked) -> dict:
@@ -337,6 +339,10 @@ def _ai_ensure_designs(game, empire, personality, unlocked) -> dict:
     design_map: dict[str, str] = {}
     dirty = False
     for cls in AI_DESIGN_CLASSES:
+        # Don't design (and thus build) a hull the empire can't yet
+        # construct — Titan / Doom Star are tech-gated.
+        if not project_is_available(f"ship_{cls}", unlocked, None):
+            continue
         lo = compute_loadout(cls, unlocked)
         if not lo.get("weapon"):
             continue  # no weapon tech for this hull yet → use auto hull

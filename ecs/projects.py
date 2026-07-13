@@ -287,6 +287,10 @@ for _ship_id in SHIP_ORDER:
         "type": "ship",
         "ship_class": _ship_id,
     }
+    # Tech-gated hulls (Titan / Doom Star) carry their requirement so the
+    # Build screen locks them until the tech is researched.
+    if _spec.get("required_tech"):
+        PROJECTS[f"ship_{_ship_id}"]["required_tech"] = _spec["required_tech"]
 
 
 def projects_in_category(category: str, unlocked_techs=None) -> list[dict]:

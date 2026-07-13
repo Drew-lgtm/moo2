@@ -23,24 +23,39 @@ def temp_db(tmp_path, monkeypatch):
 
 
 WEAPON_TECH = {"laser_cannons", "heavy_armor", "class_i_shield"}
+# Classes buildable without any apex-hull construction tech.
+BASE_WARSHIPS = {"frigate", "carrier", "cruiser", "battleship", "dreadnought"}
 
 
 def _game():
     return SimpleNamespace(ship_designs=ShipDesignManager())
 
 
-def test_ensure_designs_creates_one_per_class(temp_db):
+def test_ensure_designs_creates_one_per_buildable_class(temp_db):
     game = _game()
     emp = Empire(id=1, name="AI", race_type="Humans", color="red",
                  tech_level=0, home_star_id=1, is_player=False)
     dm = _ai_ensure_designs(game, emp, {"aggressive": False}, WEAPON_TECH)
-    # Every warship class with a weapon gets a design.
-    assert set(dm) == set(AI_DESIGN_CLASSES)
-    for cls, pid in dm.items():
+    # Every base warship gets a design; tech-gated hulls do NOT (no
+    # Titan/Doom Star construction researched here).
+    assert set(dm) == BASE_WARSHIPS
+    assert "titan" not in dm and "doom_star" not in dm
+    for pid in dm.values():
         assert parse_design_project(pid) is not None
-    # One design per class, all owned by empire 1.
-    designs = game.ship_designs.for_empire(1)
-    assert len(designs) == len(AI_DESIGN_CLASSES)
+    assert len(game.ship_designs.for_empire(1)) == len(BASE_WARSHIPS)
+
+
+def test_ensure_designs_includes_apex_hulls_once_teched(temp_db):
+    game = _game()
+    emp = Empire(id=1, name="AI", race_type="Humans", color="red",
+                 tech_level=0, home_star_id=1, is_player=False)
+    teched = WEAPON_TECH | {"titan_construction", "doom_star_construction"}
+    dm = _ai_ensure_designs(game, emp, {"aggressive": True}, teched)
+    assert "titan" in dm and "doom_star" in dm
+    # And the apex designs still fit their (larger) hull budgets.
+    by_class = {d.ship_class: d for d in game.ship_designs.for_empire(1)}
+    assert by_class["titan"].fits(teched)
+    assert by_class["doom_star"].fits(teched)
 
 
 def test_ensure_designs_idempotent(temp_db):

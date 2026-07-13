@@ -317,9 +317,15 @@ class BuildScene(Scene):
         is_ship = proj.get("type") == "ship"
         if not is_ship and project_id in build_state.completed:
             return
-        # Designs are player-authored and always buildable; only catalog
-        # projects go through the tech/trait availability gate.
-        if not is_design and not project_is_available(
+        # Designs skip the catalog tech/trait gate, EXCEPT the hull
+        # itself must be buildable — a Titan design still needs Titan
+        # Construction. Catalog projects go through the normal gate.
+        if is_design:
+            hull = f"ship_{proj.get('ship_class', '')}"
+            if not project_is_available(hull, self._player_unlocked_techs(),
+                                        self._player_traits()):
+                return
+        elif not project_is_available(
                 project_id, self._player_unlocked_techs(), self._player_traits()):
             return
         if not is_ship and build_state.current_project == project_id:

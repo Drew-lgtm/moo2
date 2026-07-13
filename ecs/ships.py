@@ -97,13 +97,33 @@ SHIPS: dict[str, dict] = {
         "image": "ships/dreadnought.png",
         "description": "Capital ship. Devastating in a fleet engagement.",
     },
+    # ---- Apex hulls (tech-gated) ----------------------------------------
+    # Titan and Doom Star sit above the Dreadnought and require dedicated
+    # construction techs. Their huge space budgets let a designer fit
+    # heavy-mount batteries or a Stellar Converter that smaller hulls
+    # can't carry — the payoff for a long tech investment.
+    "titan": {
+        "id": "titan", "name": "Titan", "ship_class_kind": "military",
+        "cost": 500, "speed": 2, "attack": 20, "hull": 34, "space": 100,
+        "image": "ships/dreadnought.png",
+        "description": "Colossal warship. Requires Titan Construction.",
+        "required_tech": "titan_construction",
+    },
+    "doom_star": {
+        "id": "doom_star", "name": "Doom Star", "ship_class_kind": "military",
+        "cost": 900, "speed": 2, "attack": 34, "hull": 60, "space": 170,
+        "image": "ships/dreadnought.png",
+        "description": "Apex battle station. Requires Doom Star Construction.",
+        "required_tech": "doom_star_construction",
+    },
 }
 
 # Order ships appear in the Build screen: civilians first (smaller to
 # bigger commitment), then military (smaller to bigger).
 SHIP_ORDER = [
     "scout", "freighter", "outpost_ship", "colony_ship",
-    "troop_transport", "frigate", "carrier", "cruiser", "battleship", "dreadnought",
+    "troop_transport", "frigate", "carrier", "cruiser", "battleship",
+    "dreadnought", "titan", "doom_star",
 ]
 
 CIVILIAN_SHIPS = [s for s, spec in SHIPS.items() if spec.get("ship_class_kind") == "civilian"]

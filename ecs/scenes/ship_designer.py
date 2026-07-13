@@ -97,8 +97,19 @@ class ShipDesignerScene(Scene):
                 return set(ts.unlocked)
         return set()
 
+    def _available_hulls(self) -> list[str]:
+        """Designable hulls the player can currently build — tech-gated
+        hulls (Titan / Doom Star) only appear once researched. Never
+        empty (the base warships have no tech requirement)."""
+        from ecs.projects import project_is_available
+        unlocked = self._unlocked()
+        avail = [c for c in DESIGNABLE
+                 if project_is_available(f"ship_{c}", unlocked, None)]
+        return avail or DESIGNABLE
+
     def _ship_class(self) -> str:
-        return DESIGNABLE[self.hull_idx % len(DESIGNABLE)]
+        hulls = self._available_hulls()
+        return hulls[self.hull_idx % len(hulls)]
 
     def _slot_options(self, slot: str) -> list[str | None]:
         """Unlocked options for a slot, prefixed with None ('—')."""
@@ -168,7 +179,7 @@ class ShipDesignerScene(Scene):
         if action == "close":
             self.game.scenes.replace("build")
         elif action == "hull":
-            self.hull_idx = (self.hull_idx + payload) % len(DESIGNABLE)
+            self.hull_idx = (self.hull_idx + payload) % len(self._available_hulls())
             self._clamp_weapon_count()
         elif action in ("armor", "shield", "weapon"):
             self._cycle_slot(action, payload)
@@ -257,8 +268,9 @@ class ShipDesignerScene(Scene):
         d = mgr.get(design_id) if mgr else None
         if d is None:
             return
-        if d.ship_class in DESIGNABLE:
-            self.hull_idx = DESIGNABLE.index(d.ship_class)
+        hulls = self._available_hulls()
+        if d.ship_class in hulls:
+            self.hull_idx = hulls.index(d.ship_class)
         self.armor_tech = d.armor_tech
         self.shield_tech = d.shield_tech
         self.weapon_tech = d.weapon_tech
