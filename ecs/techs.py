@@ -394,7 +394,7 @@ TECHS: dict[str, dict] = {
         "id": "federation", "name": "Federation",
         "field": "sociology", "tier": 3, "tier_group": _t("sociology", 3),
         "cost": 300, "prereqs": ["governance"],
-        "description": "Powerful alliance treaties", "effect_stub": True,
+        "description": "Powerful alliance treaties", "research_bonus_pct": 15,
     },
     "virtual_reality_network": {
         "id": "virtual_reality_network", "name": "Virtual Reality Network",
@@ -406,7 +406,7 @@ TECHS: dict[str, dict] = {
         "id": "galactic_currency_exchange", "name": "Galactic Currency Exchange",
         "field": "sociology", "tier": 4, "tier_group": _t("sociology", 4),
         "cost": 500, "prereqs": ["financial_planning"],
-        "description": "Empire-wide BC boost", "effect_stub": True,
+        "description": "Empire-wide BC boost", "bc_bonus_pct": 25,
     },
     "galactic_unification": {
         "id": "galactic_unification", "name": "Galactic Unification",
@@ -973,4 +973,58 @@ def empire_marine_defense_bonus(unlocked) -> int:
     total = 0
     for t in unlocked:
         total += TECHS.get(t, {}).get("marine_defense", 0)
+    return total
+
+
+def empire_bc_pct_tech(unlocked) -> int:
+    """Empire-wide percentage BC bonus from economy techs (e.g. Galactic
+    Currency Exchange). MAX semantics — the best single tech applies."""
+    best = 0
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("bc_bonus_pct", 0))
+    return best
+
+
+def empire_research_pct_tech(unlocked) -> int:
+    """Empire-wide percentage research bonus from sociology techs (e.g.
+    Federation's shared science). MAX semantics."""
+    best = 0
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("research_bonus_pct", 0))
+    return best
+
+
+def empire_planetary_shield_bonus(unlocked) -> int:
+    """Flat planetary-defense attack added in space combat by force-field
+    techs (e.g. Planetary Barrier Shield). MAX semantics."""
+    best = 0
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("planetary_defense_bonus", 0))
+    return best
+
+
+def empire_ship_shield_bonus(unlocked) -> int:
+    """Flat shield-capacity bonus added to every combat ship by power
+    techs (e.g. Energy Absorber). MAX semantics."""
+    best = 0
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("ship_shield_bonus", 0))
+    return best
+
+
+def empire_ship_space_bonus_pct(unlocked) -> int:
+    """Percentage bonus to a hull's equipment budget from miniaturisation
+    techs (e.g. Molecular Compression). MAX semantics."""
+    best = 0
+    for t in unlocked:
+        best = max(best, TECHS.get(t, {}).get("ship_space_pct", 0))
+    return best
+
+
+def empire_assimilation_bonus(unlocked) -> int:
+    """Extra assimilation progress per turn from sociology unity techs
+    (e.g. Galactic Unification). SUM semantics — small, stacks."""
+    total = 0
+    for t in unlocked:
+        total += TECHS.get(t, {}).get("assimilation_bonus", 0)
     return total

@@ -6,7 +6,9 @@ moved here and their effect asserted. Techs still legitimately stubbed
 (pending a system that doesn't exist yet) are listed in
 ``STILL_STUBBED`` so the split stays explicit and honest.
 """
-from ecs.techs import TECHS
+from ecs.techs import (
+    TECHS, empire_bc_pct_tech, empire_research_pct_tech,
+)
 from ecs.projects import PROJECTS, projects_in_category
 
 
@@ -51,10 +53,20 @@ def test_habitability_projects_exist_and_gated():
 def test_habitability_projects_appear_once_tech_unlocked():
     farm = projects_in_category("farming", {"gaia_transformation"})
     assert any(p["id"] == "gaia_transformation_b" for p in farm)
-    # And not offered without the tech.
-    farm_none = projects_in_category("farming", set())
-    ids = {p["id"] for p in farm_none}
-    # projects_in_category may include locked items for display; if so
-    # they must be flagged unavailable rather than silently buildable.
-    # We only assert the tech-gated one isn't presented as available.
-    assert "gaia_transformation_b" not in ids or True
+
+
+# ---- Batch 2: empire-wide economy percentages --------------------------
+
+def test_economy_pct_techs_no_longer_stub():
+    assert not TECHS["galactic_currency_exchange"].get("effect_stub")
+    assert not TECHS["federation"].get("effect_stub")
+
+
+def test_bc_pct_tech():
+    assert empire_bc_pct_tech({"galactic_currency_exchange"}) == 25
+    assert empire_bc_pct_tech(set()) == 0
+
+
+def test_research_pct_tech():
+    assert empire_research_pct_tech({"federation"}) == 15
+    assert empire_research_pct_tech(set()) == 0

@@ -42,6 +42,7 @@ from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 from ecs.leaders import colony_effect
 from ecs.techs import (
     empire_industry_per_worker, empire_food_per_farmer, empire_research_per_scientist,
+    empire_bc_pct_tech, empire_research_pct_tech,
 )
 
 
@@ -656,6 +657,16 @@ def production_tick(game, new_turn: int):
                 gain_bc = int(round(gain_bc * (1 + trade_pct / 100)))
             if research_pct:
                 gain_res = int(round(gain_res * (1 + research_pct / 100)))
+        # Empire-wide tech percentages: Galactic Currency Exchange (+BC%),
+        # Federation (+research%). Applied on top of treaty bonuses.
+        _ts = tech_by_empire.get(empire.id)
+        if _ts is not None:
+            bc_pct = empire_bc_pct_tech(_ts.unlocked)
+            res_pct = empire_research_pct_tech(_ts.unlocked)
+            if bc_pct:
+                gain_bc = int(round(gain_bc * (1 + bc_pct / 100)))
+            if res_pct:
+                gain_res = int(round(gain_res * (1 + res_pct / 100)))
         if gain_bc:
             empire.bc += gain_bc
         if gain_res:
