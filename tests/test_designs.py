@@ -96,6 +96,74 @@ def temp_db(tmp_path, monkeypatch):
     yield
 
 
+def test_design_backed_build_spawns_frozen_loadout(temp_db):
+    """End-to-end: a design:<id> build order that completes must spawn a
+    ship carrying the design's exact loadout + mount, not the auto one."""
+    from types import SimpleNamespace
+    from ecs.entity_manager import EntityManager
+    from ecs.component_manager import ComponentManager
+    from ecs.components import (
+        Empire, TechState, Owner, Planet, Population, BuildState,
+        Orbiting, StarRef, Ship, ShipOwner,
+    )
+    from ecs.designs import ShipDesignManager, design_project_id
+    from ecs.economy import production_tick
+
+    from ecs.db import get_connection, insert_star, insert_empire
+    # Seed the parent rows the ships FK requires (stars, empires).
+    with get_connection() as conn:
+        insert_star(conn, "Sol", 0, 0, "G", "star.png", 30)      # id 1
+        insert_empire(conn, "P", "Humans", "blue", 1, 0)          # id 1
+        conn.commit()
+
+    em = EntityManager()
+    cm = ComponentManager()
+
+    # Empire 1 with no useful weapon tech unlocked — so if the spawn
+    # used the AUTO path it would build an unarmed cruiser. The design
+    # explicitly fits phasors on a heavy mount, proving it's honoured.
+    emp_e = em.create_entity()
+    cm.add_component(emp_e, Empire(id=1, name="P", race_type="Humans",
+                                   color="blue", tech_level=0, home_star_id=1,
+                                   bc=0, research_points=0, is_player=True))
+    cm.add_component(emp_e, TechState(empire_id=1, unlocked=[]))
+
+    star_e = em.create_entity()
+    cm.add_component(star_e, StarRef(db_id=1))
+
+    planet_e = em.create_entity()
+    cm.add_component(planet_e, Planet(id=1, planet_type="Terran", size="Medium",
+                                      colonizable=True))
+    cm.add_component(planet_e, Owner(empire_id=1))
+    cm.add_component(planet_e, Population(current=4, max=12, workers=4))
+    cm.add_component(planet_e, Orbiting(star_entity=star_e))
+
+    designs = ShipDesignManager()
+    design = designs.create(1, "Heavy Phasor Cruiser", "cruiser",
+                            weapon_tech="phasors", weapon_count=2,
+                            weapon_mount="heavy", armor_tech="heavy_armor")
+
+    # Build order already funded past the hull cost.
+    cm.add_component(planet_e, BuildState(
+        current_project=design_project_id(design.id), progress=1000))
+
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em,
+                           ship_designs=designs, leaders=None,
+                           galaxy=SimpleNamespace(difficulty="normal"),
+                           diplomacy=None, turn_log=None)
+
+    production_tick(game, new_turn=2)
+
+    ships = [(e, s) for e, s in cm.get_all(Ship)]
+    assert len(ships) == 1, "exactly one ship should have spawned"
+    _e, ship = ships[0]
+    assert ship.ship_class == "cruiser"
+    assert ship.weapon_tech == "phasors"
+    assert ship.weapon_count == 2
+    assert ship.weapon_mount == "heavy"
+    assert ship.armor_tech == "heavy_armor"
+
+
 def test_manager_save_load_roundtrip(temp_db):
     from ecs.designs import ShipDesignManager
     m = ShipDesignManager()

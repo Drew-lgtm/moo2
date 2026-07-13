@@ -23,6 +23,46 @@ from ecs.ship_design import (
 )
 
 
+DESIGN_PROJECT_PREFIX = "design:"
+
+
+def design_project_id(design_id: int) -> str:
+    """The build-queue project id for a design-backed order."""
+    return f"{DESIGN_PROJECT_PREFIX}{design_id}"
+
+
+def parse_design_project(project_id) -> int | None:
+    """Return the design id if ``project_id`` is a design order, else None."""
+    if isinstance(project_id, str) and project_id.startswith(DESIGN_PROJECT_PREFIX):
+        try:
+            return int(project_id[len(DESIGN_PROJECT_PREFIX):])
+        except ValueError:
+            return None
+    return None
+
+
+def design_project_spec(project_id, mgr) -> dict | None:
+    """Resolve a ``design:<id>`` build project into a project-shaped dict
+    (name / cost / type / ship_class / design_id), mirroring the PROJECTS
+    entries so the build loop can treat it uniformly. Cost is the hull
+    class's build cost. Returns None for non-design ids or unknown/dead
+    designs."""
+    did = parse_design_project(project_id)
+    if did is None or mgr is None:
+        return None
+    design = mgr.get(did)
+    if design is None:
+        return None
+    return {
+        "id": project_id,
+        "name": design.name,
+        "cost": SHIPS.get(design.ship_class, {}).get("cost", 50),
+        "type": "ship",
+        "ship_class": design.ship_class,
+        "design_id": design.id,
+    }
+
+
 @dataclass
 class ShipDesign:
     """One saved blueprint. Field names mirror the Ship component so

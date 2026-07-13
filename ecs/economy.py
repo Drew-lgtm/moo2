@@ -31,6 +31,7 @@ from ecs.db import (
     insert_ship,
 )
 from ecs.projects import PROJECTS, building_growth_bonus, project_allowed_for_traits
+from ecs.designs import design_project_spec
 from ecs.techs import TECHS
 from ecs.difficulty import ai_output_multiplier
 from ecs.races import trait_count, traits_for_empire
@@ -562,7 +563,12 @@ def production_tick(game, new_turn: int):
             # Resolve as many completions as the progress allows (rare, but
             # cheap buildings + big industry can finish multiple per turn).
             while True:
-                proj = PROJECTS.get(build_state.current_project) if build_state.current_project else None
+                cur = build_state.current_project
+                proj = PROJECTS.get(cur) if cur else None
+                # design:<id> orders aren't in PROJECTS — resolve them
+                # against the empire's saved blueprints.
+                if proj is None and cur:
+                    proj = design_project_spec(cur, getattr(game, "ship_designs", None))
                 if proj is None or build_state.progress < proj["cost"]:
                     break
                 completed_id = build_state.current_project
@@ -570,12 +576,15 @@ def production_tick(game, new_turn: int):
 
                 if proj_type == "ship":
                     # Spawn a ship at this planet's star; do NOT add to
-                    # completed so the project can be queued again.
+                    # completed so the project can be queued again. A
+                    # design order carries its design_id so the spawn
+                    # freezes that exact loadout instead of the auto one.
                     star_db_id = _star_db_id_for_planet(cm, entity_id)
                     if star_db_id is not None:
                         ship_spawns.append((
                             owner.empire_id, proj["ship_class"],
                             star_db_id, entity_id, owner,
+                            proj.get("design_id"),
                         ))
                 else:
                     build_state.completed.append(completed_id)
@@ -726,12 +735,20 @@ def production_tick(game, new_turn: int):
         # *frozen onto the hull* here — already-built ships keep their
         # old gear when newer tech later lands.
         from ecs.ship_design import compute_loadout, loadout_to_ship_fields
-        for owner_empire_id, ship_class, star_db_id, planet_entity, _owner in ship_spawns:
-            ts = tech_by_empire.get(owner_empire_id)
-            unlocked_now = set(ts.unlocked) if ts is not None else set()
-            loadout = compute_loadout(ship_class, unlocked_now)
-            fields = loadout_to_ship_fields(loadout)
-            specials_csv = ",".join(fields["specials"])
+        designs_mgr = getattr(game, "ship_designs", None)
+        for owner_empire_id, ship_class, star_db_id, planet_entity, _owner, design_id in ship_spawns:
+            design = designs_mgr.get(design_id) if (design_id and designs_mgr) else None
+            if design is not None:
+                # Manual design: freeze the blueprint's exact loadout.
+                fields = design.ship_fields()
+            else:
+                # Quick Build: snapshot the empire's current best gear.
+                ts = tech_by_empire.get(owner_empire_id)
+                unlocked_now = set(ts.unlocked) if ts is not None else set()
+                fields = loadout_to_ship_fields(compute_loadout(ship_class, unlocked_now))
+                fields.setdefault("weapon_mount", "normal")
+            specials_csv = ",".join(fields.get("specials", []))
+            mount = fields.get("weapon_mount", "normal")
             ship_id = insert_ship(
                 conn, owner_empire_id, ship_class, star_db_id,
                 armor_tech=fields["armor_tech"],
@@ -739,6 +756,7 @@ def production_tick(game, new_turn: int):
                 weapon_tech=fields["weapon_tech"],
                 weapon_count=fields["weapon_count"],
                 specials=specials_csv,
+                weapon_mount=mount,
             )
             ship_entity = game.entity_mgr.create_entity()
             cm.add_component(ship_entity, Ship(
@@ -747,7 +765,8 @@ def production_tick(game, new_turn: int):
                 shield_tech=fields["shield_tech"],
                 weapon_tech=fields["weapon_tech"],
                 weapon_count=fields["weapon_count"],
-                specials=list(fields["specials"]),
+                specials=list(fields.get("specials", [])),
+                weapon_mount=mount,
             ))
             cm.add_component(ship_entity, ShipOwner(empire_id=owner_empire_id))
             orbit = cm.get_component(planet_entity, Orbiting)
