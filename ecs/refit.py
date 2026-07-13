@@ -59,7 +59,32 @@ def _loadout_matches(ship: Ship, target: dict) -> bool:
             and ship.shield_tech == target.get("shield")
             and ship.weapon_tech == target.get("weapon")
             and (ship.weapon_count or 0) == (target.get("weapon_count") or 0)
+            and getattr(ship, "weapon_mount", "normal") == target.get("weapon_mount", "normal")
             and set(ship.specials or []) == set(target.get("specials") or []))
+
+
+def _target_for_ship(ship: Ship, unlocked: set, designs_mgr, empire_id: int) -> dict:
+    """The loadout a refit brings this hull up to. Prefers the empire's
+    newest saved design for the ship's class (so refit honours your
+    blueprints, mounts and all); falls back to the auto best-tech
+    loadout when no design exists for that class. Returns a uniform dict
+    with keys armor / shield / weapon / weapon_count / weapon_mount /
+    specials."""
+    if designs_mgr is not None:
+        matches = designs_mgr.for_empire_class(empire_id, ship.ship_class)
+        if matches:
+            d = max(matches, key=lambda x: x.id)  # newest design wins
+            return {
+                "armor": d.armor_tech, "shield": d.shield_tech,
+                "weapon": d.weapon_tech, "weapon_count": d.weapon_count,
+                "weapon_mount": d.weapon_mount, "specials": list(d.specials),
+            }
+    lo = compute_loadout(ship.ship_class, unlocked)
+    return {
+        "armor": lo.get("armor"), "shield": lo.get("shield"),
+        "weapon": lo.get("weapon"), "weapon_count": lo.get("weapon_count", 0),
+        "weapon_mount": "normal", "specials": list(lo.get("specials") or []),
+    }
 
 
 def refit_cost(ship: Ship) -> int:
@@ -68,9 +93,11 @@ def refit_cost(ship: Ship) -> int:
     return max(10, int(round(base * REFIT_COST_FRACTION)))
 
 
-def plan_refit(cm, star_entity: int, empire_id: int) -> dict:
+def plan_refit(cm, star_entity: int, empire_id: int, designs_mgr=None) -> dict:
     """Inspect every player ship at this star and figure out which ones
-    need refitting + the total cost. No side effects."""
+    need refitting + the total cost. Each ship's target is its class's
+    newest saved design (if any) else the auto best-tech loadout. No
+    side effects."""
     unlocked = _empire_unlocked(cm, empire_id)
     entries = []
     total_cost = 0
@@ -79,7 +106,7 @@ def plan_refit(cm, star_entity: int, empire_id: int) -> dict:
         ship = cm.get_component(se, Ship)
         if ship is None:
             continue
-        target = compute_loadout(ship.ship_class, unlocked)
+        target = _target_for_ship(ship, unlocked, designs_mgr, empire_id)
         if _loadout_matches(ship, target):
             skipped += 1
             continue
@@ -104,7 +131,8 @@ def refit_ships_at_star(game, star_entity: int, empire_id: int) -> dict:
     if empire is None:
         return {"status": "nothing", "refitted": 0, "spent": 0, "cost": 0}
 
-    plan = plan_refit(cm, star_entity, empire_id)
+    plan = plan_refit(cm, star_entity, empire_id,
+                      getattr(game, "ship_designs", None))
     if not plan["entries"]:
         return {"status": "nothing", "refitted": 0, "spent": 0,
                 "cost": 0, "skipped": plan["skipped"]}
@@ -120,12 +148,14 @@ def refit_ships_at_star(game, star_entity: int, empire_id: int) -> dict:
             ship.shield_tech = target.get("shield")
             ship.weapon_tech = target.get("weapon")
             ship.weapon_count = target.get("weapon_count", 0)
+            ship.weapon_mount = target.get("weapon_mount", "normal")
             ship.specials = list(target.get("specials") or [])
             conn.execute(
                 "UPDATE ships SET armor_tech=?, shield_tech=?, weapon_tech=?, "
-                "weapon_count=?, specials=? WHERE id=?",
+                "weapon_count=?, specials=?, weapon_mount=? WHERE id=?",
                 (ship.armor_tech, ship.shield_tech, ship.weapon_tech,
-                 ship.weapon_count, ",".join(ship.specials), ship.id),
+                 ship.weapon_count, ",".join(ship.specials),
+                 ship.weapon_mount, ship.id),
             )
         empire.bc -= plan["total_cost"]
         update_empire_economy(conn, empire.id, empire.bc,

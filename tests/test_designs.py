@@ -225,6 +225,69 @@ def test_dead_design_order_does_not_softlock_planet(temp_db):
     assert emp.bc > bc_after_first, "planet soft-locked: no output after drop"
 
 
+def test_refit_targets_saved_design(temp_db):
+    """Refit brings a hull up to its class's newest saved design (mount
+    and all), not the generic auto loadout."""
+    from types import SimpleNamespace
+    from ecs.entity_manager import EntityManager
+    from ecs.component_manager import ComponentManager
+    from ecs.components import (
+        Empire, TechState, Ship, ShipOwner, ShipAt, StarRef,
+    )
+    from ecs.designs import ShipDesignManager
+    from ecs.refit import plan_refit, refit_ships_at_star
+    from ecs.db import get_connection, insert_star, insert_empire
+
+    with get_connection() as conn:
+        insert_star(conn, "Sol", 0, 0, "G", "s.png", 30)
+        insert_empire(conn, "P", "Humans", "blue", 1, 0)
+        conn.commit()
+
+    em = EntityManager()
+    cm = ComponentManager()
+    emp_e = em.create_entity()
+    cm.add_component(emp_e, Empire(id=1, name="P", race_type="Humans",
+                                   color="blue", tech_level=0, home_star_id=1,
+                                   bc=500, research_points=0, is_player=True))
+    cm.add_component(emp_e, TechState(empire_id=1,
+                                      unlocked=["phasors", "laser_cannons",
+                                                "heavy_armor"]))
+    star_e = em.create_entity()
+    cm.add_component(star_e, StarRef(db_id=1))
+
+    # A cruiser with an outdated loadout parked at the star.
+    ship_e = em.create_entity()
+    from ecs.db import insert_ship
+    with get_connection() as conn:
+        sid = insert_ship(conn, 1, "cruiser", 1, weapon_tech="laser_cannons",
+                          weapon_count=1, weapon_mount="normal")
+        conn.commit()
+    cm.add_component(ship_e, Ship(id=sid, ship_class="cruiser",
+                                  weapon_tech="laser_cannons", weapon_count=1,
+                                  weapon_mount="normal"))
+    cm.add_component(ship_e, ShipOwner(empire_id=1))
+    cm.add_component(ship_e, ShipAt(star_entity=star_e))
+
+    designs = ShipDesignManager()
+    designs.create(1, "War Cruiser", "cruiser", weapon_tech="phasors",
+                   weapon_count=2, weapon_mount="heavy", armor_tech="heavy_armor")
+
+    plan = plan_refit(cm, star_e, 1, designs)
+    assert plan["to_refit"] == 1
+    target = plan["entries"][0]["target"]
+    assert target["weapon"] == "phasors"
+    assert target["weapon_mount"] == "heavy"
+
+    game = SimpleNamespace(component_mgr=cm, ship_designs=designs)
+    result = refit_ships_at_star(game, star_e, 1)
+    assert result["status"] == "ok"
+    ship = cm.get_component(ship_e, Ship)
+    assert ship.weapon_tech == "phasors"
+    assert ship.weapon_count == 2
+    assert ship.weapon_mount == "heavy"
+    assert ship.armor_tech == "heavy_armor"
+
+
 def test_manager_save_load_roundtrip(temp_db):
     from ecs.designs import ShipDesignManager
     m = ShipDesignManager()

@@ -275,6 +275,7 @@ def stats_from_ship(ship) -> dict:
     """
     atk = hull = defense = 0
     shield_capacity = shield_regen = 0
+    mount = getattr(ship, "weapon_mount", "normal")
     armor = TECHS.get(ship.armor_tech, {}) if ship.armor_tech else {}
     shield = TECHS.get(ship.shield_tech, {}) if ship.shield_tech else {}
     weapon = TECHS.get(ship.weapon_tech, {}) if ship.weapon_tech else {}
@@ -284,8 +285,15 @@ def stats_from_ship(ship) -> dict:
         shield_capacity += shield["equipment"].get("capacity", 0)
         shield_regen += shield["equipment"].get("regen", 0)
     if weapon.get("equipment"):
-        base = weapon["equipment"].get("attack", 0) * (ship.weapon_count or 0)
-        atk += int(round(base * mount_attack_mult(getattr(ship, "weapon_mount", "normal"))))
+        count = ship.weapon_count or 0
+        base = weapon["equipment"].get("attack", 0) * count
+        atk += int(round(base * mount_attack_mult(mount)))
+        # Point-Defense mounts trade offence for a screen of interceptor
+        # fire: each PD gun adds flat damage reduction (until missiles /
+        # fighters exist to shoot at directly, this is how PD earns its
+        # slot — a genuine defensive choice rather than a weak weapon).
+        if mount == "point_defense" and count:
+            defense += count
     for sp_id in (ship.specials or []):
         eq = TECHS.get(sp_id, {}).get("equipment", {})
         atk += eq.get("attack", 0)

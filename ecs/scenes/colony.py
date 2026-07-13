@@ -223,7 +223,8 @@ class ColonyScene(Scene):
         empire_id = self._player_empire_id()
         if star is None or empire_id is None:
             return None
-        return plan_refit(self.game.component_mgr, star, empire_id)
+        return plan_refit(self.game.component_mgr, star, empire_id,
+                          getattr(self.game, "ship_designs", None))
 
     # ------------------------------------------------------------------ input
 
