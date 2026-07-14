@@ -168,9 +168,15 @@ def check_endgame(game) -> dict | None:
     all_empires = [e.id for _x, e in cm.get_all(Empire)]
     living = [eid for eid in all_empires if counts.get(eid, 0) > 0]
 
-    # Scrap fleets of newly-eliminated empires (no colonies left).
+    # Scrap fleets of newly-eliminated empires (no colonies left). The
+    # colony-less pseudo-empires (Antaran raiders, space monsters) are
+    # NOT real empires and must be skipped — otherwise their guardian /
+    # raid fleets get deleted the turn they appear.
+    from ecs.antaran import is_antaran
+    from ecs.monsters import is_monster
     for eid in all_empires:
-        if counts.get(eid, 0) == 0:
+        if (counts.get(eid, 0) == 0
+                and not is_antaran(eid) and not is_monster(eid)):
             _scrap_empire_ships(game, eid)
 
     player_alive = counts.get(player.id, 0) > 0

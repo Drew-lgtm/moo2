@@ -91,8 +91,10 @@ class DiplomacyScene(Scene):
         player = self._player()
         pid = player.id if player else None
         from ecs.antaran import is_antaran
+        from ecs.monsters import is_monster
         return [e for _eid, e in self.game.component_mgr.get_all(Empire)
-                if e.id != pid and not is_antaran(e.id)]
+                if e.id != pid and not is_antaran(e.id)
+                and not is_monster(e.id)]
 
     def _empire_by_id(self, eid):
         for _e, emp in self.game.component_mgr.get_all(Empire):

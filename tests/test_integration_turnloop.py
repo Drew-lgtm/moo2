@@ -42,9 +42,13 @@ def _boot():
 
 
 def _real_empires(cm):
+    """Empires excluding the colony-less pseudo-empires (Antaran raiders,
+    space monsters), which are ECS-only and never persisted."""
     from ecs.components import Empire
     from ecs.antaran import is_antaran
-    return [e for _x, e in cm.get_all(Empire) if not is_antaran(e.id)]
+    from ecs.monsters import is_monster
+    return [e for _x, e in cm.get_all(Empire)
+            if not is_antaran(e.id) and not is_monster(e.id)]
 
 
 def test_full_turn_loop_runs_and_reloads(game_db):
@@ -57,6 +61,8 @@ def test_full_turn_loop_runs_and_reloads(game_db):
     # Boot produced a flagged player empire and two real empires.
     assert game.player_empire() is not None
     assert len(_real_empires(game.component_mgr)) == 2
+    # System guardians (space monsters) were seeded on rich systems.
+    assert len(game.space_monsters) >= 1
 
     raid_seen = False
     for _ in range(9):
@@ -73,11 +79,14 @@ def test_full_turn_loop_runs_and_reloads(game_db):
         assert game.pending_endgame.get("result") in ("victory", "defeat")
 
     stars_before = len(list(game.component_mgr.get_all(StarRef)))
+    guardians_before = len(game.space_monsters)
 
     # Reload from the DB (simulates quit + load) and keep playing.
     game.load_game()
     assert len(list(game.component_mgr.get_all(StarRef))) == stars_before
     assert game.galaxy.turn == 10
+    # Guardians persist across save/load (killed ones stay dead).
+    assert len(game.space_monsters) == guardians_before
     # Real empires round-trip; the transient Antaran pseudo-empire is
     # NEVER persisted, so a fresh load must not resurrect it.
     reloaded = _real_empires(game.component_mgr)

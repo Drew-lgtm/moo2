@@ -45,6 +45,11 @@ def can_colonize(component_mgr, planet_entity: int, empire_id: int) -> bool:
     orbit = component_mgr.get_component(planet_entity, Orbiting)
     if orbit is None:
         return False
+    # A living system guardian blocks settling the whole system until
+    # it's destroyed.
+    from ecs.monsters import monster_at_star
+    if monster_at_star(component_mgr, orbit.star_entity):
+        return False
     return _find_player_colony_ship_at_star(
         component_mgr, orbit.star_entity, empire_id,
     ) is not None

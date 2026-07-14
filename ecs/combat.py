@@ -298,9 +298,10 @@ def combat_tick(game, new_turn: int):
                 leader_map[l.assigned_ship_id] = ship_effect(l)
 
     def _hostile(a: int, b: int) -> bool:
-        # Antaran raiders are hostile to everyone, always.
+        # Antaran raiders and space monsters are hostile to everyone.
         from ecs.antaran import is_antaran
-        if is_antaran(a) or is_antaran(b):
+        from ecs.monsters import is_monster
+        if is_antaran(a) or is_antaran(b) or is_monster(a) or is_monster(b):
             return a != b
         # No diplomacy object (e.g. old save) → fall back to the old
         # "everyone fights everyone" behaviour so nothing silently

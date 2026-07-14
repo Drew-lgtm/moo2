@@ -198,6 +198,16 @@ def init_db():
             specials TEXT DEFAULT ''
         );
 
+        -- Space-monster guardians: a powerful monster parked at a star,
+        -- hostile to everyone, blocking colonisation of that system until
+        -- killed. Persistent — once dead it stays dead (alive = 0).
+        CREATE TABLE IF NOT EXISTS space_monsters (
+            id INTEGER PRIMARY KEY,
+            star_id INTEGER NOT NULL,
+            monster_type TEXT NOT NULL,
+            alive INTEGER DEFAULT 1
+        );
+
         CREATE TABLE IF NOT EXISTS leaders (
             id INTEGER PRIMARY KEY,
             name TEXT,
@@ -587,6 +597,31 @@ def delete_ship(conn, ship_id):
     conn.execute("DELETE FROM ships WHERE id = ?", (ship_id,))
 
 
+def insert_space_monster(conn, star_id, monster_type):
+    """Record a living guardian at a star. Returns its row id."""
+    cur = conn.execute(
+        "INSERT INTO space_monsters (star_id, monster_type, alive) "
+        "VALUES (?, ?, 1)",
+        (star_id, monster_type),
+    )
+    return cur.lastrowid
+
+
+def get_space_monsters(conn=None, alive_only=True):
+    sql = "SELECT * FROM space_monsters"
+    if alive_only:
+        sql += " WHERE alive = 1"
+    if conn is None:
+        with get_connection() as c:
+            return c.execute(sql).fetchall()
+    return conn.execute(sql).fetchall()
+
+
+def mark_space_monster_dead(conn, monster_id):
+    conn.execute("UPDATE space_monsters SET alive = 0 WHERE id = ?",
+                 (monster_id,))
+
+
 def insert_outpost(conn, star_id, empire_id):
     """Idempotent: a star can only hold one outpost. Overwrites if the
     same star is being claimed afresh (shouldn't happen in normal flow
@@ -711,6 +746,6 @@ def clear_galaxy():
                       "diplomacy", "diplomacy_pending", "empire_explored",
                       "spies", "spy_missions", "spy_missions_desired",
                       "espionage_settings", "outposts", "ship_designs",
-                      "leaders", "empire_locked_techs"):
+                      "leaders", "empire_locked_techs", "space_monsters"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

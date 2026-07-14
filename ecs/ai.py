@@ -35,6 +35,7 @@ from ecs.invasion import (
 )
 from ecs.bombard import can_bombard, bombard_planet
 from ecs.antaran import is_antaran
+from ecs.monsters import is_monster
 from ecs.races import traits_for_empire
 from ecs.ship_design import (
     compute_loadout, loadout_to_ship_fields,
@@ -180,7 +181,7 @@ def ai_tick(game, new_turn: int):
     outpost_candidates = _outpost_candidate_stars(cm)
 
     for _eid, empire in cm.get_all(Empire):
-        if empire.is_player or is_antaran(empire.id):
+        if empire.is_player or is_antaran(empire.id) or is_monster(empire.id):
             continue  # player is human-driven; Antarans aren't an empire
         personality = get_personality(empire.personality)
         tech_state = tech_by_empire.get(empire.id)
@@ -1005,7 +1006,8 @@ def _ai_diplomacy(game, empire, personality, turn: int):
     if diplo is None:
         return
     all_ids = [e.id for _e, e in cm.get_all(Empire)]
-    others = [e for e in all_ids if e != empire.id and not is_antaran(e)]
+    others = [e for e in all_ids
+              if e != empire.id and not is_antaran(e) and not is_monster(e)]
     if not others:
         return
 
@@ -1113,7 +1115,8 @@ def _ai_espionage(game, empire, personality):
         esp.train_spy(empire.id)
 
     others = [e for _e, e in cm.get_all(Empire)
-              if e.id != empire.id and not is_antaran(e.id)]
+              if e.id != empire.id and not is_antaran(e.id)
+              and not is_monster(e.id)]
     if not others:
         return
 

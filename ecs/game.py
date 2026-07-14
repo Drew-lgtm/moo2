@@ -32,6 +32,10 @@ from ecs.council import is_council_turn, tally_votes
 from ecs.endgame import check_endgame
 from ecs.turn_log import TurnLog
 from ecs.antaran import antaran_tick as _antaran_tick
+from ecs.monsters import (
+    spawn_guardians as _spawn_guardians, load_guardians as _load_guardians,
+    monster_tick as _monster_tick,
+)
 from assets.loader import load_random_background
 
 
@@ -156,6 +160,9 @@ class Game:
         self.bombarded_this_turn: set[int] = set()
         # Active Antaran raid (or None) — transient end-game threat.
         self.antaran_raid = None
+        # Living system guardians (space monsters). List of dicts; see
+        # ecs.monsters. Set by spawn_guardians / load_guardians.
+        self.space_monsters = []
 
     def start_new_game(self, player_empire=None, num_empires=2, difficulty="normal",
                        galaxy_age="average"):
@@ -190,6 +197,9 @@ class Game:
         # Fresh ship-design store — empty until the player authors one.
         self.ship_designs = ShipDesignManager()
         self.ship_designs.save()
+        # Seed system guardians (space monsters) on the richest unowned
+        # systems. Persisted to the space_monsters table.
+        _spawn_guardians(self)
         self._bind_game_ui()
 
     def load_game(self):
@@ -213,6 +223,9 @@ class Game:
         self.leaders.load()
         self.ship_designs = ShipDesignManager()
         self.ship_designs.load()
+        # Recreate ECS ships for surviving guardians (killed ones stay
+        # dead — persisted in the space_monsters table).
+        _load_guardians(self)
         self._bind_game_ui()
 
     def _bind_game_ui(self):
@@ -242,11 +255,12 @@ class Game:
         # diplomacy so a fresh war's first battle resolves, then the
         # diplomacy tick ages treaties and decays attitudes.
         # ``_antaran_tick`` runs BEFORE combat so a freshly-spawned raid
-        # fleet fights in the same turn it arrives.
+        # fleet fights in the same turn it arrives. ``_monster_tick`` runs
+        # AFTER combat so it can detect guardians killed in the battle.
         for cb in (ai_tick, _autobuild_tick, pop_growth_tick, production_tick,
                    _leaders_tick, fleet_tick, _antaran_tick, combat_tick,
-                   _exploration_tick, _espionage_tick, _assimilation_tick,
-                   _events_tick, _diplomacy_tick):
+                   _monster_tick, _exploration_tick, _espionage_tick,
+                   _assimilation_tick, _events_tick, _diplomacy_tick):
             if cb not in self.turn_callbacks:
                 self.turn_callbacks.append(cb)
 
