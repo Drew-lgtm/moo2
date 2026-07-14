@@ -21,6 +21,7 @@ from ecs.db import (
     get_connection,
     update_empire_economy,
     update_planet_population,
+    update_planet_type,
     update_planet_build,
     update_planet_workers,
     insert_planet_building,
@@ -190,6 +191,13 @@ HOUSING_GROWTH_PER_INDUSTRY = 0.1
 def compute_max_population(planet_type: str, size: str) -> int:
     cap = SIZE_CAP.get(size, 0) * TYPE_CAP_MULT.get(planet_type, 0)
     return int(round(cap))
+
+
+def _is_biome_upgrade(current: str, target: str) -> bool:
+    """True if terraforming ``current`` into ``target`` is an improvement
+    (strictly higher habitability). Ranked by the population-cap
+    multiplier so we never terraform a world to a worse (or equal) biome."""
+    return TYPE_CAP_MULT.get(target, 0) > TYPE_CAP_MULT.get(current, 0)
 
 
 def default_assignment(planet_type: str, current: int) -> tuple[int, int, int]:
@@ -547,6 +555,7 @@ def production_tick(game, new_turn: int):
     # (planet_id, project_id) pairs scrapped by an upgrade in the same
     # chain — e.g. a Battlestation completion drops the Star Base.
     chain_removals: list[tuple[int, str]] = []
+    planet_type_updates: list[tuple[int, str]] = []  # terraforming biome changes
     pop_updates: list[tuple[int, int, int, float]] = []  # for max_pop bumps
     # (owner_empire_id, ship_class, current_star_db_id, planet_entity_id, owner_obj)
     ship_spawns: list[tuple[int, str, int, int, Owner]] = []
@@ -625,6 +634,23 @@ def production_tick(game, new_turn: int):
                     if "max_pop" in effects and pop is not None:
                         pop.max += effects["max_pop"]
                         pop_updates.append((planet.id, pop.current, pop.max, pop.growth_progress))
+
+                    # Terraforming: upgrade the biome (never downgrade).
+                    # Output is derived from planet_type live, so the cap
+                    # delta is folded into max_pop and food/industry
+                    # follow automatically next tick.
+                    target = effects.get("terraform_to")
+                    if target and pop is not None and _is_biome_upgrade(
+                            planet.planet_type, target):
+                        delta = (compute_max_population(target, planet.size)
+                                 - compute_max_population(planet.planet_type,
+                                                          planet.size))
+                        planet.planet_type = target
+                        if delta:
+                            pop.max += delta
+                        pop_updates.append((planet.id, pop.current, pop.max,
+                                            pop.growth_progress))
+                        planet_type_updates.append((planet.id, target))
 
                     # Upgrade chain: a new project in the same chain
                     # scraps every previous tier on this planet. Used
@@ -759,6 +785,8 @@ def production_tick(game, new_turn: int):
             save_planet_build_queue(conn, planet_id, queue)
         for planet_id, current, mx, growth in pop_updates:
             update_planet_population(conn, planet_id, current, mx, growth)
+        for planet_id, planet_type in planet_type_updates:
+            update_planet_type(conn, planet_id, planet_type)
 
         # Spawn new ships: insert DB row, then attach ECS entity. The
         # planet's owning empire is captured at spawn time so ownership

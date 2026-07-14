@@ -376,6 +376,16 @@ def update_planet_population(conn, planet_id, current, max_population, growth_pr
     )
 
 
+def update_planet_type(conn, planet_id, planet_type):
+    """Change a planet's biome (terraforming). Output is derived from the
+    type live, so the colony's food/industry follows automatically. The
+    column is ``type`` (``planet_type`` is the in-memory field name)."""
+    conn.execute(
+        "UPDATE planets SET type = ? WHERE id = ?",
+        (planet_type, planet_id),
+    )
+
+
 def update_planet_conquest(conn, planet_id, original_race, assimilation_progress,
                            guerrilla_turns):
     conn.execute(

@@ -172,8 +172,8 @@ PROJECTS: dict[str, dict] = {
     },
     "terraforming": {
         "id": "terraforming", "name": "Terraforming", "category": "farming",
-        "cost": 350, "description": "+3 max pop",
-        "effects": {"max_pop": 3},
+        "cost": 350, "description": "Reshape a hostile world to Terran (+3 max pop)",
+        "effects": {"max_pop": 3, "terraform_to": "Terran"},
         "required_tech": "terraforming",
     },
     # Habitability chain — each unlocked by a formerly-stub tech. These
@@ -204,7 +204,7 @@ PROJECTS: dict[str, dict] = {
         "id": "gaia_transformation_b", "name": "Gaia Transformation",
         "category": "farming",
         "cost": 700, "description": "Terraform to a garden world (+5 max pop, +growth)",
-        "effects": {"max_pop": 5, "growth_rate": 0.15},
+        "effects": {"max_pop": 5, "growth_rate": 0.15, "terraform_to": "Gaia"},
         "required_tech": "gaia_transformation",
     },
     "artificial_planet_b": {
