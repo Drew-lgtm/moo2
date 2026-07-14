@@ -22,6 +22,21 @@ from ecs.ships import SHIPS, SHIP_ORDER
 
 
 PROJECTS: dict[str, dict] = {
+    # Perpetual "mode" orders — no cost, never complete, never enter
+    # BuildState.completed. While one is the current project the colony
+    # converts its whole industry output each turn (see economy tick):
+    # Trade Goods → BC, Housing → population growth. Set one to bank
+    # cash or rush a colony's growth instead of constructing.
+    "trade_goods": {
+        "id": "trade_goods", "name": "Trade Goods", "category": "economy",
+        "cost": 0, "type": "mode",
+        "description": "Convert this colony's industry directly into BC.",
+    },
+    "housing": {
+        "id": "housing", "name": "Housing", "category": "economy",
+        "cost": 0, "type": "mode",
+        "description": "Convert this colony's industry into faster growth.",
+    },
     "factory": {
         "id": "factory", "name": "Factory", "category": "economy",
         "cost": 60, "description": "+2 BC per turn",

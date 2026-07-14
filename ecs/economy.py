@@ -180,6 +180,10 @@ SCIENTIST_RESEARCH = {
 
 POP_GROWTH_RATE = 0.4
 
+# Housing mode: fraction of a growth-point earned per unit of industry
+# redirected into population. ~10 industry → +1 pop over a turn or two.
+HOUSING_GROWTH_PER_INDUSTRY = 0.1
+
 
 # ---- capacity + default assignment ------------------------------------
 
@@ -351,8 +355,11 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, in
         research_total += research
         industry_total += industry
 
-        idle = not (build_state and build_state.current_project)
-        bc_total += bonus_bc + (industry if idle else 0)
+        # Idle colonies (and Trade Goods mode) turn industry into BC;
+        # Housing mode and active builds don't.
+        cur = build_state.current_project if build_state else None
+        as_bc = (cur is None) or (cur == "trade_goods")
+        bc_total += bonus_bc + (industry if as_bc else 0)
 
     food_needed = pop_total // 2 if "tolerant" in traits else pop_total
     return {
@@ -557,7 +564,20 @@ def production_tick(game, new_turn: int):
             getattr(game, "leaders", None), planet.id, food, industry, research, bonus_bc)
 
         bc_to_empire = bonus_bc
-        if build_state and build_state.current_project:
+        _cur = build_state.current_project if build_state else None
+        _mode = PROJECTS.get(_cur, {}).get("type") if _cur else None
+        if _mode == "mode":
+            # Perpetual mode order: the colony's whole industry output is
+            # converted, not spent on construction.
+            if _cur == "trade_goods":
+                bc_to_empire += industry
+            elif _cur == "housing" and pop is not None and pop.max > 0 \
+                    and pop.current < pop.max:
+                # Industry accelerates growth; applied next pop_growth_tick.
+                pop.growth_progress += industry * HOUSING_GROWTH_PER_INDUSTRY
+                pop_updates.append((planet.id, pop.current, pop.max,
+                                    pop.growth_progress))
+        elif build_state and build_state.current_project:
             build_state.progress += industry
             queue_changed = False
             # Resolve as many completions as the progress allows (rare, but

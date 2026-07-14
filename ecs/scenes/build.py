@@ -315,7 +315,8 @@ class BuildScene(Scene):
         if not proj:
             return
         is_ship = proj.get("type") == "ship"
-        if not is_ship and project_id in build_state.completed:
+        is_mode = proj.get("type") == "mode"
+        if not is_ship and not is_mode and project_id in build_state.completed:
             return
         # Designs skip the catalog tech/trait gate, EXCEPT the hull
         # itself must be buildable — a Titan design still needs Titan
@@ -328,12 +329,33 @@ class BuildScene(Scene):
         elif not project_is_available(
                 project_id, self._player_unlocked_techs(), self._player_traits()):
             return
-        if not is_ship and build_state.current_project == project_id:
+        if not is_ship and not is_mode and build_state.current_project == project_id:
             return
 
         current_changed = False
         queue_changed = False
-        if is_ship:
+        if is_mode:
+            if build_state.current_project == project_id:
+                # Toggle the mode off; resume the queue if anything waits.
+                if build_state.queue:
+                    build_state.current_project = build_state.queue.pop(0)
+                    queue_changed = True
+                else:
+                    build_state.current_project = None
+                build_state.progress = 0
+            else:
+                # Switch the colony into this mode now. Preserve a real
+                # build-in-progress by pushing it to the front of the queue.
+                prev = build_state.current_project
+                prev_proj = self._resolve_project(prev) if prev else {}
+                if prev and prev_proj.get("type") != "mode" \
+                        and prev not in build_state.queue:
+                    build_state.queue.insert(0, prev)
+                    queue_changed = True
+                build_state.current_project = project_id
+                build_state.progress = 0
+            current_changed = True
+        elif is_ship:
             if build_state.current_project is None:
                 build_state.current_project = project_id
                 current_changed = True
@@ -559,7 +581,12 @@ class BuildScene(Scene):
         # Right side: cost / status pill. Cost is in production (industry
         # gathered by workers), NOT BC — the colony's workforce builds it
         # over time.
-        if already_built:
+        is_mode = proj.get("type") == "mode"
+        if is_mode:
+            # Modes never "complete" — show whether this one is active.
+            status_text = "ACTIVE" if currently_building else "Set mode"
+            status_color = SELECTED_RING if currently_building else (200, 220, 240)
+        elif already_built:
             status_text = "BUILT"
             status_color = (160, 220, 160)
         elif currently_building:
@@ -614,9 +641,14 @@ class BuildScene(Scene):
         else:
             current = build_state.current_project
             proj = self._resolve_project(current)
-            screen.blit(self.body_font.render("Building:", True, HINT_COLOR), (rect.x + 14, y))
+            is_mode = proj.get("type") == "mode"
+            label = "Mode:" if is_mode else "Building:"
+            screen.blit(self.body_font.render(label, True, HINT_COLOR), (rect.x + 14, y))
             y += 20
-            line = f"{proj.get('name', current)}  {build_state.progress}/{proj.get('cost', '?')}"
+            if is_mode:
+                line = proj.get("name", current)
+            else:
+                line = f"{proj.get('name', current)}  {build_state.progress}/{proj.get('cost', '?')}"
             screen.blit(self.body_font.render(line, True, SELECTED_RING), (rect.x + 18, y))
             y += 30
 

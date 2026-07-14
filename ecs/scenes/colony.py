@@ -754,7 +754,11 @@ class ColonyScene(Scene):
         # Active project
         if build_state.current_project:
             proj = PROJECTS.get(build_state.current_project, {})
-            active = f"Building: {proj.get('name', build_state.current_project)} {build_state.progress}/{proj.get('cost', '?')}"
+            name = proj.get('name', build_state.current_project)
+            if proj.get("type") == "mode":
+                active = f"Mode: {name}"
+            else:
+                active = f"Building: {name} {build_state.progress}/{proj.get('cost', '?')}"
             screen.blit(self.body_font.render(active, True, (220, 200, 120)), (x, y + 22))
         else:
             screen.blit(self.body_font.render("Building: (idle)", True, HINT_COLOR), (x, y + 22))
