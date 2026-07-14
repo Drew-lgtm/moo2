@@ -25,8 +25,10 @@ class GalaxyScene(Scene):
         # ship_class -> count the player has chosen to dispatch.
         self.selected_counts: dict[str, int] = {}
         # Per-frame fleet-picker hit rects: (action, ship_class, rect).
-        # action is "minus" or "plus".
+        # action is "minus", "plus", or "scrap".
         self._fleet_picker_hits: list[tuple[str, str, pygame.Rect]] = []
+        # Scrap needs a confirm (it destroys ships); armed by first click.
+        self._scrap_armed: bool = False
         self._picker_font_bold: pygame.font.Font | None = None
         # Larger fonts used for galaxy-view labels (star names, fleet
         # badges, HUD). Bumped a couple sizes above the 14pt game font
@@ -130,6 +132,7 @@ class GalaxyScene(Scene):
                 if self.selected_fleet_star is not None:
                     self.selected_fleet_star = None
                     self.selected_counts = {}
+                    self._scrap_armed = False
                 else:
                     self.game.scenes.replace("pause")
             return
@@ -140,7 +143,11 @@ class GalaxyScene(Scene):
             if event.button == 1 and self.selected_fleet_star is not None:
                 for action, class_id, rect in self._fleet_picker_hits:
                     if rect.collidepoint(event.pos):
-                        self._adjust_count(class_id, +1 if action == "plus" else -1)
+                        if action == "scrap":
+                            self._handle_scrap_click()
+                        else:
+                            self._adjust_count(class_id, +1 if action == "plus" else -1)
+                            self._scrap_armed = False
                         return
 
             star = self._star_at(event.pos)
@@ -189,6 +196,7 @@ class GalaxyScene(Scene):
         player = self.game.player_empire()
         if player is None:
             return
+        self._scrap_armed = False
         if self.selected_fleet_star is None:
             if self._max_counts_for(star_entity):
                 self.selected_fleet_star = star_entity
@@ -232,6 +240,46 @@ class GalaxyScene(Scene):
 
         if to_send:
             start_fleet_movement(cm, to_send, self.selected_fleet_star, dest_star_entity)
+
+    def _selected_ships_at_source(self) -> list[int]:
+        """The concrete ship entities matching selected_counts at the
+        currently-selected source star."""
+        cm = self.game.component_mgr
+        player = self.game.player_empire()
+        if player is None or self.selected_fleet_star is None:
+            return []
+        by_class: dict[str, list[int]] = {}
+        for ship_entity, at in cm.get_all(ShipAt):
+            if at.star_entity != self.selected_fleet_star:
+                continue
+            owner = cm.get_component(ship_entity, ShipOwner)
+            ship = cm.get_component(ship_entity, Ship)
+            if owner is None or ship is None or owner.empire_id != player.id:
+                continue
+            by_class.setdefault(ship.ship_class, []).append(ship_entity)
+        picked: list[int] = []
+        for class_id, count in self.selected_counts.items():
+            picked.extend(by_class.get(class_id, [])[:count])
+        return picked
+
+    def _handle_scrap_click(self):
+        """Scrap the selected ships for a partial BC refund. Two-click
+        confirm — the first click arms the button, the second executes."""
+        ships = self._selected_ships_at_source()
+        if not ships:
+            return
+        if not self._scrap_armed:
+            self._scrap_armed = True
+            return
+        from ecs.scrap import scrap_ships
+        result = scrap_ships(self.game, ships)
+        self._scrap_armed = False
+        self.selected_fleet_star = None
+        self.selected_counts = {}
+        if result["scrapped"]:
+            from ecs.turn_log import log as turn_log, CAT_BUILDING
+            turn_log(self.game, CAT_BUILDING,
+                     f"Scrapped {result['scrapped']} ship(s) (+{result['refund']} BC)")
 
     def _max_counts_for(self, star_entity: int | None) -> dict[str, int]:
         """How many player ships of each class are parked at this star."""
@@ -766,7 +814,9 @@ class GalaxyScene(Scene):
         btn_w = 26
         rows = sorted(max_counts.items())
         panel_w = 260
-        panel_h = font_bold.get_height() + 8 + row_h * len(rows) + font.get_height() * 2 + 18
+        # +row_h for the Scrap button row below the class list.
+        panel_h = (font_bold.get_height() + 8 + row_h * len(rows)
+                   + row_h + 6 + font.get_height() * 2 + 18)
         panel_x = 12
         panel_y = self.game.screen_height - self.game.ui_bar.BAR_HEIGHT - panel_h - 12
         panel = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -804,7 +854,28 @@ class GalaxyScene(Scene):
             self._fleet_picker_hits.append(("plus", class_id, plus_rect))
             y += row_h
 
-        y += 4
+        # Scrap button — decommission the selected ships for a BC refund.
+        from ecs.scrap import scrap_value
+        total_sel = sum(self.selected_counts.values())
+        refund = sum(scrap_value(cid) * n for cid, n in self.selected_counts.items())
+        scrap_rect = pygame.Rect(x, y + 2, panel_w - 24, row_h - 4)
+        if total_sel <= 0:
+            s_bg, s_border, s_fg = (40, 40, 52), (90, 90, 110), (140, 140, 155)
+            s_text = "Scrap (select ships)"
+        elif self._scrap_armed:
+            s_bg, s_border, s_fg = (150, 40, 40), (240, 180, 180), (255, 240, 240)
+            s_text = f"Confirm scrap {total_sel}?"
+        else:
+            s_bg, s_border, s_fg = (110, 70, 30), (230, 180, 120), (245, 235, 220)
+            s_text = f"Scrap {total_sel}  (+{refund} BC)"
+        pygame.draw.rect(screen, s_bg, scrap_rect)
+        pygame.draw.rect(screen, s_border, scrap_rect, 1)
+        st = font.render(s_text, True, s_fg)
+        screen.blit(st, st.get_rect(center=scrap_rect.center))
+        if total_sel > 0:
+            self._fleet_picker_hits.append(("scrap", "", scrap_rect))
+        y += row_h + 6
+
         screen.blit(font.render("Right-click target to send.", True, (180, 180, 180)), (x, y))
         y += font.get_height() + 2
         screen.blit(font.render("Esc to cancel.", True, (160, 160, 180)), (x, y))
