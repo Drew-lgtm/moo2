@@ -106,3 +106,19 @@ def test_hud_bc_is_net_of_upkeep(temp_db):
     per_turn = empire_per_turn(cm, 1)
     assert per_turn["upkeep"] == fleet_upkeep(cm, 1)
     assert per_turn["bc"] == 5 - per_turn["upkeep"]
+
+
+def test_treasury_exhausted_warns_player_once(temp_db):
+    # Player with a treasury, a costly fleet, and no income: the turn it
+    # first drops to 0 from upkeep, a warning is logged.
+    from ecs.turn_log import TurnLog
+    game, cm, emp, _p = _world(fleet=["battleship"], bc=1, workers=0)
+    game.turn_log = TurnLog()
+    production_tick(game, new_turn=2)
+    assert emp.bc == 0
+    lines = [text for _turn, _cat, text in game.turn_log.entries]
+    assert any("Treasury exhausted" in m for m in lines)
+    # Already broke next turn -> no repeat spam.
+    production_tick(game, new_turn=3)
+    lines2 = [text for _turn, _cat, text in game.turn_log.entries]
+    assert sum("Treasury exhausted" in m for m in lines2) == 1

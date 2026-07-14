@@ -16,7 +16,7 @@ industry / max_pop / growth_rate. See ecs.projects.PROJECTS.
 from __future__ import annotations
 
 from ecs.components import Planet, Owner, Empire, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, Orbiting, StarRef, Name
-from ecs.turn_log import CAT_BUILDING, CAT_TECH, log as turn_log
+from ecs.turn_log import CAT_BUILDING, CAT_TECH, CAT_EVENT, log as turn_log
 from ecs.db import (
     get_connection,
     update_empire_economy,
@@ -760,7 +760,15 @@ def production_tick(game, new_turn: int):
         # that can't pay simply stops banking BC rather than going into
         # debt; every BC spender already checks affordability.
         upkeep = fleet_upkeep(cm, empire.id)
+        _bc_before = empire.bc
         empire.bc = max(0, empire.bc + gain_bc - upkeep)
+        # Warn the player only on the turn upkeep first empties the
+        # treasury (not every turn while broke) — a nudge to scrap.
+        if (empire.is_player and _bc_before > 0 and empire.bc == 0
+                and upkeep > gain_bc):
+            turn_log(game, CAT_EVENT,
+                     "Treasury exhausted — fleet upkeep exceeds income. "
+                     "Scrap ships to recover.")
         if gain_res:
             empire.research_points += gain_res
             tech = tech_by_empire.get(empire.id)
