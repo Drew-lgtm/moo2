@@ -7,6 +7,7 @@ from ecs.entity_manager import EntityManager
 from ecs.component_manager import ComponentManager
 from ecs.components import (
     Empire, Owner, Population, Orbiting, StarRef, Name, Ship, ShipOwner, ShipAt,
+    Planet,
 )
 from ecs.antaran import (
     is_antaran, ensure_antaran_empire, antaran_tick, _raid_ship_count,
@@ -31,6 +32,8 @@ def _fake_game(colonies):
         cm.add_component(star, StarRef(db_id=i + 1))
         cm.add_component(star, Name(f"Star{i}"))
         planet = em.create_entity()
+        cm.add_component(planet, Planet(id=i + 1, planet_type="Terran",
+                                        size="Medium", colonizable=True))
         cm.add_component(planet, Owner(empire_id=oid))
         cm.add_component(planet, Population(current=pop, max=20, workers=pop))
         cm.add_component(planet, Orbiting(star_entity=star))
@@ -87,6 +90,26 @@ def test_raid_spawns_on_schedule_at_strongest_colony():
     for e in raiders:
         at = cm.get_component(e, ShipAt)
         assert at.star_entity == stars[1]
+
+
+def test_undefended_colony_is_bombarded(temp_db):
+    """GAP FIX: a raid on a colony with no fleet and no planetary
+    defence used to do nothing (combat needs 2 participants). Now the
+    surviving raiders bombard it — pop drops on the turn after arrival."""
+    game, cm, stars = _fake_game([(1, 12)])
+    game.bombarded_this_turn = set()
+    antaran_tick(game, RAID_FIRST_TURN)          # raiders arrive
+    assert game.antaran_raid is not None
+    planet_e = next(e for e, _o in cm.get_all(Owner))
+    pop_before = cm.get_component(planet_e, Population).current
+    game.bombarded_this_turn = set()             # new turn
+    antaran_tick(game, RAID_FIRST_TURN + 1)      # surviving raiders shell it
+    pop_comp = cm.get_component(planet_e, Population)
+    owner_comp = cm.get_component(planet_e, Owner)
+    # Either the colony was outright obliterated (Antaran battleships are
+    # brutal) or it lost population — but it can't sit unharmed.
+    assert owner_comp is None or (pop_comp is not None
+                                  and pop_comp.current < pop_before)
 
 
 def test_raid_despawns_after_window():

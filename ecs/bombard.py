@@ -113,12 +113,18 @@ def _apply_pop_loss(pop: Population, amount: int) -> int:
 
 
 def bombard_planet(game, planet_entity: int, empire_id: int,
-                   rng: random.Random | None = None) -> dict:
+                   rng: random.Random | None = None,
+                   declare_war: bool = True) -> dict:
     """Resolve one bombardment volley. Returns a result dict:
 
         {"success": bool, "power": int, "defense": int, "effective": int,
          "pop_lost": int, "building_destroyed": str|None,
          "colony_destroyed": bool, "reason": str|None}
+
+    ``declare_war`` routes the attack through the diplomacy betrayal
+    logic (an empire bombarding another). Non-diplomatic attackers —
+    the Antaran raiders — pass ``False`` since they aren't part of the
+    treaty system.
     """
     rng = rng or random
     cm = game.component_mgr
@@ -138,9 +144,10 @@ def bombard_planet(game, planet_entity: int, empire_id: int,
     defender_owner = cm.get_component(planet_entity, Owner)
 
     # Bombardment is an act of war (triggers betrayal logic if a treaty
-    # was in force), mirroring invasion.
+    # was in force), mirroring invasion. Skipped for the Antarans, who
+    # aren't part of the diplomacy system.
     diplo = getattr(game, "diplomacy", None)
-    if diplo is not None:
+    if declare_war and diplo is not None:
         from ecs.diplomacy import all_empire_ids
         turn = getattr(getattr(game, "galaxy", None), "turn", 0)
         diplo.note_invasion(empire_id, defender_owner.empire_id, turn,

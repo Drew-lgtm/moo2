@@ -90,27 +90,27 @@ def _raid_ship_count(turn: int) -> int:
 
 
 def _strongest_colony_star(cm):
-    """Star entity of the highest-population colony in the galaxy (the
-    Antarans hit the juiciest target). Returns (star_entity, owner_id)
-    or (None, None)."""
-    best_star = None
-    best_owner = None
-    best_pop = -1
+    """Highest-population colony in the galaxy (the Antarans hit the
+    juiciest target). Returns (star_entity, owner_id, planet_entity) or
+    (None, None, None). Ties broken by lowest planet entity id for
+    determinism."""
+    best = None  # (pop, -planet_entity, star, owner, planet)
     for planet_entity, owner in cm.get_all(Owner):
         pop = cm.get_component(planet_entity, Population)
         orbit = cm.get_component(planet_entity, Orbiting)
         if pop is None or orbit is None:
             continue
-        if pop.current > best_pop:
-            best_pop = pop.current
-            best_star = orbit.star_entity
-            best_owner = owner.empire_id
-    return best_star, best_owner
+        key = (pop.current, -planet_entity)
+        if best is None or key > best[0]:
+            best = (key, orbit.star_entity, owner.empire_id, planet_entity)
+    if best is None:
+        return None, None, None
+    return best[1], best[2], best[3]
 
 
 def _spawn_raid(game, turn: int):
     cm = game.component_mgr
-    star, target_owner = _strongest_colony_star(cm)
+    star, target_owner, target_planet = _strongest_colony_star(cm)
     if star is None:
         return None
     ensure_antaran_empire(game)
@@ -142,7 +142,7 @@ def _spawn_raid(game, turn: int):
         else:
             turn_log(game, CAT_COMBAT,
                      f"Antarans raid {star_name} ({n} ships).")
-    return {"entities": entities, "star": star,
+    return {"entities": entities, "star": star, "planet": target_planet,
             "leave_turn": turn + RAID_DURATION}
 
 
@@ -170,15 +170,50 @@ def _living_raiders(game) -> int:
                if cm.get_component(e, Ship) is not None)
 
 
+def _antaran_bombard(game, raid):
+    """Surviving raiders shell the target colony — so an undefended
+    world still suffers even when no fleet or planetary defence
+    contests the system. Reuses the standard bombardment (declare_war
+    False — Antarans aren't in the diplomacy system)."""
+    cm = game.component_mgr
+    planet_entity = raid.get("planet")
+    if planet_entity is None:
+        return
+    from ecs.bombard import can_bombard, bombard_planet
+    if not can_bombard(cm, planet_entity, ANTARAN_EMPIRE_ID):
+        return
+    result = bombard_planet(game, planet_entity, ANTARAN_EMPIRE_ID,
+                            declare_war=False)
+    if not result.get("success"):
+        return
+    player = game.player_empire()
+    owner = cm.get_component(planet_entity, Owner)
+    # Owner may be gone if the colony was just destroyed — check pre-check.
+    if player is not None:
+        star = cm.get_component(raid["star"], Name)
+        star_name = star.value if star else "a colony"
+        if result.get("colony_destroyed"):
+            turn_log(game, CAT_COMBAT, f"Antarans obliterated {star_name}!")
+        elif result.get("pop_lost"):
+            turn_log(game, CAT_COMBAT,
+                     f"Antarans bombard {star_name}: -{result['pop_lost']}M pop")
+
+
 def antaran_tick(game, turn: int):
-    """Turn callback: retire a finished/destroyed raid, then spawn a new
-    one when the schedule comes due."""
+    """Turn callback: retire a finished/destroyed raid, bombard the
+    target with surviving raiders, then spawn a new raid on schedule.
+
+    Bombardment happens the turn AFTER arrival (a fresh raid is created
+    at the end of this tick and shells the colony on subsequent ticks),
+    so a player fleet that wipes the raiders on the arrival turn's combat
+    prevents any bombardment."""
     raid = getattr(game, "antaran_raid", None)
     if raid is not None:
-        # Retreat when the window elapses or the fleet is wiped.
         if turn >= raid["leave_turn"] or _living_raiders(game) == 0:
             _despawn_raid(game)
             raid = None
+        else:
+            _antaran_bombard(game, raid)
 
     if raid is None and turn >= RAID_FIRST_TURN \
             and (turn - RAID_FIRST_TURN) % RAID_INTERVAL == 0:
