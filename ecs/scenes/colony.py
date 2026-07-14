@@ -22,6 +22,7 @@ from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVIT
 from ecs.colonization import can_colonize, colonize_planet
 from ecs.invasion import can_invade, invade_planet
 from ecs.bombard import can_bombard, bombard_planet
+from ecs.antares import can_launch_assault, launch_assault, PORTAL_BUILDING
 from ecs.refit import plan_refit, refit_ships_at_star
 from ecs.autobuild import cycle_profile, profile_label
 from ecs.db import (
@@ -58,6 +59,11 @@ class ColonyScene(Scene):
         self._bombard_result = None
         self._refit_rect = pygame.Rect(0, 0, 0, 0)
         self._auto_rect = pygame.Rect(0, 0, 0, 0)
+        # Dimensional Portal: assault Antares from a portal colony.
+        # Two-click confirm (it ends the game) — armed by the first click.
+        self._assault_rect = pygame.Rect(0, 0, 0, 0)
+        self._assault_result = None
+        self._assault_armed = False
         # Per-completed-building hit rects, rebuilt every draw.
         # Right-click any to see what that building does.
         self._building_hits: list[tuple[pygame.Rect, str]] = []
@@ -79,6 +85,8 @@ class ColonyScene(Scene):
         self._invasion_log = None
         self._refit_result = None
         self._bombard_result = None
+        self._assault_result = None
+        self._assault_armed = False
         self._layout()
 
     def on_exit(self):
@@ -115,6 +123,9 @@ class ColonyScene(Scene):
         # Bombard button — enemy planets with the player's warships in
         # orbit. Sits just below Invade (both can apply).
         self._bombard_rect = pygame.Rect(sw - 100 - 130, 16 + 40, 120, 32)
+        # Assault Antares — shown on a player colony with a completed
+        # Dimensional Portal. Second row, below Build.
+        self._assault_rect = pygame.Rect(sw - 100 - 180, 16 + 40, 170, 32)
 
         # Worker pickers across the upper third.
         self._worker_widgets.clear()
@@ -193,6 +204,23 @@ class ColonyScene(Scene):
                 self.game, "bombarded_this_turn", set()):
             return False
         return can_bombard(self.game.component_mgr, self._planet_entity, empire_id)
+
+    def _has_portal_here(self) -> bool:
+        """True when this player colony has a completed Dimensional
+        Portal (so the Assault Antares button is offered)."""
+        _p, _pop, bs, owner = self._planet_components()
+        player_id = self._player_empire_id()
+        if owner is None or player_id is None or owner.empire_id != player_id:
+            return False
+        return bs is not None and PORTAL_BUILDING in bs.completed
+
+    def _can_assault_now(self) -> bool:
+        """True when a fleet is staged and the assault can actually fire."""
+        player_id = self._player_empire_id()
+        if player_id is None:
+            return False
+        ok, _reason = can_launch_assault(self.game, player_id)
+        return ok
 
     def tooltip_at(self, pos):
         """Right-click an action button or a completed building on the
@@ -312,6 +340,19 @@ class ColonyScene(Scene):
                         update_planet_autobuild(conn, planet.id, new_profile)
                         conn.commit()
                 return
+            # Assault Antares — two-click confirm (it ends the game).
+            if (self._has_portal_here() and self._can_assault_now()
+                    and self._assault_rect.collidepoint(event.pos)):
+                if not self._assault_armed:
+                    self._assault_armed = True     # first click arms it
+                    return
+                self._assault_armed = False
+                self._assault_result = launch_assault(self.game, player_id)
+                if self._assault_result.get("victory"):
+                    self.game.scenes.replace("game_over")
+                return
+            # A click anywhere else disarms a pending assault confirm.
+            self._assault_armed = False
 
         # Worker +/- buttons
         for role, minus_rect, plus_rect in self._worker_widgets:
@@ -378,6 +419,8 @@ class ColonyScene(Scene):
             self._draw_build_button(screen, owner)
             self._draw_refit_button(screen, owner)
             self._draw_auto_button(screen, owner, build_state)
+            if self._has_portal_here():
+                self._draw_assault_button(screen)
         self._draw_close_button(screen)
         self._draw_invasion_log(screen)
         self._draw_refit_banner(screen)
@@ -495,6 +538,38 @@ class ColonyScene(Scene):
             hint_surf = self.body_font.render(msg, True, HINT_COLOR)
             screen.blit(hint_surf, hint_surf.get_rect(midtop=(
                 self._bombard_rect.centerx, self._bombard_rect.bottom + 4,
+            )))
+
+    def _draw_assault_button(self, screen):
+        """Assault Antares through the Dimensional Portal. Purple, armed
+        to 'Confirm?' on first click; shows the last assault's outcome."""
+        able = self._can_assault_now()
+        if not able:
+            bg, border, fg = (40, 44, 56), (110, 90, 130), (150, 140, 165)
+            text = "Assault Antares"
+        elif self._assault_armed:
+            bg, border, fg = (150, 40, 40), (240, 180, 180), (255, 240, 240)
+            text = "Confirm? — Antares"
+        else:
+            bg, border, fg = (80, 40, 130), (200, 160, 240), TEXT_COLOR
+            text = "Assault Antares"
+        pygame.draw.rect(screen, bg, self._assault_rect)
+        pygame.draw.rect(screen, border, self._assault_rect, 1)
+        label = self.body_font.render(text, True, fg)
+        screen.blit(label, label.get_rect(center=self._assault_rect.center))
+        msg = None
+        if self._assault_result and self._assault_result.get("launched"):
+            r = self._assault_result
+            if r.get("victory"):
+                msg = "Antares destroyed!"
+            else:
+                msg = f"Repulsed — fleet of {r.get('sent', 0)} lost"
+        elif not able:
+            msg = "Stage a fleet in this system"
+        if msg:
+            hint_surf = self.body_font.render(msg, True, HINT_COLOR)
+            screen.blit(hint_surf, hint_surf.get_rect(midtop=(
+                self._assault_rect.centerx, self._assault_rect.bottom + 4,
             )))
 
     def _draw_invasion_log(self, screen):

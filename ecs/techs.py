@@ -291,6 +291,13 @@ TECHS: dict[str, dict] = {
         "description": "+6 ship speed, fuel range 20 pc",
         "speed_bonus": 6, "fuel_range": 20,
     },
+    "dimensional_portal": {
+        "id": "dimensional_portal", "name": "Dimensional Portal",
+        "field": "power", "tier": 7, "tier_group": _t("power", 7),
+        "cost": 3000, "prereqs": ["transwarp_drive"],
+        "description": "Enables the Dimensional Portal — tear open the way "
+                       "to Antares and strike the Antaran homeworld.",
+    },
 
     # ===================================================================
     # Chemistry — armor materials, fuel cells, atmospheres

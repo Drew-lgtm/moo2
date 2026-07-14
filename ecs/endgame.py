@@ -110,6 +110,7 @@ def empire_score(game, empire_id: int) -> int:
 # play to the end; an accepted defeat preserves the run but doesn't
 # inflate it.
 SCORE_OUTCOME_BONUS = {
+    "Antaran":    1.6,   # destroying Antares — the hardest path
     "Conquest":   1.5,
     "Diplomatic": 1.3,
     "Defeat":     1.0,

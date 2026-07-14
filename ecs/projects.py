@@ -263,6 +263,14 @@ PROJECTS: dict[str, dict] = {
         "required_tech": "robo_miners",
         "chain": "orbital_defense",
     },
+    "dimensional_portal": {
+        "id": "dimensional_portal", "name": "Dimensional Portal",
+        "category": "military",
+        "cost": 1200, "description": "A gateway to Antares. Once built, a "
+                                     "fleet in this system can assault the "
+                                     "Antaran homeworld.",
+        "required_tech": "dimensional_portal",
+    },
 }
 
 

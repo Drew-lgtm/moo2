@@ -169,7 +169,9 @@ class GameOverScene(Scene):
                     self.title_font.render(title, True, color).get_rect(center=(cx, 70)))
 
         winner = self._empire(result.get("winner_id"))
-        if won:
+        if won and mode == "Antaran":
+            sub = "Antares lies in ruins. The galaxy is free — and yours."
+        elif won:
             sub = f"{mode} Victory — you rule the galaxy."
         elif winner is not None:
             sub = f"{mode} Victory for {winner.name} ({winner.race_type}). You have fallen."
