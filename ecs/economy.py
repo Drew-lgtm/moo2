@@ -39,7 +39,7 @@ from ecs.races import trait_count, traits_for_empire
 from ecs.planet_features import (
     RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT, feature_bonuses,
 )
-from ecs.ships import empire_freighter_capacity
+from ecs.ships import empire_freighter_capacity, SHIPS
 from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 from ecs.leaders import colony_effect
 from ecs.techs import (
@@ -184,6 +184,11 @@ POP_GROWTH_RATE = 0.4
 # Housing mode: fraction of a growth-point earned per unit of industry
 # redirected into population. ~10 industry → +1 pop over a turn or two.
 HOUSING_GROWTH_PER_INDUSTRY = 0.1
+
+# Ship maintenance: each turn a fleet costs this fraction of its total
+# build cost in BC. Keeping a big navy idle drains the treasury — the
+# incentive to scrap obsolete hulls (see ecs.scrap) rather than hoard.
+SHIP_UPKEEP_FRACTION = 0.03
 
 
 # ---- capacity + default assignment ------------------------------------
@@ -330,6 +335,19 @@ def planet_output(planet: Planet, population: Population | None,
 
 # ---- empire-level summaries (HUD + per-turn) --------------------------
 
+def fleet_upkeep(component_mgr, empire_id: int) -> int:
+    """Per-turn BC maintenance for an empire's whole fleet — a fraction
+    of the summed build cost of every ship it owns."""
+    total_cost = 0
+    for ship_entity, owner in component_mgr.get_all(ShipOwner):
+        if owner.empire_id != empire_id:
+            continue
+        ship = component_mgr.get_component(ship_entity, Ship)
+        if ship is not None:
+            total_cost += SHIPS.get(ship.ship_class, {}).get("cost", 0)
+    return int(total_cost * SHIP_UPKEEP_FRACTION)
+
+
 def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, int]:
     """Per-turn projection for HUD display.
 
@@ -370,8 +388,12 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, in
         bc_total += bonus_bc + (industry if as_bc else 0)
 
     food_needed = pop_total // 2 if "tolerant" in traits else pop_total
+    upkeep = fleet_upkeep(component_mgr, empire_id)
     return {
-        "bc": bc_total,
+        # Net BC banked per turn = income − fleet maintenance. Matches
+        # what production_tick actually applies (which floors at 0).
+        "bc": bc_total - upkeep,
+        "upkeep": upkeep,
         "research": research_total,
         "industry": industry_total,
         "food_balance": food_produced - food_needed,
@@ -733,8 +755,12 @@ def production_tick(game, new_turn: int):
                 gain_bc = int(round(gain_bc * (1 + bc_pct / 100)))
             if res_pct:
                 gain_res = int(round(gain_res * (1 + res_pct / 100)))
-        if gain_bc:
-            empire.bc += gain_bc
+        # Ship maintenance is deducted from income (a flat cost, not
+        # scaled by trade bonuses). The treasury floors at 0 — an empire
+        # that can't pay simply stops banking BC rather than going into
+        # debt; every BC spender already checks affordability.
+        upkeep = fleet_upkeep(cm, empire.id)
+        empire.bc = max(0, empire.bc + gain_bc - upkeep)
         if gain_res:
             empire.research_points += gain_res
             tech = tech_by_empire.get(empire.id)

@@ -612,7 +612,8 @@ class GalaxyScene(Scene):
             else player.race_type
         )
         cells = [
-            ("BC",   f"{player.bc} (+{per_turn['bc']})"),
+            # Net BC/turn is income − fleet upkeep, so it can go negative.
+            ("BC",   f"{player.bc} ({per_turn['bc']:+d})"),
             ("IND",  f"+{per_turn['industry']}"),
             ("RES",  f"{player.research_points} (+{per_turn['research']})"),
             ("FOOD", f"{food:+d}"),
