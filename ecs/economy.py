@@ -40,6 +40,7 @@ from ecs.planet_features import (
     RICHNESS_INDUSTRY_MULT, GRAVITY_OUTPUT_MULT, feature_bonuses,
 )
 from ecs.ships import empire_freighter_capacity, SHIPS
+from ecs.blockade import is_blockaded
 from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 from ecs.leaders import colony_effect
 from ecs.techs import (
@@ -578,6 +579,7 @@ def production_tick(game, new_turn: int):
     # chain — e.g. a Battlestation completion drops the Star Base.
     chain_removals: list[tuple[int, str]] = []
     planet_type_updates: list[tuple[int, str]] = []  # terraforming biome changes
+    blockaded_player_colonies: list[int] = []  # for the player blockade warning
     pop_updates: list[tuple[int, int, int, float]] = []  # for max_pop bumps
     # (owner_empire_id, ship_class, current_star_db_id, planet_entity_id, owner_obj)
     ship_spawns: list[tuple[int, str, int, int, Owner]] = []
@@ -712,8 +714,22 @@ def production_tick(game, new_turn: int):
         else:
             bc_to_empire += industry  # idle planet's industry becomes BC
 
+        # A hostile fleet in orbit blockades the colony: its commerce is
+        # cut (no BC leaves the system) until the fleet is driven off.
+        # Local industry still builds; research still flows.
+        if bc_to_empire and is_blockaded(cm, entity_id, getattr(game, "diplomacy", None)):
+            bc_to_empire = 0
+            if player_id is not None and owner.empire_id == player_id:
+                blockaded_player_colonies.append(planet.id)
+
         cur_bc, cur_res = empire_gains.get(owner.empire_id, (0, 0))
         empire_gains[owner.empire_id] = (cur_bc + bc_to_empire, cur_res + research)
+
+    if blockaded_player_colonies:
+        n = len(blockaded_player_colonies)
+        turn_log(game, CAT_EVENT,
+                 f"{n} colon{'y' if n == 1 else 'ies'} blockaded — trade cut. "
+                 "Drive off the enemy fleet.")
 
     empire_updates: list[tuple[int, int, int]] = []
     tech_updates: list[tuple[int, str | None, int]] = []
