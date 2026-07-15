@@ -22,7 +22,9 @@ from ecs.planet_features import SPECIAL_FEATURES, RICHNESS_INDUSTRY_MULT, GRAVIT
 from ecs.colonization import can_colonize, colonize_planet
 from ecs.invasion import can_invade, invade_planet
 from ecs.bombard import can_bombard, bombard_planet
-from ecs.antares import can_launch_assault, launch_assault, PORTAL_BUILDING
+from ecs.antares import (
+    has_local_assault_fleet, launch_assault, PORTAL_BUILDING,
+)
 from ecs.refit import plan_refit, refit_ships_at_star
 from ecs.autobuild import cycle_profile, profile_label
 from ecs.db import (
@@ -215,12 +217,14 @@ class ColonyScene(Scene):
         return bs is not None and PORTAL_BUILDING in bs.completed
 
     def _can_assault_now(self) -> bool:
-        """True when a fleet is staged and the assault can actually fire."""
+        """True when a fleet is staged at THIS colony's star — so the
+        button reflects the colony being viewed, and the launch sends
+        this system's fleet (not some other portal colony's)."""
         player_id = self._player_empire_id()
-        if player_id is None:
+        star = self._star_entity()
+        if player_id is None or star is None:
             return False
-        ok, _reason = can_launch_assault(self.game, player_id)
-        return ok
+        return has_local_assault_fleet(self.game, player_id, star)
 
     def tooltip_at(self, pos):
         """Right-click an action button or a completed building on the
@@ -347,7 +351,8 @@ class ColonyScene(Scene):
                     self._assault_armed = True     # first click arms it
                     return
                 self._assault_armed = False
-                self._assault_result = launch_assault(self.game, player_id)
+                self._assault_result = launch_assault(
+                    self.game, player_id, star_entity=self._star_entity())
                 if self._assault_result.get("victory"):
                     self.game.scenes.replace("game_over")
                 return

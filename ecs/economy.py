@@ -349,7 +349,8 @@ def fleet_upkeep(component_mgr, empire_id: int) -> int:
     return int(total_cost * SHIP_UPKEEP_FRACTION)
 
 
-def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, int]:
+def empire_per_turn(component_mgr, empire_id: int, leaders=None,
+                    diplo=None) -> dict[str, int]:
     """Per-turn projection for HUD display.
 
     Returns dict with: bc, research, food_balance, industry.
@@ -386,7 +387,11 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None) -> dict[str, in
         # Housing mode and active builds don't.
         cur = build_state.current_project if build_state else None
         as_bc = (cur is None) or (cur == "trade_goods")
-        bc_total += bonus_bc + (industry if as_bc else 0)
+        col_bc = bonus_bc + (industry if as_bc else 0)
+        # A blockaded colony's trade is cut (matches production_tick).
+        if col_bc and diplo is not None and is_blockaded(component_mgr, entity_id, diplo):
+            col_bc = 0
+        bc_total += col_bc
 
     food_needed = pop_total // 2 if "tolerant" in traits else pop_total
     upkeep = fleet_upkeep(component_mgr, empire_id)

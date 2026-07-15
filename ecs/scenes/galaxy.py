@@ -601,7 +601,8 @@ class GalaxyScene(Scene):
             return
 
         per_turn = empire_per_turn(self.game.component_mgr, player.id,
-                                   getattr(self.game, "leaders", None))
+                                   getattr(self.game, "leaders", None),
+                                   getattr(self.game, "diplomacy", None))
         food = per_turn["food_balance"]
 
         # Build a list of (label, value) cells. Empire identity sits on

@@ -15,8 +15,8 @@ from ecs.components import (
     Ship, ShipOwner, ShipAt,
 )
 from ecs.antares import (
-    has_portal, can_launch_assault, launch_assault, PORTAL_BUILDING,
-    ANTARES_DEFENDER_COUNT, _ANTARES_PROTO,
+    has_portal, can_launch_assault, launch_assault, has_local_assault_fleet,
+    _make_combatant, PORTAL_BUILDING, ANTARES_DEFENDER_COUNT, _ANTARES_PROTO,
 )
 from ecs.antaran import ANTARAN_EMPIRE_ID
 
@@ -157,3 +157,36 @@ def test_token_fleet_loses_and_is_destroyed(temp_db):
     # The lone frigate is wiped out.
     assert res["lost"] == 1
     assert not any(o.empire_id == 1 for _e, o in cm.get_all(ShipOwner))
+
+
+# ---- review fixes ------------------------------------------------------
+
+def test_make_combatant_applies_empire_bonuses():
+    """REGRESSION: the assault fleet must carry the same empire-wide
+    bonuses (race traits, Energy Absorber shields, ship leaders) it has
+    in every normal battle — otherwise it fights weaker at Antares."""
+    s = Ship(id=7, ship_class="battleship", weapon_tech="death_ray",
+             weapon_count=2, weapon_mount="heavy")
+    base = _make_combatant(s, 1, 7)
+    boosted = _make_combatant(s, 1, 7, atk_bonus=3, hull_bonus=4,
+                              shield_bonus=20, leader_map={7: (5, 6)})
+    assert boosted.attack == base.attack + 3 + 5      # atk_bonus + leader atk
+    assert boosted.hull_max == base.hull_max + 4 + 6  # hull_bonus + leader hull
+    assert boosted.shield_max == base.shield_max + 20 # Energy Absorber
+
+
+def test_has_local_assault_fleet_is_per_star(temp_db):
+    game, cm, star, ships = _world(with_portal=True, fleet=2)
+    assert has_local_assault_fleet(game, 1, star)
+    other = game.entity_mgr.create_entity()
+    cm.add_component(other, StarRef(db_id=99))
+    assert not has_local_assault_fleet(game, 1, other)   # no fleet there
+
+
+def test_launch_from_fleetless_star_is_no_fleet(temp_db):
+    import random
+    game, cm, star, ships = _world(with_portal=True, fleet=2)
+    other = game.entity_mgr.create_entity()
+    cm.add_component(other, StarRef(db_id=99))
+    res = launch_assault(game, 1, rng=random.Random(1), star_entity=other)
+    assert res["launched"] is False and res["reason"] == "no_fleet"

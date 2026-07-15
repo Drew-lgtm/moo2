@@ -53,15 +53,22 @@ ASSAULT_CLASSES = {"frigate", "carrier", "cruiser", "battleship",
                    "dreadnought", "titan", "doom_star"}
 
 
-def _make_combatant(ship: Ship, empire_id: int, key) -> Combatant:
-    """Snapshot a Ship (real or prototype) into a battle Combatant, using
-    the same hull/attack derivation as ``combat._build_combatants``:
-    ship-class base + frozen-loadout equipment bonuses."""
+def _make_combatant(ship: Ship, empire_id: int, key, *, atk_bonus: int = 0,
+                    hull_bonus: int = 0, shield_bonus: int = 0,
+                    leader_map: dict | None = None) -> Combatant:
+    """Snapshot a Ship (real or prototype) into a battle Combatant with
+    the SAME stat derivation as ``combat._build_combatants``: ship-class
+    base + frozen-loadout equipment + the empire-wide bonuses (race
+    ship_attack/ship_hull traits, Energy Absorber shields) and assigned
+    ship-leader buffs. Passing the bonuses matters — without them the
+    assault fleet would fight weaker than it does in every other battle."""
     stats = stats_from_ship(ship)
     base = SHIPS.get(ship.ship_class, {})
-    hull_max = base.get("hull", 0) + stats.get("hull", 0)
-    attack = base.get("attack", 0) + stats.get("attack", 0)
-    shield_cap = stats.get("shield_capacity", 0)
+    leader_atk, leader_hull = (
+        leader_map.get(ship.id, (0, 0)) if leader_map else (0, 0))
+    hull_max = base.get("hull", 0) + hull_bonus + leader_hull + stats.get("hull", 0)
+    attack = base.get("attack", 0) + atk_bonus + leader_atk + stats.get("attack", 0)
+    shield_cap = stats.get("shield_capacity", 0) + shield_bonus
     return Combatant(
         key=key,
         empire_id=empire_id,
@@ -76,9 +83,29 @@ def _make_combatant(ship: Ship, empire_id: int, key) -> Combatant:
 
 
 def _antares_defenders() -> list[Combatant]:
+    # Antaran defenders carry apex frozen gear and belong to no empire,
+    # so they take no empire/leader bonuses (none to give).
     proto = Ship(id=-1, **_ANTARES_PROTO)
     return [_make_combatant(proto, ANTARAN_EMPIRE_ID, f"antares_{i}")
             for i in range(ANTARES_DEFENDER_COUNT)]
+
+
+def _empire_combat_context(game, empire_id: int):
+    """(atk_bonus, hull_bonus, shield_bonus, leader_map) for an empire's
+    ships — the same bonuses the normal combat resolver applies, so the
+    assault fleet fights at full strength."""
+    from ecs.combat import _empire_bonuses, _empire_ship_shield_bonus
+    cm = game.component_mgr
+    atk_bonus, hull_bonus = _empire_bonuses(cm, empire_id)
+    shield_bonus = _empire_ship_shield_bonus(cm, empire_id)
+    leader_map: dict[int, tuple[int, int]] = {}
+    leaders = getattr(game, "leaders", None)
+    if leaders is not None:
+        from ecs.leaders import ship_effect
+        for l in leaders.leaders.values():
+            if l.category == "ship" and l.assigned_ship_id is not None:
+                leader_map[l.assigned_ship_id] = ship_effect(l)
+    return atk_bonus, hull_bonus, shield_bonus, leader_map
 
 
 def _portal_planets(cm, empire_id: int):
@@ -137,6 +164,12 @@ def can_launch_assault(game, empire_id: int) -> tuple[bool, str]:
     return True, "ok"
 
 
+def has_local_assault_fleet(game, empire_id: int, star_entity: int) -> bool:
+    """True if the empire has >=1 warship staged at THIS star — used to
+    scope the Assault button to the colony actually being viewed."""
+    return bool(_warships_at_star(game.component_mgr, star_entity, empire_id))
+
+
 def _remove_ships(game, ship_entities: list[int]):
     """Delete lost attackers from ECS + DB."""
     cm = game.component_mgr
@@ -157,24 +190,38 @@ def _remove_ships(game, ship_entities: list[int]):
 
 
 def launch_assault(game, empire_id: int,
-                   rng: random.Random | None = None) -> dict:
+                   rng: random.Random | None = None,
+                   star_entity: int | None = None) -> dict:
     """Resolve the assault on Antares. Returns a result dict::
 
         {"launched": bool, "victory": bool, "sent": int, "lost": int,
          "defenders": int, "reason": str|None}
+
+    ``star_entity`` launches the fleet staged at that specific portal
+    system (used by the colony UI so the assault matches the colony being
+    viewed); if None, the empire's largest portal fleet is used.
 
     On victory, sets ``game.pending_endgame`` so the end screen fires.
     Lost attacker ships are destroyed either way; survivors return home
     (they stay parked at the staging star)."""
     rng = rng or random.Random()
     cm = game.component_mgr
-    ok, reason = can_launch_assault(game, empire_id)
-    if not ok:
+    if not has_portal(cm, empire_id):
         return {"launched": False, "victory": False, "sent": 0, "lost": 0,
-                "defenders": 0, "reason": reason}
+                "defenders": 0, "reason": "no_portal"}
+    if star_entity is not None:
+        force = _warships_at_star(cm, star_entity, empire_id)
+    else:
+        star_entity, force = _launch_site(cm, empire_id)
+    if not force:
+        return {"launched": False, "victory": False, "sent": 0, "lost": 0,
+                "defenders": 0, "reason": "no_fleet"}
 
-    star, force = _launch_site(cm, empire_id)
-    attackers = [_make_combatant(cm.get_component(e, Ship), empire_id, e)
+    atk_bonus, hull_bonus, shield_bonus, leader_map = _empire_combat_context(
+        game, empire_id)
+    attackers = [_make_combatant(cm.get_component(e, Ship), empire_id, e,
+                                 atk_bonus=atk_bonus, hull_bonus=hull_bonus,
+                                 shield_bonus=shield_bonus, leader_map=leader_map)
                  for e in force]
     defenders = _antares_defenders()
     ensure_antaran_empire(game)

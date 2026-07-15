@@ -147,3 +147,13 @@ def test_unblockaded_colony_earns_bc(temp_db):
     game, player = _game_with_blockade(blockaded=False)
     production_tick(game, new_turn=2)
     assert player.bc == 5          # 5 idle industry -> 5 BC, no blockade
+
+
+def test_hud_projection_reflects_blockade(temp_db):
+    from ecs.economy import empire_per_turn
+    game, _player = _game_with_blockade(blockaded=True)
+    cm = game.component_mgr
+    # Without diplo the HUD can't know about the blockade -> projects 5.
+    assert empire_per_turn(cm, 1)["bc"] == 5
+    # With diplo it matches the tick: blockaded trade is cut -> 0.
+    assert empire_per_turn(cm, 1, None, game.diplomacy)["bc"] == 0
