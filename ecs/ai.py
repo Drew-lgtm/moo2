@@ -446,13 +446,18 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
 
 def _unowned_habitable_stars(cm) -> list[int]:
     """Stars that host at least one unowned habitable planet. Used by
-    every AI's colonisation budget guard + dispatch heuristic."""
+    every AI's colonisation budget guard + dispatch heuristic. Excludes
+    monster-guarded systems (same gate as can_colonize) so the AI won't
+    keep dispatching colony ships to be destroyed on arrival."""
+    from ecs.monsters import monster_at_star
     seen: set[int] = set()
     for planet_entity, orbit in cm.get_all(Orbiting):
         planet = cm.get_component(planet_entity, Planet)
         if planet is None or not planet.colonizable:
             continue
         if cm.get_component(planet_entity, Owner) is not None:
+            continue
+        if monster_at_star(cm, orbit.star_entity):
             continue
         seen.add(orbit.star_entity)
     return list(seen)

@@ -445,7 +445,11 @@ def _pick_diplomatic_target(game, rng):
     player = _player(cm)
     if player is None:
         return None
-    others = [e for _eid, e in cm.get_all(Empire) if e.id != player.id]
+    # Real rival empires only — never the colony-less pseudo-empires
+    # (Antaran raiders, space monsters), which have no diplomacy.
+    from ecs.monsters import is_pseudo_empire
+    others = [e for _eid, e in cm.get_all(Empire)
+              if e.id != player.id and not is_pseudo_empire(e.id)]
     return rng.choice(others) if others else None
 
 

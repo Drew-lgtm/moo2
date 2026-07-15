@@ -195,6 +195,11 @@ def can_plant_outpost(component_mgr, star_entity: int, empire_id: int) -> bool:
         return False
     if _star_has_any_colony(component_mgr, star_entity):
         return False
+    # A living guardian blocks claiming the system by outpost too, not
+    # just by colony (same gate as can_colonize).
+    from ecs.monsters import monster_at_star
+    if monster_at_star(component_mgr, star_entity):
+        return False
     return _find_outpost_ship_at_star(
         component_mgr, star_entity, empire_id,
     ) is not None

@@ -492,7 +492,11 @@ class InfoScene(PanelScene):
         galaxy = self.game.galaxy
         star_count = sum(1 for _ in cm.get_all(StarVisual))
         planet_count = sum(1 for _ in cm.get_all(Planet))
-        empire_count = sum(1 for _ in cm.get_all(Empire))
+        # Real empires only — exclude the colony-less pseudo-empires
+        # (Antaran raiders, space monsters).
+        from ecs.monsters import is_pseudo_empire
+        empire_count = sum(1 for _e, emp in cm.get_all(Empire)
+                           if not is_pseudo_empire(emp.id))
 
         y = rect.y
         # ---- Empire Stats ----

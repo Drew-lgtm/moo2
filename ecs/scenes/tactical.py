@@ -246,6 +246,11 @@ class TacticalScene(Scene):
             for ship_entity in destroyed_entities:
                 _destroy_ship(self.game, ship_entity)
 
+        # A guardian cleared in this battle must be persisted dead NOW
+        # (before any save), not on the next turn's monster_tick.
+        from ecs.monsters import reconcile_kills
+        reconcile_kills(self.game)
+
         # Queue a combat-report row so the player gets the same
         # post-battle summary an auto-resolved fight produces.
         from ecs.tactical import battle_report

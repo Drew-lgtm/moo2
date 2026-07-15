@@ -33,8 +33,9 @@ from ecs.components import (
 )
 from ecs.db import (
     get_connection, insert_space_monster, get_space_monsters,
-    mark_space_monster_dead, update_empire_economy,
+    mark_space_monster_dead, update_space_monster_ships, update_empire_economy,
 )
+from ecs.antaran import is_antaran
 from ecs.turn_log import log as turn_log, CAT_COMBAT
 
 
@@ -76,6 +77,13 @@ def is_monster(empire_id) -> bool:
     return empire_id == MONSTER_EMPIRE_ID
 
 
+def is_pseudo_empire(empire_id) -> bool:
+    """The colony-less, hostile-to-all factions (Antaran raiders, space
+    monsters). They must be filtered out of every real-empire loop —
+    diplomacy, espionage, events, council, UI counts."""
+    return is_antaran(empire_id) or is_monster(empire_id)
+
+
 def ensure_monster_empire(game):
     """Create the Monster pseudo-empire ECS entity if absent (never
     persisted to the empires table — recreated on demand)."""
@@ -100,11 +108,12 @@ def _guardian_ship_id(row_id: int, index: int) -> int:
     return _MONSTER_SHIP_ID_BASE - row_id * 10 - index
 
 
-def _create_guardian_ships(game, star_entity: int, row_id: int) -> list[int]:
-    """Spawn this guardian's ECS ships at ``star_entity``."""
+def _create_guardian_ships(game, star_entity: int, row_id: int,
+                           count: int = GUARDIAN_SHIPS_PER) -> list[int]:
+    """Spawn ``count`` of this guardian's ECS ships at ``star_entity``."""
     cm = game.component_mgr
     entities = []
-    for i in range(GUARDIAN_SHIPS_PER):
+    for i in range(count):
         e = game.entity_mgr.create_entity()
         cm.add_component(e, Ship(
             id=_guardian_ship_id(row_id, i), ship_class=GUARDIAN_HULL,
@@ -170,7 +179,8 @@ def spawn_guardians(game):
             if star_ref is None:
                 continue
             name = MONSTER_NAMES[i % len(MONSTER_NAMES)]
-            row_id = insert_space_monster(conn, star_ref.db_id, name)
+            row_id = insert_space_monster(conn, star_ref.db_id, name,
+                                          GUARDIAN_SHIPS_PER)
             entities = _create_guardian_ships(game, star_entity, row_id)
             game.space_monsters.append({
                 "id": row_id, "star_entity": star_entity,
@@ -194,7 +204,11 @@ def load_guardians(game):
         star_entity = star_by_db.get(row["star_id"])
         if star_entity is None:
             continue  # star no longer exists (shouldn't happen) — skip
-        entities = _create_guardian_ships(game, star_entity, row["id"])
+        # Restore only the surviving hulls (partial losses persist).
+        count = row["ships"] if row["ships"] is not None else GUARDIAN_SHIPS_PER
+        if count <= 0:
+            continue
+        entities = _create_guardian_ships(game, star_entity, row["id"], count)
         game.space_monsters.append({
             "id": row["id"], "star_entity": star_entity,
             "star_db_id": row["star_id"], "name": row["monster_type"],
@@ -224,7 +238,7 @@ def _victor_at_star(cm, star_entity: int):
             continue
         owner = cm.get_component(ship_entity, ShipOwner)
         ship = cm.get_component(ship_entity, Ship)
-        if owner is None or ship is None or is_monster(owner.empire_id):
+        if owner is None or ship is None or is_pseudo_empire(owner.empire_id):
             continue
         counts[owner.empire_id] = counts.get(owner.empire_id, 0) + 1
     if not counts:
@@ -255,29 +269,46 @@ def _grant_kill_reward(game, guardian):
                  f"+{KILL_REWARD_BC} BC, +{KILL_REWARD_RESEARCH} RP")
 
 
-def monster_tick(game, turn: int):
-    """Turn callback (runs AFTER combat): detect guardians whose ships
-    were all destroyed, mark them dead in the DB, and reward whoever
-    cleared the system."""
+def reconcile_kills(game):
+    """Detect guardians whose ships were destroyed in combat — mark them
+    dead in the DB and reward whoever cleared the system — and persist
+    partial losses so a reload can't restore destroyed hulls.
+
+    Called from BOTH the post-combat turn tick (catches AI auto-resolved
+    kills) AND the tactical / auto-resolve battle finalisers (catches the
+    player's kills, which resolve *after* advance_turn returns). Idempotent:
+    a cleared guardian is dropped from ``game.space_monsters`` so it's
+    never rewarded twice.
+    """
     active = getattr(game, "space_monsters", None)
     if not active:
         return
     cm = game.component_mgr
     survivors = []
     killed = []
+    count_changes = []  # (row_id, surviving_count)
     for g in active:
         living = [e for e in g["entities"]
                   if cm.get_component(e, Ship) is not None]
         if living:
+            if len(living) != len(g["entities"]):
+                count_changes.append((g["id"], len(living)))
             g["entities"] = living  # prune any losses
             survivors.append(g)
         else:
             killed.append(g)
-    if killed:
+    if killed or count_changes:
         with get_connection() as conn:
             for g in killed:
                 mark_space_monster_dead(conn, g["id"])
+            for row_id, cnt in count_changes:
+                update_space_monster_ships(conn, row_id, cnt)
             conn.commit()
         for g in killed:
             _grant_kill_reward(game, g)
     game.space_monsters = survivors
+
+
+def monster_tick(game, turn: int):
+    """Turn callback (runs AFTER combat): reconcile AI-resolved kills."""
+    reconcile_kills(game)

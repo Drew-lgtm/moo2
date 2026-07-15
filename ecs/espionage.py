@@ -381,8 +381,11 @@ def espionage_tick(game, new_turn: int):
         return emp.name if emp else f"Empire {eid}"
 
     # Snapshot the missions so lose_spy mutations during iteration are safe.
-    # All currently-living empire ids, so Frame missions know who can be blamed.
-    living_ids = [e.id for _x, e in cm.get_all(Empire)]
+    # Real empire ids only, so a Frame mission can't blame a colony-less
+    # pseudo-empire (Antaran raiders / space monsters).
+    from ecs.monsters import is_pseudo_empire
+    living_ids = [e.id for _x, e in cm.get_all(Empire)
+                  if not is_pseudo_empire(e.id)]
     work: list[tuple[int, int, str]] = []
     for (atk, tgt), slot in esp.missions.items():
         for mission in MISSIONS:

@@ -11,9 +11,9 @@ from ecs.components import (
     Ship, ShipOwner, ShipAt,
 )
 from ecs.monsters import (
-    is_monster, spawn_guardians, load_guardians, monster_tick, monster_at_star,
-    ensure_monster_empire, MONSTER_EMPIRE_ID, GUARDIAN_SHIPS_PER,
-    KILL_REWARD_BC, KILL_REWARD_RESEARCH,
+    is_monster, is_pseudo_empire, spawn_guardians, load_guardians, monster_tick,
+    monster_at_star, reconcile_kills, ensure_monster_empire,
+    MONSTER_EMPIRE_ID, GUARDIAN_SHIPS_PER, KILL_REWARD_BC, KILL_REWARD_RESEARCH,
 )
 
 
@@ -67,6 +67,13 @@ def _world(n_unowned=2):
 def test_is_monster():
     assert is_monster(MONSTER_EMPIRE_ID)
     assert not is_monster(1)
+
+
+def test_is_pseudo_empire():
+    from ecs.antaran import ANTARAN_EMPIRE_ID
+    assert is_pseudo_empire(MONSTER_EMPIRE_ID)
+    assert is_pseudo_empire(ANTARAN_EMPIRE_ID)
+    assert not is_pseudo_empire(1)
 
 
 # ---- spawn -------------------------------------------------------------
@@ -176,6 +183,55 @@ def test_load_recreates_living_guardians(temp_db):
     assert len(monsters) == GUARDIAN_SHIPS_PER
 
 
+def test_partial_loss_persists_across_reload(temp_db):
+    """REGRESSION: destroying part of a guardian's pack must persist, so
+    a reload restores only the survivors, not the full pack."""
+    game, cm, stars = _world(n_unowned=1)
+    spawn_guardians(game)
+    g = game.space_monsters[0]
+    cm.remove_component(g["entities"][0], Ship)   # kill one of the pack
+    reconcile_kills(game)
+    assert len(game.space_monsters[0]["entities"]) == GUARDIAN_SHIPS_PER - 1
+    # Reload: only the surviving hull(s) come back.
+    game2, cm2, _s2 = _world(n_unowned=1)
+    load_guardians(game2)
+    monsters = [e for e, o in cm2.get_all(ShipOwner)
+                if o.empire_id == MONSTER_EMPIRE_ID]
+    assert len(monsters) == GUARDIAN_SHIPS_PER - 1
+
+
+def test_reconcile_persists_kill_immediately(temp_db):
+    """REGRESSION: a guardian cleared in a player's tactical battle
+    (resolved AFTER advance_turn) must be marked dead at once via
+    reconcile_kills — not left alive until the next monster_tick, which
+    would resurrect it if the player saved in between."""
+    from ecs.db import get_space_monsters
+    game, cm, stars = _world(n_unowned=1)
+    spawn_guardians(game)
+    for e in list(game.space_monsters[0]["entities"]):
+        cm.remove_component(e, Ship)
+    reconcile_kills(game)                         # NOT waiting for the tick
+    assert get_space_monsters(alive_only=True) == []
+
+
+def test_guardian_blocks_outpost(temp_db):
+    from ecs.colonization import can_plant_outpost, OUTPOST_SHIP_CLASS
+    game, cm, stars = _world(n_unowned=1)
+    spawn_guardians(game)
+    g = game.space_monsters[0]
+    star = g["star_entity"]
+    se = game.entity_mgr.create_entity()
+    cm.add_component(se, Ship(id=1, ship_class=OUTPOST_SHIP_CLASS))
+    cm.add_component(se, ShipOwner(empire_id=1))
+    cm.add_component(se, ShipAt(star_entity=star))
+    assert can_plant_outpost(cm, star, 1) is False   # guardian blocks it
+    for e in list(g["entities"]):
+        cm.remove_component(e, Ship)
+        cm.remove_component(e, ShipOwner)
+        cm.remove_component(e, ShipAt)
+    assert can_plant_outpost(cm, star, 1) is True    # freed
+
+
 def test_dead_guardian_not_recreated_on_load(temp_db):
     game, cm, stars = _world(n_unowned=1)
     spawn_guardians(game)
@@ -191,6 +247,26 @@ def test_dead_guardian_not_recreated_on_load(temp_db):
 
 
 # ---- endgame must not scrap pseudo-empire fleets ----------------------
+
+def test_events_never_target_pseudo_empire(temp_db):
+    """REGRESSION: diplomatic-incident / cultural-exchange events must
+    never pick the monster (or Antaran) pseudo-empire as the player's
+    counterpart."""
+    import random
+    from ecs.events import _pick_diplomatic_target
+    game, cm, stars = _world(n_unowned=1)          # player id 1
+    cm.add_component(game.entity_mgr.create_entity(),
+                     Empire(id=2, name="AI", race_type="Humans", color="green",
+                            tech_level=0, home_star_id=1, is_player=False))
+    spawn_guardians(game)                          # creates monster empire 9002
+    for seed in range(40):
+        t = _pick_diplomatic_target(game, random.Random(seed))
+        assert t is None or not is_pseudo_empire(t.id)
+    # It still picks the real rival.
+    picks = {_pick_diplomatic_target(game, random.Random(s)).id
+             for s in range(20)}
+    assert picks == {2}
+
 
 def test_endgame_does_not_scrap_guardians(temp_db):
     """REGRESSION: check_endgame scraps colony-less empires' fleets; it

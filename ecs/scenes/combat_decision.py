@@ -158,6 +158,11 @@ class CombatDecisionScene(Scene):
             for ship_entity in doomed:
                 _destroy_ship(self.game, ship_entity)
 
+        # Persist any guardian cleared here as dead immediately (see the
+        # tactical finaliser — kills resolve after advance_turn).
+        from ecs.monsters import reconcile_kills
+        reconcile_kills(self.game)
+
         # Add a combat-report row so the player sees the outcome after
         # all engagements are decided (shared builder with the tactical
         # scene's finalise so the summary is identical either way).

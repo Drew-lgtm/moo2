@@ -205,7 +205,8 @@ def init_db():
             id INTEGER PRIMARY KEY,
             star_id INTEGER NOT NULL,
             monster_type TEXT NOT NULL,
-            alive INTEGER DEFAULT 1
+            alive INTEGER DEFAULT 1,
+            ships INTEGER DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS leaders (
@@ -242,6 +243,7 @@ def init_db():
         _migrate_planets(conn)
         _migrate_ships(conn)
         _migrate_hall_of_fame(conn)
+        _migrate_space_monsters(conn)
         # Stamp the schema version so a future *breaking* change can
         # detect and refuse an incompatible save. Additive changes are
         # handled by the _migrate_* helpers and don't bump this.
@@ -283,6 +285,14 @@ def _migrate_hall_of_fame(conn):
                 "pillar_buildings", "pillar_economy", "pillar_military"):
         if col not in existing:
             conn.execute(f"ALTER TABLE hall_of_fame ADD COLUMN {col} INTEGER DEFAULT 0")
+
+
+def _migrate_space_monsters(conn):
+    """Surviving-ship count added after the initial guardian schema."""
+    existing = {row["name"] for row in conn.execute(
+        "PRAGMA table_info(space_monsters)")}
+    if "ships" not in existing:
+        conn.execute("ALTER TABLE space_monsters ADD COLUMN ships INTEGER DEFAULT 1")
 
 
 def _migrate_ships(conn):
@@ -597,12 +607,13 @@ def delete_ship(conn, ship_id):
     conn.execute("DELETE FROM ships WHERE id = ?", (ship_id,))
 
 
-def insert_space_monster(conn, star_id, monster_type):
-    """Record a living guardian at a star. Returns its row id."""
+def insert_space_monster(conn, star_id, monster_type, ships):
+    """Record a living guardian (a pack of ``ships`` hulls) at a star.
+    Returns its row id."""
     cur = conn.execute(
-        "INSERT INTO space_monsters (star_id, monster_type, alive) "
-        "VALUES (?, ?, 1)",
-        (star_id, monster_type),
+        "INSERT INTO space_monsters (star_id, monster_type, alive, ships) "
+        "VALUES (?, ?, 1, ?)",
+        (star_id, monster_type, ships),
     )
     return cur.lastrowid
 
@@ -620,6 +631,13 @@ def get_space_monsters(conn=None, alive_only=True):
 def mark_space_monster_dead(conn, monster_id):
     conn.execute("UPDATE space_monsters SET alive = 0 WHERE id = ?",
                  (monster_id,))
+
+
+def update_space_monster_ships(conn, monster_id, ships):
+    """Persist a guardian's surviving-hull count (partial losses), so a
+    reload doesn't restore the destroyed ships."""
+    conn.execute("UPDATE space_monsters SET ships = ? WHERE id = ?",
+                 (ships, monster_id))
 
 
 def insert_outpost(conn, star_id, empire_id):
