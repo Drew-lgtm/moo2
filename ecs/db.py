@@ -206,7 +206,9 @@ def init_db():
             star_id INTEGER NOT NULL,
             monster_type TEXT NOT NULL,
             alive INTEGER DEFAULT 1,
-            ships INTEGER DEFAULT 1
+            -- Surviving hull count. Default matches monsters.GUARDIAN_SHIPS_PER
+            -- so a legacy row backfilled by the migration reloads a full pack.
+            ships INTEGER DEFAULT 2
         );
 
         CREATE TABLE IF NOT EXISTS leaders (
@@ -292,7 +294,9 @@ def _migrate_space_monsters(conn):
     existing = {row["name"] for row in conn.execute(
         "PRAGMA table_info(space_monsters)")}
     if "ships" not in existing:
-        conn.execute("ALTER TABLE space_monsters ADD COLUMN ships INTEGER DEFAULT 1")
+        # Default 2 (== GUARDIAN_SHIPS_PER) so legacy guardian rows, which
+        # always represented a full pack, backfill to full strength.
+        conn.execute("ALTER TABLE space_monsters ADD COLUMN ships INTEGER DEFAULT 2")
 
 
 def _migrate_ships(conn):

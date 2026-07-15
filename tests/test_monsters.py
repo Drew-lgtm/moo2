@@ -248,6 +248,37 @@ def test_dead_guardian_not_recreated_on_load(temp_db):
 
 # ---- endgame must not scrap pseudo-empire fleets ----------------------
 
+def test_load_path_recreates_missing_table(temp_db):
+    """REGRESSION: loading a save whose DB predates the space_monsters
+    table must NOT crash. load_game runs init_db() first, which recreates
+    the table (idempotent, no data loss)."""
+    from ecs.db import get_connection, get_space_monsters, init_db
+    with get_connection() as conn:               # simulate a pre-feature DB
+        conn.execute("DROP TABLE space_monsters")
+        conn.commit()
+    init_db()                                    # what load_game now does
+    assert get_space_monsters(alive_only=True) == []   # no OperationalError
+
+
+def test_ships_column_migration_backfills_full_pack(temp_db):
+    """REGRESSION: a save with the table but no 'ships' column (the
+    intermediate schema) must migrate cleanly, backfilling legacy
+    guardians to a full pack rather than crashing or half-strength."""
+    from ecs.db import get_connection, get_space_monsters, init_db
+    with get_connection() as conn:               # intermediate schema
+        conn.execute("DROP TABLE space_monsters")
+        conn.execute("CREATE TABLE space_monsters (id INTEGER PRIMARY KEY, "
+                     "star_id INTEGER NOT NULL, monster_type TEXT NOT NULL, "
+                     "alive INTEGER DEFAULT 1)")
+        conn.execute("INSERT INTO space_monsters (star_id, monster_type, alive) "
+                     "VALUES (5, 'Space Dragon', 1)")
+        conn.commit()
+    init_db()                                    # _migrate_space_monsters adds col
+    rows = get_space_monsters(alive_only=True)
+    assert len(rows) == 1
+    assert rows[0]["ships"] == GUARDIAN_SHIPS_PER   # legacy -> full pack
+
+
 def test_events_never_target_pseudo_empire(temp_db):
     """REGRESSION: diplomatic-incident / cultural-exchange events must
     never pick the monster (or Antaran) pseudo-empire as the player's

@@ -13,7 +13,7 @@ from ecs.component_manager import ComponentManager
 from ecs.galaxy_generator import GalaxyGenerator
 from ecs.scene import SceneManager
 from ecs.ui_bar import BottomUIBar
-from ecs.db import clear_galaxy
+from ecs.db import clear_galaxy, init_db
 from ecs.components import Empire, Owner, Population, BuildState
 from ecs.economy import production_tick, pop_growth_tick
 from ecs.autobuild import autobuild_tick as _autobuild_tick
@@ -204,6 +204,11 @@ class Game:
 
     def load_game(self):
         self._reset_world()
+        # Bring the loaded DB's schema up to date before reading it — a
+        # save from an older build may lack newer tables/columns (e.g.
+        # space_monsters). init_db is idempotent (CREATE IF NOT EXISTS +
+        # additive migrations, no data loss).
+        init_db()
         self.galaxy = GalaxyGenerator(
             self.entity_mgr, self.component_mgr,
             self.play_area_width, self.play_area_height,
