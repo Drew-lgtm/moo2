@@ -50,6 +50,10 @@ MOUNTS: dict[str, dict] = {
 }
 MOUNT_ORDER = ["normal", "heavy", "point_defense"]
 
+# Missile/fighter damage each Point-Defense-mounted gun shoots down per
+# combat round (see ecs.battle.resolve_auto interception).
+PD_INTERCEPT_PER_GUN = 3
+
 
 def mount_attack_mult(mount: str) -> float:
     return MOUNTS.get(mount, MOUNTS["normal"])["attack_mult"]
@@ -263,17 +267,18 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
 def stats_from_ship(ship) -> dict:
     """Decode a Ship component's frozen loadout into combat stats.
 
-    Returns ``attack``, ``hull`` (armor + special hull contribution),
-    ``defense`` (flat evasion-style bonuses from specials only),
-    ``shield_capacity`` (HP pool the shield can absorb before failing),
-    and ``shield_regen`` (HP restored at the end of each combat round).
+    Returns ``attack`` (direct-fire/beam), ``missile_attack`` (missile &
+    fighter fire that enemy point-defense can intercept), ``point_defense``
+    (this ship's interception rating), ``hull`` (armor + special hull),
+    ``defense`` (flat evasion from mounts/specials), ``shield_capacity``
+    and ``shield_regen``.
 
     A ship with no stored loadout (built before this system, or freshly
     migrated from an older save) returns zeros — its base ship-class
     hull/attack still applies, but it gets no equipment bonuses until
     it's replaced.
     """
-    atk = hull = defense = 0
+    atk = missile_atk = hull = defense = point_defense = 0
     shield_capacity = shield_regen = 0
     mount = getattr(ship, "weapon_mount", "normal")
     armor = TECHS.get(ship.armor_tech, {}) if ship.armor_tech else {}
@@ -287,20 +292,27 @@ def stats_from_ship(ship) -> dict:
     if weapon.get("equipment"):
         count = ship.weapon_count or 0
         base = weapon["equipment"].get("attack", 0) * count
-        atk += int(round(base * mount_attack_mult(mount)))
-        # Point-Defense mounts trade offence for a screen of interceptor
-        # fire: each PD gun adds flat damage reduction (until missiles /
-        # fighters exist to shoot at directly, this is how PD earns its
-        # slot — a genuine defensive choice rather than a weak weapon).
+        rolled_atk = int(round(base * mount_attack_mult(mount)))
+        # Missile weapons fire interceptable ordnance; beams are direct.
+        if weapon["equipment"].get("category") == "missile":
+            missile_atk += rolled_atk
+        else:
+            atk += rolled_atk
+        # A Point-Defense mount turns its guns into an interceptor screen:
+        # they shoot down incoming missiles/fighters (now that those
+        # exist), keeping a little flat damage reduction too.
         if mount == "point_defense" and count:
             defense += count
+            point_defense += count * PD_INTERCEPT_PER_GUN
     for sp_id in (ship.specials or []):
         eq = TECHS.get(sp_id, {}).get("equipment", {})
         atk += eq.get("attack", 0)
         hull += eq.get("hull", 0)
         defense += eq.get("defense", 0)
+        point_defense += eq.get("point_defense", 0)
     return {
-        "attack": atk, "hull": hull, "defense": defense,
+        "attack": atk, "missile_attack": missile_atk,
+        "point_defense": point_defense, "hull": hull, "defense": defense,
         "shield_capacity": shield_capacity, "shield_regen": shield_regen,
     }
 

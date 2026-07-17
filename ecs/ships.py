@@ -76,8 +76,11 @@ SHIPS: dict[str, dict] = {
     "carrier": {
         "id": "carrier", "name": "Carrier", "ship_class_kind": "military",
         "cost": 60, "speed": 2, "attack": 2, "hull": 4, "space": 12,
+        # Fighter squadrons: strong strike-craft damage that enemy
+        # point-defense can shoot down (see ecs.combat / ecs.battle).
+        "fighter_attack": 6,
         "image": "ships/carrier.png",
-        "description": "Medium hull with fighter complement.",
+        "description": "Medium hull; launches fighters (beaten by point-defense).",
     },
     "cruiser": {
         "id": "cruiser", "name": "Cruiser", "ship_class_kind": "military",

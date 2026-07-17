@@ -396,7 +396,13 @@ class ShipDesignerScene(Scene):
 
         st = stats_from_ship(self._as_design_view())
         base_hull = SHIPS.get(cls, {}).get("hull", 0)
-        stat_line = (f"Attack {st['attack']}   Hull {base_hull + st['hull']}   "
+        msl = st.get("missile_attack", 0) + SHIPS.get(cls, {}).get("fighter_attack", 0)
+        offense = f"Atk {st['attack']}"
+        if msl:
+            offense += f"  Msl {msl}"
+        if st.get("point_defense"):
+            offense += f"  PD {st['point_defense']}"
+        stat_line = (f"{offense}   Hull {base_hull + st['hull']}   "
                      f"Shield {st['shield_capacity']}   Def {st['defense']}")
         screen.blit(self.body_font.render(stat_line, True, TITLE_COLOR), (ix, cy))
         cy += 30
@@ -435,7 +441,7 @@ class ShipDesignerScene(Scene):
             screen.blit(self.body_font.render(d.name[:24], True, TEXT_COLOR),
                         (row.x + 8, row.y + 4))
             screen.blit(self.small_font.render(
-                f"{d.ship_class.title()} · atk {d.stats()['attack']}",
+                f"{d.ship_class.title()} · atk {d.stats()['attack'] + d.stats()['missile_attack']}",
                 True, HINT_COLOR), (row.x + 8, row.y + 22))
             # Edit (load) + Delete buttons.
             del_btn = pygame.Rect(row.right - 54, row.y + 8, 46, 26)

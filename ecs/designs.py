@@ -96,8 +96,11 @@ class ShipDesign:
         the combat resolver uses so the designer shows true numbers."""
         s = stats_from_ship(self)
         base_hull = SHIPS.get(self.ship_class, {}).get("hull", 0)
+        base = SHIPS.get(self.ship_class, {})
         return {
             "attack": s["attack"],
+            "missile_attack": s.get("missile_attack", 0) + base.get("fighter_attack", 0),
+            "point_defense": s.get("point_defense", 0),
             "hull": base_hull + s["hull"],
             "shield_capacity": s["shield_capacity"],
             "shield_regen": s["shield_regen"],

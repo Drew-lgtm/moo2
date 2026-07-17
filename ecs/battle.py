@@ -65,13 +65,17 @@ class Combatant:
     """
     key: object
     empire_id: int
-    attack: int
+    attack: int                 # direct-fire (beam) attack — can't be intercepted
     hull: int
     hull_max: int
     shield: int = 0
     shield_max: int = 0
     shield_regen: int = 0
     defense: int = 0
+    # Missile + fighter (strike-craft) attack: interceptable by enemy
+    # point-defense. ``point_defense`` is this unit's interception rating.
+    missile_attack: int = 0
+    point_defense: int = 0
     destroyed: bool = False
 
 
@@ -209,19 +213,31 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
                    for b in living[i + 1:]):
             return
 
-        # Roll each side's pool once this round (spread applied to the
-        # summed attack, then planetary defense added flat).
-        side_pool: dict[int, int] = {}
+        # Roll each side's pools once this round. Beam fire (direct-fire
+        # guns + planetary defense) can't be intercepted; missile/fighter
+        # fire can be shot down by the target's point-defense. Track them
+        # separately, plus each side's PD interception budget.
+        side_beam: dict[int, int] = {}
+        side_missile: dict[int, int] = {}
+        side_pd: dict[int, int] = {}
         for eid in living:
-            base = sum(c.attack for c in combatants_by_eid.get(eid, [])
-                       if not c.destroyed)
-            rolled = roll_damage(base, rng) if base > 0 else 0
-            side_pool[eid] = rolled + defenses.get(eid, 0)
+            roster = combatants_by_eid.get(eid, [])
+            beam = sum(c.attack for c in roster if not c.destroyed)
+            missile = sum(c.missile_attack for c in roster if not c.destroyed)
+            side_beam[eid] = (roll_damage(beam, rng) if beam > 0 else 0) \
+                + defenses.get(eid, 0)
+            side_missile[eid] = roll_damage(missile, rng) if missile > 0 else 0
+            side_pd[eid] = sum(c.point_defense for c in roster if not c.destroyed)
 
         for eid in living:
-            incoming = sum(side_pool[other] for other in living
-                           if other != eid and hostile_fn(eid, other))
-            apply_damage_pool(combatants_by_eid.get(eid, []), incoming, rng)
+            hostiles = [o for o in living if o != eid and hostile_fn(eid, o)]
+            beam_in = sum(side_beam[o] for o in hostiles)
+            missile_in = sum(side_missile[o] for o in hostiles)
+            # This side's point-defense shoots down incoming missiles/
+            # fighters (a per-round interception budget); beams get through.
+            missile_in = max(0, missile_in - side_pd.get(eid, 0))
+            apply_damage_pool(combatants_by_eid.get(eid, []),
+                              beam_in + missile_in, rng)
 
         for roster in combatants_by_eid.values():
             regen_shields(roster)

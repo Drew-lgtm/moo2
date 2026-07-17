@@ -98,8 +98,10 @@ TECHS: dict[str, dict] = {
         "id": "anti_missile_rockets", "name": "Anti-Missile Rockets",
         "field": "construction", "tier": 1, "tier_group": _t("construction", 1),
         "cost": 80, "prereqs": [],
-        "description": "Point-defense interceptors (+1 defense per ship)",
-        "equipment": {"slot": "special", "size": 1, "defense": 1},
+        "description": "Point-defense interceptors: shoot down incoming "
+                       "missiles & fighters (+3 interception, +1 defense).",
+        "equipment": {"slot": "special", "size": 1, "defense": 1,
+                      "point_defense": 3},
     },
     "advanced_construction": {
         "id": "advanced_construction", "name": "Advanced Construction",
@@ -629,6 +631,15 @@ TECHS: dict[str, dict] = {
         "description": "Heavy bombardment cannon (+3 attack)",
         "equipment": {"slot": "weapon", "size": 3, "attack": 3},
     },
+    "nuclear_missile": {
+        "id": "nuclear_missile", "name": "Nuclear Missile",
+        "field": "physics", "tier": 1, "tier_group": _t("physics", 1),
+        "cost": 100, "prereqs": [],
+        "description": "Guided warhead (+3 attack/slot) — hits hard but "
+                       "enemy point-defense can shoot it down.",
+        "equipment": {"slot": "weapon", "size": 2, "attack": 3,
+                      "category": "missile"},
+    },
     "phasors": {
         "id": "phasors", "name": "Phasors",
         "field": "physics", "tier": 2, "tier_group": _t("physics", 2),
@@ -657,6 +668,15 @@ TECHS: dict[str, dict] = {
         "description": "Kinetic shield-piercer (+2 attack/slot)",
         "equipment": {"slot": "weapon", "size": 2, "attack": 2},
     },
+    "merculite_missile": {
+        "id": "merculite_missile", "name": "Merculite Missile",
+        "field": "physics", "tier": 3, "tier_group": _t("physics", 3),
+        "cost": 400, "prereqs": ["nuclear_missile", "phasors"],
+        "description": "Heavy guided missile (+5 attack/slot); still "
+                       "vulnerable to point-defense interception.",
+        "equipment": {"slot": "weapon", "size": 2, "attack": 5,
+                      "category": "missile"},
+    },
     "plasma_cannons": {
         "id": "plasma_cannons", "name": "Plasma Cannons",
         "field": "physics", "tier": 4, "tier_group": _t("physics", 4),
@@ -675,8 +695,10 @@ TECHS: dict[str, dict] = {
         "id": "proton_torpedo", "name": "Proton Torpedo",
         "field": "physics", "tier": 5, "tier_group": _t("physics", 5),
         "cost": 1000, "prereqs": ["plasma_cannons"],
-        "description": "Guided heavy missile (+5 attack/slot)",
-        "equipment": {"slot": "weapon", "size": 4, "attack": 5},
+        "description": "Guided heavy missile (+5 attack/slot); point-defense "
+                       "can intercept it.",
+        "equipment": {"slot": "weapon", "size": 4, "attack": 5,
+                      "category": "missile"},
     },
     "mauler_device": {
         "id": "mauler_device", "name": "Mauler Device",

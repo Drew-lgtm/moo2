@@ -22,7 +22,8 @@ def _ship(armor=None, shield=None, weapon=None, weapon_count=0, specials=None):
 
 def test_stats_empty_ship_is_zero():
     s = stats_from_ship(_ship())
-    assert s == {"attack": 0, "hull": 0, "defense": 0,
+    assert s == {"attack": 0, "missile_attack": 0, "point_defense": 0,
+                 "hull": 0, "defense": 0,
                  "shield_capacity": 0, "shield_regen": 0}
 
 
@@ -57,7 +58,8 @@ def test_stats_special_hull_adds_to_armor_hull():
 def test_stats_unknown_tech_ids_are_ignored():
     s = stats_from_ship(_ship(armor="nonexistent", weapon="also_fake",
                               weapon_count=5))
-    assert s == {"attack": 0, "hull": 0, "defense": 0,
+    assert s == {"attack": 0, "missile_attack": 0, "point_defense": 0,
+                 "hull": 0, "defense": 0,
                  "shield_capacity": 0, "shield_regen": 0}
 
 

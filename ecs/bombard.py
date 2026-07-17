@@ -75,8 +75,11 @@ def fleet_bombard_power(cm, star_entity: int, empire_id: int) -> int:
         ship = cm.get_component(se, Ship)
         if ship is None:
             continue
-        base = SHIPS.get(ship.ship_class, {}).get("attack", 0)
-        total += base + stats_from_ship(ship).get("attack", 0)
+        cls = SHIPS.get(ship.ship_class, {})
+        stats = stats_from_ship(ship)
+        # Beam + missile + fighter fire all shell a planet (no orbital PD).
+        total += (cls.get("attack", 0) + cls.get("fighter_attack", 0)
+                  + stats.get("attack", 0) + stats.get("missile_attack", 0))
     return total
 
 

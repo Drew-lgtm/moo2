@@ -115,11 +115,14 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
             leader_hull = leader_map.get(
                 component_mgr.get_component(e, Ship).id, (0, 0)
             )[1] if leader_map else 0
-            base_hull = SHIPS.get(
-                component_mgr.get_component(e, Ship).ship_class, {}
-            ).get("hull", 0)
+            ship_class = component_mgr.get_component(e, Ship).ship_class
+            base = SHIPS.get(ship_class, {})
+            base_hull = base.get("hull", 0)
             hull_max = base_hull + hull_bonus + leader_hull + full.get("hull", 0)
             shield_cap = full.get("shield_capacity", 0) + shield_bonus
+            # Interceptable fire: missile weapons + the hull's fighter
+            # complement (carriers). Point-defense shoots these down.
+            missile_atk = full.get("missile_attack", 0) + base.get("fighter_attack", 0)
             roster.append(Combatant(
                 key=e,
                 empire_id=eid,
@@ -130,8 +133,10 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
                 shield_max=shield_cap,
                 shield_regen=full.get("shield_regen", 0),
                 defense=full.get("defense", 0),
+                missile_attack=missile_atk,
+                point_defense=full.get("point_defense", 0),
             ))
-            side_attack += ship_atk
+            side_attack += ship_atk + missile_atk
         combatants_by_eid[eid] = roster
         intact_attack[eid] = side_attack
     return combatants_by_eid, intact_attack
@@ -187,7 +192,12 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
             # Total hull = ship_class base + equipment hull bonus.
             base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
             hull = max(1, int(base_hull + stats.get("hull", 0)))
-            attack = max(0, int(stats.get("attack", 0)))
+            # Tactical (hex) combat doesn't model point-defense interception
+            # yet, so missile + fighter fire counts as direct attack here —
+            # keeps missile ships at full strength in a manual battle.
+            attack = max(0, int(stats.get("attack", 0))
+                         + int(stats.get("missile_attack", 0))
+                         + _SHIPS.get(ship.ship_class, {}).get("fighter_attack", 0))
             shield_max = max(0, int(stats.get("shield_capacity", 0))) + shield_bonus
             shield_regen = max(0, int(stats.get("shield_regen", 0)))
             # 'defense' in stats_from_ship is an evasion-style flat —

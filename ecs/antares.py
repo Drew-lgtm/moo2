@@ -69,6 +69,7 @@ def _make_combatant(ship: Ship, empire_id: int, key, *, atk_bonus: int = 0,
     hull_max = base.get("hull", 0) + hull_bonus + leader_hull + stats.get("hull", 0)
     attack = base.get("attack", 0) + atk_bonus + leader_atk + stats.get("attack", 0)
     shield_cap = stats.get("shield_capacity", 0) + shield_bonus
+    missile_atk = stats.get("missile_attack", 0) + base.get("fighter_attack", 0)
     return Combatant(
         key=key,
         empire_id=empire_id,
@@ -79,6 +80,8 @@ def _make_combatant(ship: Ship, empire_id: int, key, *, atk_bonus: int = 0,
         shield_max=shield_cap,
         shield_regen=stats.get("shield_regen", 0),
         defense=stats.get("defense", 0),
+        missile_attack=missile_atk,
+        point_defense=stats.get("point_defense", 0),
     )
 
 
