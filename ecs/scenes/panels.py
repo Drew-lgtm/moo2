@@ -15,7 +15,10 @@ from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output, empire_tech_bonus
 from ecs.races import effective_traits
 from ecs.techs import TECHS, TECH_ORDER, is_available
-from ecs.db import get_connection, update_empire_tech
+from ecs.db import get_connection, update_empire_tech, update_empire_government
+from ecs.government import (
+    GOVERNMENTS, government_of, available_governments,
+)
 from assets.loader import load_image, find_race_portrait
 
 
@@ -456,6 +459,8 @@ class InfoScene(PanelScene):
         self._section_font = pygame.font.SysFont("Arial", 16, bold=True)
         # (tech_id, rect, available) recorded per draw so handle_event can hit-test.
         self._tech_row_hits: list[tuple[str, pygame.Rect, bool]] = []
+        # (government_key, rect) rows for switching government.
+        self._gov_row_hits: list[tuple[str, pygame.Rect]] = []
 
     def _player_tech_state(self) -> TechState | None:
         player = self.game.player_empire()
@@ -468,6 +473,10 @@ class InfoScene(PanelScene):
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for gov_key, rect in self._gov_row_hits:
+                if rect.collidepoint(event.pos):
+                    self._set_government(gov_key)
+                    return
             tech_state = self._player_tech_state()
             if tech_state is not None:
                 for tech_id, rect, available in self._tech_row_hits:
@@ -475,6 +484,20 @@ class InfoScene(PanelScene):
                         self._set_tech_target(tech_state, tech_id)
                         return
         super().handle_event(event)
+
+    def _set_government(self, gov_key: str):
+        player = self.game.player_empire()
+        if player is None or gov_key == government_of(player):
+            return
+        # Only adopt a government the empire has actually unlocked.
+        tech_state = self._player_tech_state()
+        unlocked = tech_state.unlocked if tech_state else []
+        if gov_key not in available_governments(unlocked):
+            return
+        player.government = gov_key
+        with get_connection() as conn:
+            update_empire_government(conn, player.id, gov_key)
+            conn.commit()
 
     def _set_tech_target(self, tech_state: TechState, tech_id: str):
         # Switching mid-research keeps progress only if same target; otherwise reset.
@@ -513,6 +536,43 @@ class InfoScene(PanelScene):
             screen.blit(font.render(line, True, TEXT_COLOR), (rect.x, y))
             y += 20
         y += 12
+
+        # ---- Government ----
+        self._gov_row_hits = []
+        player = self.game.player_empire()
+        if player is not None:
+            screen.blit(self._section_font.render("Government", True,
+                        self.SECTION_HEADER_COLOR), (rect.x, y))
+            y += 24
+            current = government_of(player)
+            tech_state = self._player_tech_state()
+            unlocked = tech_state.unlocked if tech_state else []
+            avail = available_governments(unlocked)
+            for key, g in GOVERNMENTS.items():
+                is_current = key == current
+                is_avail = key in avail
+                if is_current:
+                    color = (140, 230, 150)
+                elif is_avail:
+                    color = TEXT_COLOR
+                else:
+                    color = (120, 120, 140)
+                mark = "> " if is_current else ("  " if is_avail else "x ")
+                label = f"{mark}{g['name']}"
+                if not is_avail:
+                    unlock = TECHS.get(g["unlock"], {}).get("name", g["unlock"])
+                    label += f"  (needs {unlock})"
+                row = pygame.Rect(rect.x, y, rect.width - 20, 20)
+                screen.blit(font.render(label, True, color), (rect.x, y))
+                if is_avail and not is_current:
+                    self._gov_row_hits.append((key, row))
+                y += 20
+            # One-line description of the current government.
+            desc = GOVERNMENTS.get(current, {}).get("description", "")
+            if desc:
+                screen.blit(font.render(desc, True, (170, 180, 200)), (rect.x, y))
+                y += 20
+            y += 12
 
         # ---- Research ----
         screen.blit(self._section_font.render("Research", True, self.SECTION_HEADER_COLOR), (rect.x, y))

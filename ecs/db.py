@@ -38,6 +38,7 @@ def init_db():
             tech_progress INTEGER DEFAULT 0,
             personality TEXT DEFAULT 'balanced',
             custom_traits TEXT DEFAULT '',
+            government TEXT DEFAULT 'dictatorship',
             FOREIGN KEY(home_star_id) REFERENCES stars(id)
         );
 
@@ -276,6 +277,8 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN personality TEXT DEFAULT 'balanced'")
     if "custom_traits" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN custom_traits TEXT DEFAULT ''")
+    if "government" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN government TEXT DEFAULT 'dictatorship'")
 
 
 def _migrate_hall_of_fame(conn):
@@ -497,6 +500,11 @@ def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *,
     result = cursor.lastrowid
     assert result is not None
     return result
+
+
+def update_empire_government(conn, empire_id, government):
+    conn.execute("UPDATE empires SET government = ? WHERE id = ?",
+                 (government, empire_id))
 
 
 def update_empire_economy(conn, empire_id, bc, research_points):

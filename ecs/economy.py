@@ -41,6 +41,10 @@ from ecs.planet_features import (
 )
 from ecs.ships import empire_freighter_capacity, SHIPS
 from ecs.blockade import is_blockaded
+from ecs.government import (
+    government_of, government_pct, colony_morale, morale_output_mult,
+    DEFAULT_GOVERNMENT,
+)
 from ecs.diplomacy import empire_trade_bonus_pct, empire_research_bonus_pct
 from ecs.leaders import colony_effect
 from ecs.techs import (
@@ -575,6 +579,9 @@ def production_tick(game, new_turn: int):
     tech_bonus_by_empire: dict[int, dict] = {
         emp.id: empire_tech_bonus(cm, emp.id) for _eid, emp in cm.get_all(Empire)
     }
+    gov_by_empire: dict[int, str] = {
+        emp.id: government_of(emp) for _eid, emp in cm.get_all(Empire)
+    }
 
     empire_gains: dict[int, tuple[int, int]] = {}  # empire_id -> (bc, research)
     planet_build_updates: list[tuple[int, str | None, int]] = []
@@ -600,6 +607,16 @@ def production_tick(game, new_turn: int):
         food, industry, research, bonus_bc = planet_output(planet, pop, build_state, traits, tb)
         food, industry, research, bonus_bc = _apply_colony_leader(
             getattr(game, "leaders", None), planet.id, food, industry, research, bonus_bc)
+
+        # Colony morale (set by the empire's government + conquest state)
+        # scales industry / research / trade — but not food (people eat
+        # regardless of how they feel about the regime).
+        morale_mult = morale_output_mult(colony_morale(
+            gov_by_empire.get(owner.empire_id, DEFAULT_GOVERNMENT), planet))
+        if morale_mult != 1.0:
+            industry = int(round(industry * morale_mult))
+            research = int(round(research * morale_mult))
+            bonus_bc = int(round(bonus_bc * morale_mult))
 
         bc_to_empire = bonus_bc
         _cur = build_state.current_project if build_state else None
@@ -776,6 +793,12 @@ def production_tick(game, new_turn: int):
                 gain_bc = int(round(gain_bc * (1 + bc_pct / 100)))
             if res_pct:
                 gain_res = int(round(gain_res * (1 + res_pct / 100)))
+        # Government empire-wide bonuses (e.g. Democracy: +research, +BC).
+        g_res, g_bc = government_pct(gov_by_empire.get(empire.id, DEFAULT_GOVERNMENT))
+        if g_bc:
+            gain_bc = int(round(gain_bc * (1 + g_bc / 100)))
+        if g_res:
+            gain_res = int(round(gain_res * (1 + g_res / 100)))
         # Ship maintenance is deducted from income (a flat cost, not
         # scaled by trade bonuses). The treasury floors at 0 — an empire
         # that can't pay simply stops banking BC rather than going into

@@ -135,6 +135,9 @@ class Empire:
     # Comma-separated trait keys for custom races. Empty for preset races
     # (their traits live in ecs.races.RACES[race_type]).
     custom_traits: str = ""
+    # Empire-wide government policy (see ecs.government). Default is the
+    # always-available Dictatorship; others are unlocked by tech.
+    government: str = "dictatorship"
 
 
 @dataclass

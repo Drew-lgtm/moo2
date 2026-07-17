@@ -187,6 +187,9 @@ def ai_tick(game, new_turn: int):
         tech_state = tech_by_empire.get(empire.id)
         unlocked = set(tech_state.unlocked) if tech_state else set()
 
+        # Adopt the best government its research has unlocked.
+        _ai_choose_government(game, empire, unlocked)
+
         focus = personality.get("colonization_focus", "balanced")
         traits = traits_for_empire(cm, empire.id)
         planet_ids = empire_planets.get(empire.id, [])
@@ -442,6 +445,20 @@ def _ai_queue_building(cm, entity_id, build_priority, unlocked: set,
         build_state.current_project = queue_id
         pending_writes.append(("build", (planet.id, queue_id, build_state.progress)))
         return
+
+
+def _ai_choose_government(game, empire, unlocked):
+    """Switch an AI empire to the best government its tech has unlocked
+    (only writes when the choice actually changes)."""
+    from ecs.government import ai_preferred_government, government_of
+    pref = ai_preferred_government(unlocked)
+    if government_of(empire) == pref:
+        return
+    empire.government = pref
+    from ecs.db import get_connection, update_empire_government
+    with get_connection() as conn:
+        update_empire_government(conn, empire.id, pref)
+        conn.commit()
 
 
 def _unowned_habitable_stars(cm) -> list[int]:

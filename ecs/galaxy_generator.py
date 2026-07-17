@@ -379,11 +379,16 @@ class GalaxyGenerator:
 
             for emp in get_empires(conn):
                 empire_entity = self.entity_mgr.create_entity()
-                # custom_traits is a TEXT column; old rows might be NULL.
+                # custom_traits / government are TEXT columns added after
+                # the initial schema; old rows might be NULL or absent.
                 try:
                     raw_traits = emp["custom_traits"] or ""
                 except (IndexError, KeyError):
                     raw_traits = ""
+                try:
+                    gov = emp["government"] or "dictatorship"
+                except (IndexError, KeyError):
+                    gov = "dictatorship"
                 self.component_mgr.add_component(
                     empire_entity,
                     Empire(
@@ -398,6 +403,7 @@ class GalaxyGenerator:
                         is_player=bool(emp["is_player"]),
                         personality=emp["personality"] or "balanced",
                         custom_traits=raw_traits,
+                        government=gov,
                     ),
                 )
                 self.component_mgr.add_component(
