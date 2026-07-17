@@ -145,6 +145,22 @@ def test_democracy_research_and_bc_pct(temp_db):
     assert eemp.research_points == 7   # 6 * 1.2 = 7.2 -> 7
 
 
+def test_hud_projection_matches_tick_under_government(temp_db):
+    """REGRESSION: empire_per_turn (HUD) must fold in morale + government
+    %s so the displayed per-turn numbers match what production_tick banks."""
+    from ecs.economy import empire_per_turn, production_tick
+    # Imperium: 10 workers, morale 70 -> 1.1x -> 11 BC.
+    g, emp, cm = _world(government="imperium", workers=10)
+    proj = empire_per_turn(cm, 1)
+    production_tick(g, new_turn=2)
+    assert proj["bc"] == emp.bc == 11
+    # Democracy: 6 scientists, morale 1.025x then +20% -> 7 research.
+    g2, emp2, cm2 = _world(government="democracy", scientists=6)
+    proj2 = empire_per_turn(cm2, 1)
+    production_tick(g2, new_turn=2)
+    assert proj2["research"] == emp2.research_points == 7
+
+
 def test_conquered_colony_morale_penalty(temp_db):
     from ecs.economy import production_tick
     # Dictatorship, conquered colony: morale 30 -> 0.9x on 10 industry.

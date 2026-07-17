@@ -365,6 +365,10 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None,
     """
     traits = traits_for_empire(component_mgr, empire_id)
     tech_bonus = empire_tech_bonus(component_mgr, empire_id)
+    # Government + morale, so the HUD matches what production_tick banks.
+    empire = next((e for _x, e in component_mgr.get_all(Empire)
+                   if e.id == empire_id), None)
+    gov = government_of(empire) if empire is not None else DEFAULT_GOVERNMENT
     bc_total = research_total = industry_total = 0
     food_produced = pop_total = 0
 
@@ -380,6 +384,12 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None,
             planet, pop, build_state, traits, tech_bonus)
         food, industry, research, bonus_bc = _apply_colony_leader(
             leaders, planet.id, food, industry, research, bonus_bc)
+        # Morale scales industry/research/trade (not food) — matches the tick.
+        morale_mult = morale_output_mult(colony_morale(gov, planet))
+        if morale_mult != 1.0:
+            industry = int(round(industry * morale_mult))
+            research = int(round(research * morale_mult))
+            bonus_bc = int(round(bonus_bc * morale_mult))
 
         food_produced += food
         if pop is not None:
@@ -396,6 +406,13 @@ def empire_per_turn(component_mgr, empire_id: int, leaders=None,
         if col_bc and diplo is not None and is_blockaded(component_mgr, entity_id, diplo):
             col_bc = 0
         bc_total += col_bc
+
+    # Empire-wide government income % (e.g. Democracy +BC/+research).
+    g_res, g_bc = government_pct(gov)
+    if g_bc:
+        bc_total = int(round(bc_total * (1 + g_bc / 100)))
+    if g_res:
+        research_total = int(round(research_total * (1 + g_res / 100)))
 
     food_needed = pop_total // 2 if "tolerant" in traits else pop_total
     upkeep = fleet_upkeep(component_mgr, empire_id)

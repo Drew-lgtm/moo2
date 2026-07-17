@@ -18,6 +18,7 @@ from ecs.techs import TECHS, TECH_ORDER, is_available
 from ecs.db import get_connection, update_empire_tech, update_empire_government
 from ecs.government import (
     GOVERNMENTS, government_of, available_governments,
+    colony_morale, morale_output_mult,
 )
 from assets.loader import load_image, find_race_portrait
 
@@ -308,6 +309,14 @@ class ColoniesScene(PanelScene):
         traits = effective_traits(empire.race_type, empire.custom_traits) if empire is not None else []
         tb = empire_tech_bonus(self.game.component_mgr, empire.id) if empire is not None else None
         food, industry, research, bonus_bc = planet_output(planet, population, build_state, traits, tb)
+        # Colony morale (government + conquest state) scales output — match
+        # the tick so the panel agrees with what's actually produced.
+        if empire is not None:
+            mm = morale_output_mult(colony_morale(government_of(empire), planet))
+            if mm != 1.0:
+                industry = int(round(industry * mm))
+                research = int(round(research * mm))
+                bonus_bc = int(round(bonus_bc * mm))
         # Industry diverts to project progress while building; otherwise it
         # becomes BC, on top of any flat building bonus.
         building = bool(build_state and build_state.current_project)
@@ -521,7 +530,11 @@ class InfoScene(PanelScene):
         empire_count = sum(1 for _e, emp in cm.get_all(Empire)
                            if not is_pseudo_empire(emp.id))
 
-        y = rect.y
+        # Content scrolls: shift everything by scroll_offset and return
+        # the true content height so the base scrollbar/clamp work (this
+        # panel previously returned None -> never scrolled).
+        top = rect.y - self.scroll_offset
+        y = top
         # ---- Empire Stats ----
         screen.blit(self._section_font.render("Empire Stats", True, self.SECTION_HEADER_COLOR), (rect.x, y))
         y += 24
@@ -582,7 +595,7 @@ class InfoScene(PanelScene):
         self._tech_row_hits = []
         if tech_state is None:
             screen.blit(font.render("No player empire.", True, HINT_COLOR), (rect.x, y))
-            return y - rect.y
+            return y - top
 
         # Current target line.
         if tech_state.current_target:
@@ -628,4 +641,4 @@ class InfoScene(PanelScene):
             self._tech_row_hits.append((tech_id, row_rect, available))
             y += self.TECH_ROW_HEIGHT
 
-        return y - rect.y
+        return y - top
