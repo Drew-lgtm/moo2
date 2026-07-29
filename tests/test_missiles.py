@@ -71,6 +71,19 @@ def test_proton_torpedo_is_a_missile():
     assert s["missile_attack"] > 0 and s["attack"] == 0
 
 
+def test_all_missile_named_weapons_are_missiles():
+    """REGRESSION: pre-existing missile-named beams (pulson/merculite) are
+    now real missiles, and no duplicate key clobbered the chemistry
+    merculite (it must stay chemistry-tier-3, not the physics dup I
+    mistakenly added)."""
+    from ecs.techs import TECHS
+    for wid in ("nuclear_missile", "pulson_missile", "merculite_missile",
+                "proton_torpedo"):
+        assert TECHS[wid]["equipment"].get("category") == "missile", wid
+    assert TECHS["merculite_missile"]["field"] == "chemistry"
+    assert TECHS["merculite_missile"]["tier"] == 3
+
+
 def test_pd_mount_provides_interception():
     s = stats_from_ship(_ship(weapon_tech="laser_cannons", weapon_count=2,
                               weapon_mount="point_defense"))

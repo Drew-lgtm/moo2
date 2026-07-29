@@ -336,8 +336,10 @@ TECHS: dict[str, dict] = {
         "id": "pulson_missile", "name": "Pulson Missile",
         "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
         "cost": 200, "prereqs": ["titanium_armor"],
-        "description": "Improved missile warhead (+4 attack/slot)",
-        "equipment": {"slot": "weapon", "size": 3, "attack": 4},
+        "description": "Improved missile warhead (+4 attack/slot); "
+                       "point-defense can intercept it.",
+        "equipment": {"slot": "weapon", "size": 3, "attack": 4,
+                      "category": "missile"},
     },
     "atmospheric_terraforming": {
         "id": "atmospheric_terraforming", "name": "Atmospheric Terraforming",
@@ -349,8 +351,10 @@ TECHS: dict[str, dict] = {
         "id": "merculite_missile", "name": "Merculite Missile",
         "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
         "cost": 400, "prereqs": ["tritanium_armor"],
-        "description": "Advanced missile guidance (+5 attack/slot)",
-        "equipment": {"slot": "weapon", "size": 3, "attack": 5},
+        "description": "Advanced missile guidance (+5 attack/slot); "
+                       "point-defense can intercept it.",
+        "equipment": {"slot": "weapon", "size": 3, "attack": 5,
+                      "category": "missile"},
     },
     "adamantium_chem": {
         "id": "adamantium_chem", "name": "Adamantium Chemistry",
@@ -667,15 +671,6 @@ TECHS: dict[str, dict] = {
         "cost": 400, "prereqs": ["phasors"],
         "description": "Kinetic shield-piercer (+2 attack/slot)",
         "equipment": {"slot": "weapon", "size": 2, "attack": 2},
-    },
-    "merculite_missile": {
-        "id": "merculite_missile", "name": "Merculite Missile",
-        "field": "physics", "tier": 3, "tier_group": _t("physics", 3),
-        "cost": 400, "prereqs": ["nuclear_missile", "phasors"],
-        "description": "Heavy guided missile (+5 attack/slot); still "
-                       "vulnerable to point-defense interception.",
-        "equipment": {"slot": "weapon", "size": 2, "attack": 5,
-                      "category": "missile"},
     },
     "plasma_cannons": {
         "id": "plasma_cannons", "name": "Plasma Cannons",
