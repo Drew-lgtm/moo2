@@ -265,6 +265,10 @@ def ai_tick(game, new_turn: int):
             _ai_bombard(game, empire)
             _ai_dispatch_troop_transports(cm, empire, reachable)
             _ai_dispatch_ships(cm, empire, reachable)
+        else:
+            # Peaceful/expansionist AIs put their fleet to work clearing
+            # space-monster guardians to open up rich systems.
+            _ai_clear_monsters(game, empire, reachable)
 
     if not pending_writes:
         return
@@ -839,6 +843,53 @@ def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None):
     for src_star, ships in ships_by_star.items():
         if ships:
             start_fleet_movement(cm, ships, src_star, target_star)
+
+
+# Minimum warship concentration an AI will commit to storm a space-monster
+# guardian — a real fleet, so it doesn't feed ships to the guardian.
+AI_MONSTER_CLEAR_MIN_FLEET = 6
+
+
+def _ai_clear_monsters(game, empire, reachable):
+    """Peaceful/expansionist AI: send its main battle fleet to storm a
+    reachable space-monster guardian, opening the rich system to
+    colonisation. Only commits if the concentrated fleet is large enough
+    to have a real chance, and leaves smaller garrisons in place."""
+    from ecs.monsters import monster_at_star
+    cm = game.component_mgr
+    by_star: dict[int, list[int]] = {}
+    total = 0
+    for ship_entity, at in cm.get_all(ShipAt):
+        owner = cm.get_component(ship_entity, ShipOwner)
+        ship = cm.get_component(ship_entity, Ship)
+        if owner is None or ship is None or owner.empire_id != empire.id:
+            continue
+        if ship.ship_class not in WARSHIP_CLASSES:
+            continue
+        by_star.setdefault(at.star_entity, []).append(ship_entity)
+        total += 1
+    if total < AI_MONSTER_CLEAR_MIN_FLEET or not by_star:
+        return
+    # Reachable guarded systems.
+    guarded = []
+    seen: set[int] = set()
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        st = orbit.star_entity
+        if st in seen:
+            continue
+        seen.add(st)
+        if (reachable is None or st in reachable) and monster_at_star(cm, st):
+            guarded.append(st)
+    if not guarded:
+        return
+    # Commit the single largest fleet concentration (keeps other garrisons
+    # home) to a guarded system it isn't already fighting at.
+    src_star, ships = max(by_star.items(), key=lambda kv: len(kv[1]))
+    if len(ships) < AI_MONSTER_CLEAR_MIN_FLEET:
+        return
+    target = next((st for st in guarded if st != src_star), None)
+    if target is not None:
+        start_fleet_movement(cm, ships, src_star, target)
 
 
 # ---- Troop transport invasion -----------------------------------------
