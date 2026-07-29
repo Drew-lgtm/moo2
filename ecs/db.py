@@ -317,6 +317,8 @@ def _migrate_ships(conn):
         conn.execute("ALTER TABLE ships ADD COLUMN specials TEXT DEFAULT ''")
     if "weapon_mount" not in existing:
         conn.execute("ALTER TABLE ships ADD COLUMN weapon_mount TEXT DEFAULT 'normal'")
+    if "experience" not in existing:
+        conn.execute("ALTER TABLE ships ADD COLUMN experience INTEGER DEFAULT 0")
 
 
 def _migrate_planets(conn):
@@ -617,6 +619,11 @@ def update_ship_transit(conn, ship_id, current_star_id, dest_star_id, turns_rema
 
 def delete_ship(conn, ship_id):
     conn.execute("DELETE FROM ships WHERE id = ?", (ship_id,))
+
+
+def update_ship_experience(conn, ship_id, experience):
+    conn.execute("UPDATE ships SET experience = ? WHERE id = ?",
+                 (experience, ship_id))
 
 
 def insert_space_monster(conn, star_id, monster_type, ships):

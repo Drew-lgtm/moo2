@@ -250,6 +250,8 @@ class TacticalScene(Scene):
         # (before any save), not on the next turn's monster_tick.
         from ecs.monsters import reconcile_kills
         reconcile_kills(self.game)
+        from ecs.veterancy import award_battle_veterancy
+        award_battle_veterancy(self.game, self.battle)
 
         # Queue a combat-report row so the player gets the same
         # post-battle summary an auto-resolved fight produces.

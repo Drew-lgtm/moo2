@@ -309,6 +309,7 @@ class GalaxyScene(Scene):
             return ["(no empire)"]
         counts: dict[str, int] = {}
         sample: dict[str, Ship] = {}
+        best_xp: dict[str, int] = {}
         for ship_entity, at in cm.get_all(ShipAt):
             if at.star_entity != star_entity:
                 continue
@@ -319,10 +320,13 @@ class GalaxyScene(Scene):
                 continue
             counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
             sample.setdefault(ship.ship_class, ship)
+            best_xp[ship.ship_class] = max(best_xp.get(ship.ship_class, 0),
+                                           ship.experience or 0)
         lines = ["Your fleet"]
         from ecs.ship_design import stored_loadout_summary
+        from ecs.veterancy import rank_name
         for cls, n in sorted(counts.items()):
-            lines.append(f"{cls.title()} × {n}")
+            lines.append(f"{cls.title()} × {n}  [{rank_name(best_xp[cls])}]")
             lines.append(f"hint: {stored_loadout_summary(sample[cls])}")
         return lines
 

@@ -162,6 +162,8 @@ class CombatDecisionScene(Scene):
         # tactical finaliser — kills resolve after advance_turn).
         from ecs.monsters import reconcile_kills
         reconcile_kills(self.game)
+        from ecs.veterancy import award_battle_veterancy
+        award_battle_veterancy(self.game, battle)
 
         # Add a combat-report row so the player sees the outcome after
         # all engagements are decided (shared builder with the tactical

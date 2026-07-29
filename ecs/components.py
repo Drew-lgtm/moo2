@@ -180,6 +180,9 @@ class Ship:
     # manual ship design; auto-built ships use "normal". Scales the
     # weapon's attack / space via ecs.ship_design.MOUNTS.
     weapon_mount: str = "normal"
+    # Combat experience (see ecs.veterancy). Rises as the ship survives
+    # battles; higher ranks add attack + hull.
+    experience: int = 0
 
 
 @dataclass

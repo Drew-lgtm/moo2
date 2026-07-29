@@ -33,6 +33,10 @@ from ecs.invasion import _planet_defense_rating
 from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from ecs.db import get_connection, delete_ship
 from ecs.ship_design import stats_from_ship
+from ecs.veterancy import (
+    attack_bonus as vet_attack_bonus, hull_bonus as vet_hull_bonus,
+    ship_experience, grant_combat_xp,
+)
 from ecs import battle
 from ecs.battle import Combatant
 
@@ -109,16 +113,19 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
         side_attack = 0
         roster: list[Combatant] = []
         for e in ships:
+            ship_comp = component_mgr.get_component(e, Ship)
             ship_atk = _attack_of(component_mgr, e, atk_bonus, leader_map,
                                   ship_atk_fn(eid, e))
             full = ship_stats_full_fn(e)
-            leader_hull = leader_map.get(
-                component_mgr.get_component(e, Ship).id, (0, 0)
-            )[1] if leader_map else 0
-            ship_class = component_mgr.get_component(e, Ship).ship_class
+            leader_hull = leader_map.get(ship_comp.id, (0, 0))[1] if leader_map else 0
+            ship_class = ship_comp.ship_class
             base = SHIPS.get(ship_class, {})
             base_hull = base.get("hull", 0)
-            hull_max = base_hull + hull_bonus + leader_hull + full.get("hull", 0)
+            # Veterancy: a seasoned crew sharpens guns and toughens hull.
+            xp = ship_experience(ship_comp)
+            ship_atk += vet_attack_bonus(xp)
+            hull_max = base_hull + hull_bonus + leader_hull + full.get("hull", 0) \
+                + vet_hull_bonus(xp)
             shield_cap = full.get("shield_capacity", 0) + shield_bonus
             # Interceptable fire: missile weapons + the hull's fighter
             # complement (carriers). Point-defense shoots these down.
@@ -189,15 +196,17 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
             if ship is None:
                 continue
             stats = ship_stats_full(ship_entity)
-            # Total hull = ship_class base + equipment hull bonus.
+            xp = ship_experience(ship)
+            # Total hull = ship_class base + equipment hull bonus + veterancy.
             base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
-            hull = max(1, int(base_hull + stats.get("hull", 0)))
+            hull = max(1, int(base_hull + stats.get("hull", 0)) + vet_hull_bonus(xp))
             # Tactical (hex) combat doesn't model point-defense interception
             # yet, so missile + fighter fire counts as direct attack here —
             # keeps missile ships at full strength in a manual battle.
             attack = max(0, int(stats.get("attack", 0))
                          + int(stats.get("missile_attack", 0))
-                         + _SHIPS.get(ship.ship_class, {}).get("fighter_attack", 0))
+                         + _SHIPS.get(ship.ship_class, {}).get("fighter_attack", 0)
+                         + vet_attack_bonus(xp))
             shield_max = max(0, int(stats.get("shield_capacity", 0))) + shield_bonus
             shield_regen = max(0, int(stats.get("shield_regen", 0)))
             # 'defense' in stats_from_ship is an evasion-style flat —
@@ -462,6 +471,15 @@ def combat_tick(game, new_turn: int):
             for eid in participants
         }
         side_attack = first_round_attack
+
+        # Veterancy: surviving ships bank experience — a flat share plus a
+        # bounty per enemy ship their side destroyed.
+        for eid in participants:
+            lost = set(side_losses.get(eid, []))
+            survivors = [e for e in ships_here.get(eid, []) if e not in lost]
+            enemies_killed = sum(len(side_losses.get(o, []))
+                                 for o in participants if o != eid)
+            grant_combat_xp(game, survivors, enemies_killed)
 
         # Record the engagement before mutating — rich enough for the
         # combat-report screen: per side, ships by class, attack power,

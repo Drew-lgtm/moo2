@@ -66,8 +66,13 @@ def _make_combatant(ship: Ship, empire_id: int, key, *, atk_bonus: int = 0,
     base = SHIPS.get(ship.ship_class, {})
     leader_atk, leader_hull = (
         leader_map.get(ship.id, (0, 0)) if leader_map else (0, 0))
-    hull_max = base.get("hull", 0) + hull_bonus + leader_hull + stats.get("hull", 0)
-    attack = base.get("attack", 0) + atk_bonus + leader_atk + stats.get("attack", 0)
+    from ecs.veterancy import attack_bonus as _vet_atk, hull_bonus as _vet_hull, \
+        ship_experience as _vet_xp
+    xp = _vet_xp(ship)
+    hull_max = (base.get("hull", 0) + hull_bonus + leader_hull
+                + stats.get("hull", 0) + _vet_hull(xp))
+    attack = (base.get("attack", 0) + atk_bonus + leader_atk
+              + stats.get("attack", 0) + _vet_atk(xp))
     shield_cap = stats.get("shield_capacity", 0) + shield_bonus
     missile_atk = stats.get("missile_attack", 0) + base.get("fighter_attack", 0)
     return Combatant(

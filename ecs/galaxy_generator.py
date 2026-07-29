@@ -438,6 +438,9 @@ class GalaxyGenerator:
                         weapon_mount=(ship_row["weapon_mount"]
                                       if "weapon_mount" in ship_row.keys()
                                       and ship_row["weapon_mount"] else "normal"),
+                        experience=(ship_row["experience"]
+                                    if "experience" in ship_row.keys()
+                                    and ship_row["experience"] else 0),
                     )
                 )
                 self.component_mgr.add_component(
