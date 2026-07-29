@@ -161,3 +161,79 @@ def test_combat_tick_awards_xp_to_survivors(temp_db):
     assert alive, "the battleships should have won"
     for s in alive:
         assert cm.get_component(s, Ship).experience == battle_xp(1)
+
+
+def test_neutral_bystander_earns_no_xp(temp_db):
+    """REGRESSION: a peaceful empire parked at a star where two OTHERS
+    fight must not bank free veterancy."""
+    from ecs.db import get_connection, insert_star, insert_empire, insert_ship
+    from ecs.combat import combat_tick
+    from ecs.diplomacy import Diplomacy
+    from ecs.components import Name
+    with get_connection() as conn:
+        insert_star(conn, "X", 0, 0, "G", "s.png", 30)
+        for nm, col in (("A", "green"), ("B", "red"), ("C", "blue")):
+            insert_empire(conn, nm, "Humans", col, 1, 0)
+        conn.commit()
+    em = EntityManager(); cm = ComponentManager()
+    for eid, col in ((1, "green"), (2, "red"), (3, "blue")):
+        e = em.create_entity()
+        cm.add_component(e, Empire(id=eid, name=str(eid), race_type="Humans",
+                                   color=col, tech_level=0, home_star_id=1,
+                                   is_player=False))
+    star = em.create_entity()
+    cm.add_component(star, StarRef(db_id=1)); cm.add_component(star, Name("X"))
+
+    def _mk(eid, cls, **kw):
+        with get_connection() as conn:
+            sid = insert_ship(conn, eid, cls, 1, **kw); conn.commit()
+        s = em.create_entity()
+        cm.add_component(s, Ship(id=sid, ship_class=cls, **kw))
+        cm.add_component(s, ShipOwner(empire_id=eid))
+        cm.add_component(s, ShipAt(star_entity=star))
+        return s
+    # A (war with B) crushes B's frigate. C is a neutral bystander.
+    a_ships = [_mk(1, "battleship", weapon_tech="death_ray", weapon_count=4,
+                   weapon_mount="heavy") for _ in range(3)]
+    _mk(2, "frigate")
+    c_ship = _mk(3, "cruiser")
+
+    diplo = Diplomacy()
+    diplo._pair(1, 2)["at_war"] = True   # A & B at war; C at peace with all
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em, turn_log=None,
+                           diplomacy=diplo, leaders=None, last_combats=[],
+                           pending_combat_reports=None, pending_engagements=None,
+                           galaxy=SimpleNamespace(turn=5))
+    game.player_empire = lambda: None
+    combat_tick(game, 5)
+
+    # Neutral C fought no one -> zero XP; A's survivors did earn XP.
+    assert cm.get_component(c_ship, Ship).experience == 0
+    a_alive = [s for s in a_ships if cm.get_component(s, Ship) is not None]
+    assert a_alive and all(cm.get_component(s, Ship).experience > 0 for s in a_alive)
+
+
+def test_award_battle_veterancy_skips_neutral(temp_db):
+    """The tactical/auto path also skips a co-located neutral."""
+    from ecs.veterancy import award_battle_veterancy
+    from ecs.diplomacy import Diplomacy
+    em = EntityManager(); cm = ComponentManager()
+    # Real ships: attacker (1), defender (2, at war), neutral (3).
+    ents = {}
+    for eid in (1, 2, 3):
+        e = em.create_entity()
+        cm.add_component(e, Ship(id=eid, ship_class="cruiser"))
+        ents[eid] = e
+    diplo = Diplomacy(); diplo._pair(1, 2)["at_war"] = True
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em, diplomacy=diplo)
+    # Battle: empire 2's ship destroyed; empires 1 and 3 survive.
+    ships = [
+        SimpleNamespace(entity_id=ents[1], empire_id=1, is_station=False, destroyed=False),
+        SimpleNamespace(entity_id=ents[2], empire_id=2, is_station=False, destroyed=True),
+        SimpleNamespace(entity_id=ents[3], empire_id=3, is_station=False, destroyed=False),
+    ]
+    battle = SimpleNamespace(ships=ships,
+                             destroyed_entity_ids=lambda: [ents[2]])
+    award_battle_veterancy(game, battle)
+    assert cm.get_component(ents[1], Ship).experience == battle_xp(1)  # killed foe
+    assert cm.get_component(ents[3], Ship).experience == 0             # neutral

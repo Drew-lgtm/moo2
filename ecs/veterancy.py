@@ -88,7 +88,11 @@ def award_battle_veterancy(game, battle):
     """Award post-battle XP from a resolved tactical battle (duck-typed:
     ``battle.ships`` with ``entity_id``/``empire_id``/``is_station`` and
     ``battle.destroyed_entity_ids()``). Used by the player's tactical /
-    auto-resolve finishers, which bypass the strategic XP path."""
+    auto-resolve finishers, which bypass the strategic XP path. Only sides
+    that fought a hostile opponent earn XP, credited with that opponent's
+    losses — so a co-located neutral can't farm veterancy."""
+    from ecs.combat import empires_hostile
+    diplo = getattr(game, "diplomacy", None)
     destroyed = set(battle.destroyed_entity_ids())
     survivors: dict[int, list[int]] = {}
     losses: dict[int, int] = {}
@@ -99,6 +103,10 @@ def award_battle_veterancy(game, battle):
             losses[s.empire_id] = losses.get(s.empire_id, 0) + 1
         else:
             survivors.setdefault(s.empire_id, []).append(s.entity_id)
+    all_eids = set(losses) | set(survivors)
     for eid, ships in survivors.items():
-        enemies = sum(c for o, c in losses.items() if o != eid)
+        foes = [o for o in all_eids if o != eid and empires_hostile(diplo, eid, o)]
+        if not foes:
+            continue  # no hostile opponent present -> didn't fight -> no XP
+        enemies = sum(losses.get(o, 0) for o in foes)
         grant_combat_xp(game, ships, enemies)

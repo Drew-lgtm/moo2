@@ -299,6 +299,21 @@ _STATION_STATS = {
 }
 
 
+def empires_hostile(diplo, a: int, b: int) -> bool:
+    """True if empires ``a`` and ``b`` fight on sight. Antaran raiders and
+    space monsters are hostile to everyone; real empires fight only when
+    at war (a missing diplomacy object -> everyone fights, for old saves).
+    Shared by the combat resolver and the veterancy XP award so both agree
+    on who actually fought whom."""
+    from ecs.antaran import is_antaran
+    from ecs.monsters import is_monster
+    if is_antaran(a) or is_antaran(b) or is_monster(a) or is_monster(b):
+        return a != b
+    if diplo is None:
+        return True
+    return diplo.at_war(a, b)
+
+
 def combat_tick(game, new_turn: int):
     """Resolve combat at every star where two or more *at-war* empires
     have ships. Empires at peace (or under a non-aggression pact) can
@@ -317,17 +332,7 @@ def combat_tick(game, new_turn: int):
                 leader_map[l.assigned_ship_id] = ship_effect(l)
 
     def _hostile(a: int, b: int) -> bool:
-        # Antaran raiders and space monsters are hostile to everyone.
-        from ecs.antaran import is_antaran
-        from ecs.monsters import is_monster
-        if is_antaran(a) or is_antaran(b) or is_monster(a) or is_monster(b):
-            return a != b
-        # No diplomacy object (e.g. old save) → fall back to the old
-        # "everyone fights everyone" behaviour so nothing silently
-        # becomes invincible.
-        if diplo is None:
-            return True
-        return diplo.at_war(a, b)
+        return empires_hostile(diplo, a, b)
 
     # star_entity -> {empire_id: [ship_entity]}
     by_star: dict[int, dict[int, list[int]]] = {}
@@ -473,12 +478,18 @@ def combat_tick(game, new_turn: int):
         side_attack = first_round_attack
 
         # Veterancy: surviving ships bank experience — a flat share plus a
-        # bounty per enemy ship their side destroyed.
+        # bounty per enemy ship their side destroyed. Only sides that
+        # actually fought (had a hostile opponent present) earn XP, and a
+        # side is credited only with the losses of empires it was at war
+        # with — so a neutral bystander parked at a contested star can't
+        # farm free veterancy.
         for eid in participants:
+            foes = [o for o in participants if o != eid and _hostile(eid, o)]
+            if not foes:
+                continue
             lost = set(side_losses.get(eid, []))
             survivors = [e for e in ships_here.get(eid, []) if e not in lost]
-            enemies_killed = sum(len(side_losses.get(o, []))
-                                 for o in participants if o != eid)
+            enemies_killed = sum(len(side_losses.get(o, [])) for o in foes)
             grant_combat_xp(game, survivors, enemies_killed)
 
         # Record the engagement before mutating — rich enough for the
