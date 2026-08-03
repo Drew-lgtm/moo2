@@ -412,6 +412,7 @@ class ColonyScene(Scene):
 
         self._draw_header(screen, planet, owner)
         self._draw_pop_block(screen, pop, owner)
+        self._draw_morale_line(screen, planet, owner)
         self._draw_worker_widgets(screen, pop, owner)
         self._draw_build_summary(screen, build_state)
         player_id = self._player_empire_id()
@@ -771,6 +772,40 @@ class ColonyScene(Scene):
         # 1 pop unit = 1 million inhabitants (MOO2 convention).
         line = f"Population: {pop.current}M / {pop.max}M    F:{pop.farmers}  W:{pop.workers}  S:{pop.scientists}"
         screen.blit(self.header_font.render(line, True, TEXT_COLOR), (24, 124))
+
+    def _draw_morale_line(self, screen, planet, owner):
+        """Surface the (otherwise invisible) morale that scales this
+        colony's output, plus a blockade flag — both new mechanics the
+        player otherwise can't see."""
+        if owner is None:
+            return
+        cm = self.game.component_mgr
+        emp = next((e for _x, e in cm.get_all(Empire)
+                    if e.id == owner.empire_id), None)
+        if emp is None:
+            return
+        from ecs.government import (
+            government_of, colony_morale, morale_output_mult,
+        )
+        morale = colony_morale(government_of(emp), planet)
+        mult = morale_output_mult(morale)
+        if morale >= 65:
+            band, color = "Content", (150, 220, 160)
+        elif morale >= 45:
+            band, color = "Neutral", TEXT_COLOR
+        else:
+            band, color = "Restive", (230, 170, 110)
+        pct = int(round((mult - 1.0) * 100))
+        line = f"Morale: {morale} ({band}, {pct:+d}% output)"
+        screen.blit(self.body_font.render(line, True, color), (24, 146))
+
+        # Blockade flag — a hostile fleet in orbit cuts this colony's trade.
+        from ecs.blockade import is_blockaded
+        if is_blockaded(cm, self._planet_entity,
+                        getattr(self.game, "diplomacy", None)):
+            warn = self.body_font.render("BLOCKADED — trade cut", True,
+                                         (235, 120, 120))
+            screen.blit(warn, (24 + self.body_font.size(line)[0] + 20, 146))
 
     def _draw_worker_widgets(self, screen, pop, owner):
         editable = pop is not None and self._player_owns_this(owner)
