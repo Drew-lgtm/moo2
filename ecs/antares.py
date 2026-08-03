@@ -37,13 +37,15 @@ PORTAL_BUILDING = "dimensional_portal"
 
 # The Antares home fleet: a wall of Doom Stars with apex Antaran gear.
 # Built from this prototype so the numbers follow the ship/tech tables.
+# The doom_star hull is huge (170 space), so it's armed near-full — 4
+# guns would have left the "wall" a formality to breach.
 ANTARES_DEFENDER_COUNT = 8
 _ANTARES_PROTO = dict(
     ship_class="doom_star",
     armor_tech="xentronium_armor",
     shield_tech="class_vii_shield",
     weapon_tech="death_ray",
-    weapon_count=4,
+    weapon_count=12,
     weapon_mount="heavy",
 )
 

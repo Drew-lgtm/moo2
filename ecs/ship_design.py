@@ -78,6 +78,10 @@ def _special_priority(spec: dict) -> int:
         + eq.get("space_bonus", 0) * 10
         + eq.get("attack", 0) * 3
         + eq.get("defense", 0) * 3
+        # Point-defense (Anti-Missile Rockets) must be valued or the auto-
+        # designer never fits it, and the missile/fighter interception it
+        # exists to provide never fires in auto-resolved battles.
+        + eq.get("point_defense", 0) * 2
         + (1 if eq.get("cloak") else 0)
     )
 
@@ -213,6 +217,20 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
     # weapon that maximises total damage across its budget. Weapons get
     # priority over specials so a small hull isn't unarmed by gear
     # creep.
+    # Reserve the single highest-value useful special BEFORE weapons so a
+    # military ship isn't a pure gun platform: weapons otherwise fill every
+    # slot, and defensive gear — above all Point-Defense, which is what
+    # makes enemy missiles/fighters counterable — never gets fitted.
+    if is_military:
+        for sp in specials_pool:
+            if sp is bp:
+                continue
+            sz = sp["equipment"].get("size", 1)
+            if used + sz <= budget:
+                used += sz
+                fitted_specials.append(sp)
+                break
+
     weapon = None
     weapon_count = 0
     if is_military:
@@ -222,10 +240,10 @@ def compute_loadout(ship_class: str, unlocked) -> dict:
             used += weapon_count * weapon["equipment"].get("size", 1)
 
     # Up to 2 more useful specials (Inertial Stabilizer, Achilles
-    # Targeting, etc.), skipping Battle Pods (already fitted). Fit only
-    # in space the weapons couldn't use.
+    # Targeting, etc.), skipping Battle Pods + anything already fitted.
+    # Fit only in space the weapons couldn't use.
     for sp in specials_pool:
-        if sp is bp:
+        if sp is bp or sp in fitted_specials:
             continue
         if len([s for s in fitted_specials if s is not bp]) >= 2:
             break

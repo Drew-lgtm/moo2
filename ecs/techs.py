@@ -336,9 +336,9 @@ TECHS: dict[str, dict] = {
         "id": "pulson_missile", "name": "Pulson Missile",
         "field": "chemistry", "tier": 2, "tier_group": _t("chemistry", 2),
         "cost": 200, "prereqs": ["titanium_armor"],
-        "description": "Improved missile warhead (+4 attack/slot); "
+        "description": "Improved missile warhead (+5 attack/slot); "
                        "point-defense can intercept it.",
-        "equipment": {"slot": "weapon", "size": 3, "attack": 4,
+        "equipment": {"slot": "weapon", "size": 3, "attack": 5,
                       "category": "missile"},
     },
     "atmospheric_terraforming": {
@@ -351,9 +351,9 @@ TECHS: dict[str, dict] = {
         "id": "merculite_missile", "name": "Merculite Missile",
         "field": "chemistry", "tier": 3, "tier_group": _t("chemistry", 3),
         "cost": 400, "prereqs": ["tritanium_armor"],
-        "description": "Advanced missile guidance (+5 attack/slot); "
+        "description": "Advanced missile guidance (+6 attack/slot); "
                        "point-defense can intercept it.",
-        "equipment": {"slot": "weapon", "size": 3, "attack": 5,
+        "equipment": {"slot": "weapon", "size": 3, "attack": 6,
                       "category": "missile"},
     },
     "adamantium_chem": {
@@ -690,9 +690,9 @@ TECHS: dict[str, dict] = {
         "id": "proton_torpedo", "name": "Proton Torpedo",
         "field": "physics", "tier": 5, "tier_group": _t("physics", 5),
         "cost": 1000, "prereqs": ["plasma_cannons"],
-        "description": "Guided heavy missile (+5 attack/slot); point-defense "
+        "description": "Guided heavy missile (+8 attack/slot); point-defense "
                        "can intercept it.",
-        "equipment": {"slot": "weapon", "size": 4, "attack": 5,
+        "equipment": {"slot": "weapon", "size": 4, "attack": 8,
                       "category": "missile"},
     },
     "mauler_device": {
