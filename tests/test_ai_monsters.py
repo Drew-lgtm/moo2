@@ -84,3 +84,64 @@ def test_unreachable_guardian_not_targeted(temp_db):
     _ai_clear_monsters(game, _empire(cm), reachable=set())  # nothing reachable
     for e in warships:
         assert cm.get_component(e, ShipInTransit) is None
+
+
+def _star(em, cm, db_id, x, monster=True):
+    st = em.create_entity()
+    cm.add_component(st, StarRef(db_id=db_id))
+    cm.add_component(st, Position(x=x, y=0))
+    p = em.create_entity()
+    cm.add_component(p, Planet(id=db_id, planet_type="Terran", size="Medium",
+                               colonizable=True))
+    cm.add_component(p, Orbiting(star_entity=st))
+    if monster:
+        m = em.create_entity()
+        cm.add_component(m, Ship(id=-8000 - db_id, ship_class="battleship"))
+        cm.add_component(m, ShipOwner(empire_id=MONSTER_EMPIRE_ID))
+        cm.add_component(m, ShipAt(star_entity=st))
+    return st
+
+
+def _fleet(em, cm, star, n):
+    out = []
+    for i in range(n):
+        e = em.create_entity()
+        cm.add_component(e, Ship(id=i + 1, ship_class="cruiser"))
+        cm.add_component(e, ShipOwner(empire_id=1))
+        cm.add_component(e, ShipAt(star_entity=star))
+        out.append(e)
+    return out
+
+
+def test_fleet_already_at_a_guardian_keeps_fighting(temp_db):
+    """REGRESSION: a fleet parked on a live guardian must NOT be pulled off
+    it toward another guarded system (ping-pong / mid-fight abandonment)."""
+    em = EntityManager(); cm = ComponentManager()
+    cm.add_component(em.create_entity(),
+                     Empire(id=1, name="AI", race_type="Humans", color="green",
+                            tech_level=0, home_star_id=1, is_player=False))
+    g1 = _star(em, cm, 1, 0)       # fleet is here, fighting this guardian
+    _star(em, cm, 2, 200)          # a second reachable guarded system
+    warships = _fleet(em, cm, g1, AI_MONSTER_CLEAR_MIN_FLEET)
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em)
+    _ai_clear_monsters(game, _empire(cm), None)
+    for e in warships:
+        assert cm.get_component(e, ShipInTransit) is None
+        assert cm.get_component(e, ShipAt).star_entity == g1
+
+
+def test_targets_nearest_guardian(temp_db):
+    em = EntityManager(); cm = ComponentManager()
+    cm.add_component(em.create_entity(),
+                     Empire(id=1, name="AI", race_type="Humans", color="green",
+                            tech_level=0, home_star_id=1, is_player=False))
+    home = em.create_entity()
+    cm.add_component(home, StarRef(db_id=1)); cm.add_component(home, Position(x=0, y=0))
+    near = _star(em, cm, 2, 50)
+    _star(em, cm, 3, 300)          # farther guarded system
+    warships = _fleet(em, cm, home, AI_MONSTER_CLEAR_MIN_FLEET)
+    game = SimpleNamespace(component_mgr=cm, entity_mgr=em)
+    _ai_clear_monsters(game, _empire(cm), None)
+    for e in warships:
+        t = cm.get_component(e, ShipInTransit)
+        assert t is not None and t.to_star_entity == near

@@ -883,13 +883,27 @@ def _ai_clear_monsters(game, empire, reachable):
     if not guarded:
         return
     # Commit the single largest fleet concentration (keeps other garrisons
-    # home) to a guarded system it isn't already fighting at.
+    # home).
     src_star, ships = max(by_star.items(), key=lambda kv: len(kv[1]))
     if len(ships) < AI_MONSTER_CLEAR_MIN_FLEET:
         return
-    target = next((st for st in guarded if st != src_star), None)
-    if target is not None:
-        start_fleet_movement(cm, ships, src_star, target)
+    # If the main fleet is already sitting on a live guardian, keep
+    # fighting it — don't abandon it mid-battle for another system (which
+    # would just ping-pong the fleet and never clear anything).
+    if src_star in guarded:
+        return
+    # Otherwise head for the NEAREST reachable guarded system (matching the
+    # other AI dispatch passes), not an arbitrary iteration-order one.
+    src_pos = cm.get_component(src_star, Position)
+
+    def _dist2(st):
+        p = cm.get_component(st, Position)
+        if p is None or src_pos is None:
+            return float("inf")
+        return (p.x - src_pos.x) ** 2 + (p.y - src_pos.y) ** 2
+
+    target = min(guarded, key=_dist2)
+    start_fleet_movement(cm, ships, src_star, target)
 
 
 # ---- Troop transport invasion -----------------------------------------
