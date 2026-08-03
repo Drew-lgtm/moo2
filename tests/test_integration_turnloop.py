@@ -28,8 +28,10 @@ def game_db(tmp_path, monkeypatch):
     monkeypatch.setattr(antaran, "RAID_FIRST_TURN", 5)
     monkeypatch.setattr(antaran, "RAID_INTERVAL", 8)
     monkeypatch.setattr(antaran, "RAID_DURATION", 2)
+    pygame.display.quit()   # start clean
     pygame.init()
     yield
+    pygame.display.quit()   # release the display for later tests
 
 
 def _boot():
