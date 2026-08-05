@@ -13,7 +13,7 @@ picks any combination of traits whose costs sum to <= the budget.
 Trait effects are applied:
 - in ``economy.planet_output()`` for per-pop / per-build bonuses
 - in ``economy.pop_growth_tick()`` for growth-rate + food modifiers
-- in ``combat.combat_tick()`` (TODO) for ship attack / hull bonuses
+- in ``combat._empire_bonuses()`` for ship attack / hull bonuses
 """
 from __future__ import annotations
 

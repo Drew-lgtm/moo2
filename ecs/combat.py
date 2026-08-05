@@ -35,7 +35,7 @@ from ecs.db import get_connection, delete_ship
 from ecs.ship_design import stats_from_ship
 from ecs.veterancy import (
     attack_bonus as vet_attack_bonus, hull_bonus as vet_hull_bonus,
-    ship_experience, grant_combat_xp,
+    rank_name as vet_rank_name, ship_experience, grant_combat_xp,
 )
 from ecs import battle
 from ecs.battle import Combatant
@@ -468,9 +468,24 @@ def combat_tick(game, new_turn: int):
             eid: attack_by_eid_round1.get(eid, 0) + def_here.get(eid, 0)
             for eid in participants
         }
+        # Veteran ranks each side FOUGHT at — snapshotted before the
+        # post-battle XP grant below mutates experience.
+        side_veterans: dict[int, dict] = {}
+        for eid in participants:
+            ranks: dict[str, int] = {}
+            for e in ships_here.get(eid, []):
+                sc = cm.get_component(e, Ship)
+                if sc is None:
+                    continue
+                nm = vet_rank_name(ship_experience(sc))
+                ranks[nm] = ranks.get(nm, 0) + 1
+            side_veterans[eid] = ranks
+
+        fire_stats: dict[int, dict] = {}
         battle.resolve_auto(combatants_by_eid, def_here, _hostile,
                             random.Random(new_turn * 1009 + star_entity),
-                            max_rounds=MAX_COMBAT_ROUNDS)
+                            max_rounds=MAX_COMBAT_ROUNDS,
+                            stats=fire_stats)
         side_losses: dict[int, list[int]] = {
             eid: [c.key for c in combatants_by_eid.get(eid, []) if c.destroyed]
             for eid in participants
@@ -504,6 +519,7 @@ def combat_tick(game, new_turn: int):
                 if sc is not None:
                     by_class[sc.ship_class] = by_class.get(sc.ship_class, 0) + 1
             lost = len(side_losses[eid])
+            fire = fire_stats.get(eid, {})
             sides.append({
                 "empire_id": eid,
                 "attack": side_attack[eid],
@@ -512,6 +528,12 @@ def combat_tick(game, new_turn: int):
                 "total_before": len(ships),
                 "lost": lost,
                 "remaining": len(ships) - lost,
+                # Fire breakdown so the player can see what actually did the
+                # damage — and whether point-defense earned its slot.
+                "beam_fired": fire.get("beam", 0),
+                "missile_fired": fire.get("missile", 0),
+                "intercepted": fire.get("intercepted", 0),
+                "veterans": side_veterans.get(eid, {}),
             })
         log_entry = {
             "turn": new_turn,

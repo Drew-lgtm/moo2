@@ -5,9 +5,9 @@ build queue. Ship "projects" live in ecs.projects.PROJECTS with id
 ``ship_<class>`` and type "ship"; completing one spawns a Ship entity at
 the building planet's star instead of marking the project as completed.
 
-Combat stats (attack, hull) are placeholders for the future combat tick.
-``speed`` is parsecs per turn — used by the fleet movement tick once
-that lands.
+Combat stats (attack, hull) feed ``combat._build_combatants``; a hull's
+optional ``fighter_attack`` is interceptable strike-craft fire (carriers).
+``speed`` is parsecs per turn, used by the fleet movement tick.
 
 **Speed model**: in vacuum there's no drag, so cruise speed is set by
 the drive tech rather than hull size. Every combat hull therefore

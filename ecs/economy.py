@@ -708,12 +708,17 @@ def production_tick(game, new_turn: int):
                         delta = (compute_max_population(target, planet.size)
                                  - compute_max_population(planet.planet_type,
                                                           planet.size))
+                        was = planet.planet_type
                         planet.planet_type = target
                         if delta:
                             pop.max += delta
                         pop_updates.append((planet.id, pop.current, pop.max,
                                             pop.growth_progress))
                         planet_type_updates.append((planet.id, target))
+                        if player_id is not None and owner.empire_id == player_id:
+                            turn_log(game, CAT_BUILDING,
+                                     f"Terraformed {was} → {target} "
+                                     f"(+{delta} max pop)")
 
                     # Upgrade chain: a new project in the same chain
                     # scraps every previous tier on this planet. Used

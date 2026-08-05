@@ -184,7 +184,8 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
                  defenses: dict[int, int],
                  hostile_fn,
                  rng: random.Random,
-                 max_rounds: int = MAX_AUTO_ROUNDS) -> None:
+                 max_rounds: int = MAX_AUTO_ROUNDS,
+                 stats: dict | None = None) -> None:
     """Run a multi-round auto battle in place.
 
     - ``combatants_by_eid``: empire id → its live Combatant roster.
@@ -192,12 +193,27 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
       each round but can't be destroyed (stations in space combat).
     - ``hostile_fn(a, b)``: True if empires a and b are at war.
     - ``rng``: seeded for determinism.
+    - ``stats``: optional dict the resolver fills with a per-empire
+      breakdown accumulated over the battle::
+
+          stats[empire_id] = {"beam": int, "missile": int, "intercepted": int}
+
+      ``beam``/``missile`` are the damage that side fired (beam includes
+      planetary defense); ``intercepted`` is the incoming missile/fighter
+      damage that side's own point-defense shot down. Used by the combat
+      report so the player can see whether point-defense actually mattered.
 
     Each round every living side pools its ships' attack (plus its
     planetary defense), rolls the spread once per side, and spends the
     pool on each hostile opponent. Shields regen at round end. Stops
     when fewer than two hostile sides remain or ``max_rounds`` elapses.
     """
+    def _tally(eid: int, key: str, amount: int):
+        if stats is None or not amount:
+            return
+        row = stats.setdefault(eid, {"beam": 0, "missile": 0, "intercepted": 0})
+        row[key] += amount
+
     for _round in range(max_rounds):
         living = [eid for eid in combatants_by_eid
                   if any(not c.destroyed for c in combatants_by_eid[eid])
@@ -228,6 +244,8 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
                 + defenses.get(eid, 0)
             side_missile[eid] = roll_damage(missile, rng) if missile > 0 else 0
             side_pd[eid] = sum(c.point_defense for c in roster if not c.destroyed)
+            _tally(eid, "beam", side_beam[eid])
+            _tally(eid, "missile", side_missile[eid])
 
         for eid in living:
             hostiles = [o for o in living if o != eid and hostile_fn(eid, o)]
@@ -235,6 +253,8 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
             missile_in = sum(side_missile[o] for o in hostiles)
             # This side's point-defense shoots down incoming missiles/
             # fighters (a per-round interception budget); beams get through.
+            stopped = min(missile_in, side_pd.get(eid, 0))
+            _tally(eid, "intercepted", stopped)
             missile_in = max(0, missile_in - side_pd.get(eid, 0))
             apply_damage_pool(combatants_by_eid.get(eid, []),
                               beam_in + missile_in, rng)

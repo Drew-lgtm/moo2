@@ -71,17 +71,46 @@ def grant_combat_xp(game, ship_entities, enemies_killed: int):
         return
     cm = game.component_mgr
     updates = []
+    promotions: list[tuple[str, str]] = []   # (ship_class, new rank)
     for e in ship_entities:
         ship = cm.get_component(e, Ship)
         if ship is None or ship.id is None or ship.id < 0:
             continue
-        ship.experience = ship_experience(ship) + gain
+        before = ship_experience(ship)
+        ship.experience = before + gain
+        if rank_index(ship.experience) > rank_index(before):
+            promotions.append((ship.ship_class, rank_name(ship.experience)))
         updates.append((ship.id, ship.experience))
     if updates:
         with get_connection() as conn:
             for sid, xp in updates:
                 update_ship_experience(conn, sid, xp)
             conn.commit()
+    # Tell the player when their crews earn a promotion — otherwise
+    # veterancy accrues completely invisibly.
+    if promotions:
+        _log_promotions(game, ship_entities, promotions)
+
+
+def _log_promotions(game, ship_entities, promotions):
+    """Turn-log line for the player's own rank-ups only."""
+    from ecs.components import ShipOwner
+    from ecs.turn_log import log as turn_log, CAT_COMBAT
+    cm = game.component_mgr
+    player = game.player_empire() if hasattr(game, "player_empire") else None
+    if player is None:
+        return
+    owner = next((cm.get_component(e, ShipOwner) for e in ship_entities
+                  if cm.get_component(e, ShipOwner) is not None), None)
+    if owner is None or owner.empire_id != player.id:
+        return
+    if len(promotions) == 1:
+        cls, rank = promotions[0]
+        turn_log(game, CAT_COMBAT,
+                 f"{cls.replace('_', ' ').title()} crew promoted to {rank}")
+    else:
+        turn_log(game, CAT_COMBAT,
+                 f"{len(promotions)} crews promoted (veterancy)")
 
 
 def award_battle_veterancy(game, battle):

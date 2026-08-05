@@ -154,6 +154,25 @@ class CombatReportScene(Scene):
         else:
             iy += 4
 
+        # Fire breakdown — what actually did the damage, and whether this
+        # side's point-defense shot incoming ordnance down. Only shown when
+        # there's something to say (older reports lack these keys).
+        beam = side.get("beam_fired", 0)
+        missile = side.get("missile_fired", 0)
+        stopped = side.get("intercepted", 0)
+        if beam or missile:
+            screen.blit(self.small_font.render(
+                f"  dealt: {beam} beam / {missile} missile+fighter",
+                True, (200, 200, 225)), (ix, iy))
+            iy += 20
+        if stopped:
+            # Defensive: this side's PD shot down that much INCOMING
+            # missile/fighter damage before it landed.
+            screen.blit(self.small_font.render(
+                f"  its point-defense stopped {stopped} incoming",
+                True, (150, 220, 180)), (ix, iy))
+            iy += 20
+
         # Ships committed, by class.
         screen.blit(self.small_font.render("Fleet:", True, HINT_COLOR), (ix, iy))
         iy += 22
@@ -164,6 +183,16 @@ class CombatReportScene(Scene):
                 iy += 20
         else:
             screen.blit(self.small_font.render("  (none)", True, HINT_COLOR), (ix, iy))
+            iy += 20
+
+        # Veteran ranks the fleet fought at (anything above Green is worth
+        # seeing — it tells you whether experience is paying off).
+        vets = {r: n for r, n in (side.get("veterans") or {}).items()
+                if r != "Green"}
+        if vets:
+            summary = ", ".join(f"{n} {r}" for r, n in sorted(vets.items()))
+            screen.blit(self.small_font.render(f"  crews: {summary}", True,
+                                               (220, 200, 130)), (ix, iy))
             iy += 20
 
         iy += 8
