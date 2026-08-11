@@ -121,12 +121,24 @@ class TacticalShip:
     shield_current: int = 0
     shield_regen: int = 0
     armor: int = 0
+    # Interceptable ordnance (missile weapons + carrier fighters) and this
+    # ship's own interception rating. ``pd_remaining`` is the per-round
+    # interception budget, refreshed in ``end_round`` — the same model the
+    # strategic resolver uses (ecs.battle.resolve_auto).
+    missile_attack: int = 0
+    point_defense: int = 0
+    pd_remaining: int = 0
     # Stationary defensive platforms (Star Base / Battlestation /
     # Star Fortress) — can fire, can be damaged, but never move and
     # don't persist damage into the strategic layer.
     is_station: bool = False
     has_fired: bool = False
     destroyed: bool = False
+
+    def __post_init__(self):
+        # Start the first round with a full interception budget.
+        if self.pd_remaining == 0 and self.point_defense:
+            self.pd_remaining = self.point_defense
 
     @property
     def has_moved(self) -> bool:
@@ -225,14 +237,26 @@ class TacticalBattle:
         from ecs import battle as _battle
         rng = rng or random
         raw = _battle.roll_damage(attacker.attack, rng, range_mult)
+        # Missile / fighter ordnance is interceptable: the TARGET's
+        # point-defense shoots some of it down before it lands, drawing
+        # down a per-round budget (mirrors the strategic resolver).
+        intercepted = 0
+        if attacker.missile_attack > 0:
+            missile_raw = _battle.roll_damage(attacker.missile_attack, rng,
+                                              range_mult)
+            intercepted = min(missile_raw, max(0, target.pd_remaining))
+            target.pd_remaining = max(0, target.pd_remaining - intercepted)
+            raw += missile_raw - intercepted
         view = _combatant_view(target)
-        result = _battle.apply_hit(view, raw)
+        result = _battle.apply_hit(view, raw) if raw > 0 else {
+            "damage": 0, "to_shield": 0, "to_hull": 0, "destroyed": False}
         target.shield_current = view.shield
         target.hull = view.hull
         target.destroyed = view.destroyed
         attacker.has_fired = True
         return {"fired": True, "damage": result["damage"],
                 "to_shield": result["to_shield"], "to_hull": result["to_hull"],
+                "intercepted": intercepted,
                 "destroyed": view.destroyed, "reason": None}
 
     def end_round(self):
@@ -244,6 +268,7 @@ class TacticalBattle:
                 continue
             s.has_fired = False
             s.moves_left = s.speed
+            s.pd_remaining = s.point_defense   # interceptors rearm
             if s.shield_max > 0:
                 s.shield_current = min(s.shield_max,
                                         s.shield_current + s.shield_regen)
@@ -320,6 +345,10 @@ def _combatant_view(ship: "TacticalShip"):
         hull=ship.hull, hull_max=ship.max_hull,
         shield=ship.shield_current, shield_max=ship.shield_max,
         shield_regen=ship.shield_regen, defense=ship.armor,
+        # Carry the interceptable ordnance + PD through, so an
+        # auto-resolved tactical battle applies the same missile-vs-
+        # point-defense rules as a hand-played one.
+        missile_attack=ship.missile_attack, point_defense=ship.point_defense,
     )
 
 

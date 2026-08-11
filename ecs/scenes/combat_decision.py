@@ -137,7 +137,8 @@ class CombatDecisionScene(Scene):
         from ecs.tactical import auto_resolve
         # Snapshot pre-battle attack for the combat report before ships die.
         attack_by_eid_before = {
-            eid: sum(s.attack for s in battle.ships_for(eid))
+            eid: sum(s.attack + s.missile_attack
+                     for s in battle.ships_for(eid))
             for eid in battle.empires_present()
         }
         auto_resolve(battle, self._rng)

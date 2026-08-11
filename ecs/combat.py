@@ -200,13 +200,13 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
             # Total hull = ship_class base + equipment hull bonus + veterancy.
             base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
             hull = max(1, int(base_hull + stats.get("hull", 0)) + vet_hull_bonus(xp))
-            # Tactical (hex) combat doesn't model point-defense interception
-            # yet, so missile + fighter fire counts as direct attack here —
-            # keeps missile ships at full strength in a manual battle.
-            attack = max(0, int(stats.get("attack", 0))
-                         + int(stats.get("missile_attack", 0))
-                         + _SHIPS.get(ship.ship_class, {}).get("fighter_attack", 0)
-                         + vet_attack_bonus(xp))
+            # Beam (direct-fire) attack; missile/fighter ordnance is kept
+            # separate so the target's point-defense can intercept it in
+            # tactical battles too, matching the strategic resolver.
+            attack = max(0, int(stats.get("attack", 0)) + vet_attack_bonus(xp))
+            missile_attack = max(0, int(stats.get("missile_attack", 0))
+                                 + _SHIPS.get(ship.ship_class, {}).get(
+                                     "fighter_attack", 0))
             shield_max = max(0, int(stats.get("shield_capacity", 0))) + shield_bonus
             shield_regen = max(0, int(stats.get("shield_regen", 0)))
             # 'defense' in stats_from_ship is an evasion-style flat —
@@ -223,6 +223,8 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                 col=col, row=row,
                 hull=hull, max_hull=hull,
                 attack=attack,
+                missile_attack=missile_attack,
+                point_defense=max(0, int(stats.get("point_defense", 0))),
                 speed=speed, moves_left=speed,
                 shield_max=shield_max, shield_current=shield_max,
                 shield_regen=shield_regen,

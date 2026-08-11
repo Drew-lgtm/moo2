@@ -99,7 +99,8 @@ class TacticalScene(Scene):
         # Snapshot each side's total attack before anyone dies, for the
         # post-battle combat report.
         self._attack_before = {
-            eid: sum(s.attack for s in self.battle.ships_for(eid))
+            eid: sum(s.attack + s.missile_attack
+                     for s in self.battle.ships_for(eid))
             for eid in self.battle.empires_present()
         }
         self._log(f"Engagement at {self.battle.star_name} — round 1")
@@ -435,7 +436,10 @@ class TacticalScene(Scene):
                 + (f"  (+{s.shield_regen}/rd)" if s.shield_regen else ""),
                 f"Armor:  {s.armor}",
                 f"Hull:   {s.hull}/{s.max_hull}",
-                f"Attack: {s.attack}",
+                f"Attack: {s.attack}"
+                + (f"  +{s.missile_attack} msl" if s.missile_attack else ""),
+                (f"PD:     {s.pd_remaining}/{s.point_defense} this round"
+                 if s.point_defense else "PD:     none"),
                 f"Move:   {s.moves_left}/{s.speed} MP",
                 f"Fired:  {'yes' if s.has_fired else 'no'}",
             ):
