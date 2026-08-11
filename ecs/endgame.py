@@ -10,8 +10,9 @@ left is eliminated (its stray ships are scrapped). Outcomes, from the
 Diplomatic victory is handled separately by the Galactic Council, which
 routes through the same end screen + hall of fame.
 
-The score formula here is a placeholder — colonies, population, and
-treasury — to be refined later.
+Scoring splits into six pillars (see ``score_breakdown``) so the
+game-over screen can show what drove the number, then applies an
+outcome bonus and a turn-speed multiplier for the Hall of Fame.
 """
 from __future__ import annotations
 
@@ -35,6 +36,12 @@ def living_empires(component_mgr) -> list[int]:
     return [eid for eid, n in colony_counts(component_mgr).items() if n > 0]
 
 
+# Score value of one point of fitted equipment (attack/hull/shield), and
+# the extra fleet worth each veteran rank confers (rank 4 => +60%).
+EQUIP_VALUE = 4
+VETERAN_VALUE_PER_RANK = 0.15
+
+
 def score_breakdown(game, empire_id: int) -> dict:
     """Return the empire's score split into its six MOO2-flavoured
     pillars *plus* the raw total. Used both for tally and for the
@@ -48,7 +55,9 @@ def score_breakdown(game, empire_id: int) -> dict:
     - **Tech**        techs × 80         — accumulated knowledge
     - **Buildings**   sum × 20           — built-up empire
     - **Economy**     (BC + 2·RP) // 10  — banked resources & science
-    - **Military**    0.3 × Σ ship_cost  — fleet investment
+    - **Military**    0.3 × Σ fleet worth — fleet investment, where a
+      ship's worth is its hull cost plus fitted equipment, scaled up by
+      its crew's veteran rank (see ``ecs.veterancy``)
     """
     cm = game.component_mgr
     colonies = pop = buildings = 0
@@ -73,13 +82,25 @@ def score_breakdown(game, empire_id: int) -> dict:
             techs = len(ts.unlocked)
             break
 
+    # Fleet worth = hull cost + the equipment actually bolted onto it,
+    # scaled by the crew's veterancy. A bare hull and a fully-kitted
+    # veteran of the same class are NOT the same investment.
+    from ecs.ship_design import stats_from_ship
+    from ecs.veterancy import rank_index, ship_experience
     fleet_value = 0
     for ship_entity, owner in cm.get_all(ShipOwner):
         if owner.empire_id != empire_id:
             continue
         ship = cm.get_component(ship_entity, Ship)
-        if ship is not None:
-            fleet_value += SHIPS.get(ship.ship_class, {}).get("cost", 0)
+        if ship is None:
+            continue
+        value = SHIPS.get(ship.ship_class, {}).get("cost", 0)
+        st = stats_from_ship(ship)
+        value += (st.get("attack", 0) + st.get("missile_attack", 0)
+                  + st.get("hull", 0) + st.get("shield_capacity", 0)) * EQUIP_VALUE
+        value = int(round(value * (1 + rank_index(ship_experience(ship))
+                                   * VETERAN_VALUE_PER_RANK)))
+        fleet_value += value
 
     pillars = {
         "Population": pop * 10,
