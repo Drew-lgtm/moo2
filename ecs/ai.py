@@ -161,6 +161,9 @@ def _score_candidate_planet(planet, traits: list[str], focus: str) -> float:
 
 def ai_tick(game, new_turn: int):
     cm = game.component_mgr
+    # Passed to every fleet dispatch so AI movement obeys the same
+    # Warp Dissipator pinning rule the player's orders do.
+    diplo = getattr(game, "diplomacy", None)
 
     # Group owned entities per empire upfront.
     empire_planets: dict[int, list[int]] = {}
@@ -240,8 +243,10 @@ def ai_tick(game, new_turn: int):
         # them to the highest-value reachable star (score minus
         # distance penalty), limited to fuel range.
         reachable = reachable_stars(game, empire.id)
-        _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus, reachable)
-        _ai_dispatch_outpost_ships(cm, empire, outpost_candidates, reachable)
+        _ai_dispatch_colony_ships(cm, empire, candidate_stars, focus, reachable,
+                                  diplo=diplo)
+        _ai_dispatch_outpost_ships(cm, empire, outpost_candidates, reachable,
+                                   diplo=diplo)
 
         # Diplomacy: gang up on runaways, sign treaties with friends,
         # declare war on hated rivals.
@@ -263,8 +268,8 @@ def ai_tick(game, new_turn: int):
             # in position, then send idle Troop Transports at enemy
             # planets and warships at the player's homeworld.
             _ai_bombard(game, empire)
-            _ai_dispatch_troop_transports(cm, empire, reachable)
-            _ai_dispatch_ships(cm, empire, reachable)
+            _ai_dispatch_troop_transports(cm, empire, reachable, diplo=diplo)
+            _ai_dispatch_ships(cm, empire, reachable, diplo=diplo)
         else:
             # Peaceful/expansionist AIs put their fleet to work clearing
             # space-monster guardians to open up rich systems.
@@ -694,7 +699,7 @@ def _ai_plant_arrived_outposts(game, empire):
 
 
 def _ai_dispatch_outpost_ships(cm, empire, outpost_candidates: list[int],
-                                reachable: set[int] | None = None):
+                                reachable: set[int] | None = None, diplo=None):
     """Send parked Outpost Ships to the nearest reachable unclaimed
     star. Distance-only since every candidate is equally valuable as a
     claim — sensor coverage falls off with distance from owned space,
@@ -736,7 +741,7 @@ def _ai_dispatch_outpost_ships(cm, empire, outpost_candidates: list[int],
             if d2 < best_d2:
                 best_d2, best = d2, cand
         if best is not None:
-            start_fleet_movement(cm, ships, src_star, best)
+            start_fleet_movement(cm, ships, src_star, best, diplo=diplo)
 
 
 # Distance penalty per parsec squared (px²) — keeps the formula in raw
@@ -748,7 +753,7 @@ _DISPATCH_DISTANCE_WEIGHT = 0.0001
 
 
 def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str,
-                              reachable: set[int] | None = None):
+                              reachable: set[int] | None = None, diplo=None):
     """Send parked Colony Ships not currently at a candidate star to
     the star whose best planet has the highest score, minus a small
     distance penalty. Only targets within fuel range. No-op if there
@@ -799,10 +804,10 @@ def _ai_dispatch_colony_ships(cm, empire, candidate_stars: list[int], focus: str
             if value > best_value:
                 best_value, best = value, cand
         if best is not None:
-            start_fleet_movement(cm, ships, src_star, best)
+            start_fleet_movement(cm, ships, src_star, best, diplo=diplo)
 
 
-def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None):
+def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None, diplo=None):
     """Aggressive AI: send warships at the player's homeworld — but only
     if it's within fuel range. Out-of-reach targets are left alone so
     the AI doesn't strand fleets in the void."""
@@ -842,7 +847,7 @@ def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None):
 
     for src_star, ships in ships_by_star.items():
         if ships:
-            start_fleet_movement(cm, ships, src_star, target_star)
+            start_fleet_movement(cm, ships, src_star, target_star, diplo=diplo)
 
 
 # Minimum warship concentration an AI will commit to storm a space-monster
@@ -903,7 +908,8 @@ def _ai_clear_monsters(game, empire, reachable):
         return (p.x - src_pos.x) ** 2 + (p.y - src_pos.y) ** 2
 
     target = min(guarded, key=_dist2)
-    start_fleet_movement(cm, ships, src_star, target)
+    start_fleet_movement(cm, ships, src_star, target,
+                         diplo=getattr(game, 'diplomacy', None))
 
 
 # ---- Troop transport invasion -----------------------------------------
@@ -1038,10 +1044,10 @@ def _ai_stage_strike(game, empire, target_empire_id: int):
             if d2 < best_d2:
                 best_d2, best = d2, ts
         if best is not None:
-            start_fleet_movement(cm, ships, src_star, best)
+            start_fleet_movement(cm, ships, src_star, best, diplo=diplo)
 
 
-def _ai_dispatch_troop_transports(cm, empire, reachable: set[int] | None = None):
+def _ai_dispatch_troop_transports(cm, empire, reachable: set[int] | None = None, diplo=None):
     """Send idle Troop Transports to the closest reachable enemy star."""
     enemy_stars = _enemy_owned_stars(cm, empire.id)
     if reachable is not None:
@@ -1077,7 +1083,7 @@ def _ai_dispatch_troop_transports(cm, empire, reachable: set[int] | None = None)
             if d2 < best_dist:
                 best_dist, best = d2, star
         if best is not None:
-            start_fleet_movement(cm, ships, src_star, best)
+            start_fleet_movement(cm, ships, src_star, best, diplo=diplo)
 
 
 def _ai_diplomacy(game, empire, personality, turn: int):

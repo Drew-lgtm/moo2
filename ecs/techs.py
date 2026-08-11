@@ -257,7 +257,8 @@ TECHS: dict[str, dict] = {
         "id": "warp_dissipator", "name": "Warp Dissipator",
         "field": "power", "tier": 3, "tier_group": _t("power", 3),
         "cost": 300, "prereqs": ["fusion_drives"],
-        "description": "Disable enemy FTL in-system", "effect_stub": True,
+        "description": "Enemy fleets can't jump out of a system your "
+                       "warships hold — they must fight or die.",
     },
     "anti_matter_drives": {
         "id": "anti_matter_drives", "name": "Anti-Matter Drives",

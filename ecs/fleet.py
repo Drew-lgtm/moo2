@@ -58,21 +58,67 @@ def empire_speed_bonus(component_mgr, empire_id: int) -> int:
     return 0
 
 
-def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star_entity):
+# Tech that pins hostile fleets in a system they share with its owner.
+WARP_DISSIPATOR = "warp_dissipator"
+
+
+def warp_dissipator_blocks(component_mgr, star_entity, empire_id, diplo) -> bool:
+    """True if a hostile empire fielding a Warp Dissipator has a warship at
+    ``star_entity`` — its interference pins ``empire_id``'s ships in the
+    system, so they can't jump out until the enemy is driven off.
+
+    Without a diplomacy object (old saves / headless callers) nothing is
+    pinned, so movement behaves exactly as before.
+    """
+    if diplo is None:
+        return False
+    from ecs.components import Ship, ShipOwner, ShipAt, TechState
+    from ecs.combat import empires_hostile
+    from ecs.ai import WARSHIP_CLASSES
+    unlocked_by: dict[int, set] = {
+        ts.empire_id: set(ts.unlocked)
+        for _e, ts in component_mgr.get_all(TechState)
+    }
+    for ship_entity, at in component_mgr.get_all(ShipAt):
+        if at.star_entity != star_entity:
+            continue
+        owner = component_mgr.get_component(ship_entity, ShipOwner)
+        ship = component_mgr.get_component(ship_entity, Ship)
+        if owner is None or ship is None or owner.empire_id == empire_id:
+            continue
+        if ship.ship_class not in WARSHIP_CLASSES:
+            continue
+        if WARP_DISSIPATOR not in unlocked_by.get(owner.empire_id, ()):
+            continue
+        if empires_hostile(diplo, empire_id, owner.empire_id):
+            return True
+    return False
+
+
+def start_fleet_movement(component_mgr, ship_entities, from_star_entity,
+                         to_star_entity, diplo=None) -> bool:
     """Move the given ship entities from one star to another as a fleet.
 
     The whole fleet travels at the slowest member's speed, so a mixed
     Frigate + Dreadnought fleet arrives together rather than getting
     spread across multiple turns. Persists the new transit state.
+
+    Returns True if the fleet departed. Passing ``diplo`` enables the
+    Warp Dissipator rule: a hostile fielding that tech at the departure
+    star pins the fleet in place (returns False, nothing moves).
     """
     if not ship_entities or from_star_entity == to_star_entity:
-        return
+        return False
+    owner = component_mgr.get_component(ship_entities[0], ShipOwner)
+    if owner is not None and warp_dissipator_blocks(
+            component_mgr, from_star_entity, owner.empire_id, diplo):
+        return False
     from_pos = component_mgr.get_component(from_star_entity, Position)
     to_pos = component_mgr.get_component(to_star_entity, Position)
     from_ref = component_mgr.get_component(from_star_entity, StarRef)
     to_ref = component_mgr.get_component(to_star_entity, StarRef)
     if from_pos is None or to_pos is None or from_ref is None or to_ref is None:
-        return
+        return False
 
     # Owner's drive tech contributes a flat speed bonus to every ship
     # in the fleet. Assume same-owner fleet — read from the first ship.
@@ -110,6 +156,7 @@ def start_fleet_movement(component_mgr, ship_entities, from_star_entity, to_star
             )
             update_ship_transit(conn, ship.id, from_ref.db_id, to_ref.db_id, fleet_turns)
         conn.commit()
+    return True
 
 
 def fleet_tick(game, new_turn: int):

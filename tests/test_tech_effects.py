@@ -15,7 +15,6 @@ from ecs.projects import PROJECTS, projects_in_category
 # Techs deliberately left stubbed: they need a system the game doesn't
 # have yet. Kept honest — their tooltip still says "not yet implemented".
 STILL_STUBBED = {
-    "warp_dissipator",       # needs fleet-retreat / order gating
     "evolutionary_mutation",  # needs a mid-game trait-swap UI
 }
 

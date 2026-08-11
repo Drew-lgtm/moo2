@@ -239,7 +239,12 @@ class GalaxyScene(Scene):
             to_send.extend(available[:count])
 
         if to_send:
-            start_fleet_movement(cm, to_send, self.selected_fleet_star, dest_star_entity)
+            moved = start_fleet_movement(
+                cm, to_send, self.selected_fleet_star, dest_star_entity,
+                diplo=getattr(self.game, "diplomacy", None))
+            if not moved:
+                self._fuel_warning = ("Enemy Warp Dissipator pins your fleet "
+                                      "here — destroy their ships first.")
 
     def _selected_ships_at_source(self) -> list[int]:
         """The concrete ship entities matching selected_counts at the
