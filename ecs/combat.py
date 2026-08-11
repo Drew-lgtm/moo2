@@ -152,7 +152,8 @@ def _build_combatants(component_mgr, ships_here, bonuses_fn, leader_map,
 def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                            player_id: int, ships_here: dict[int, list[int]],
                            ship_stats_full,
-                           def_here: dict[int, int] | None = None) -> TacticalBattle:
+                           def_here: dict[int, int] | None = None,
+                           bonuses_fn=None, leader_map=None) -> TacticalBattle:
     """Snapshot the ECS state at ``star_entity`` into a TacticalBattle.
 
     Placement: player ships on the left columns (0-2), enemies on the
@@ -182,6 +183,10 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                     [eid for eid in ships_here if eid != player_id])
     for slot_idx, eid in enumerate(empire_order):
         ships = ships_here.get(eid, [])
+        # Empire-wide attack/hull bonuses (race traits + tech), same as
+        # the strategic path — otherwise the SAME fleet fights weaker in
+        # the hex scene than it would auto-resolved.
+        atk_bonus, hull_bonus = bonuses_fn(eid) if bonuses_fn else (0, 0)
         # Energy Absorber shield bonus, same as the strategic path.
         shield_bonus = _empire_ship_shield_bonus(cm, eid)
         if slot_idx == 0:
@@ -197,13 +202,18 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                 continue
             stats = ship_stats_full(ship_entity)
             xp = ship_experience(ship)
-            # Total hull = ship_class base + equipment hull bonus + veterancy.
+            leader_atk, leader_hull = (leader_map or {}).get(ship.id, (0, 0))
+            # Total hull = ship_class base + equipment + empire/leader
+            # bonuses + veterancy (mirrors _build_combatants exactly).
             base_hull = _SHIPS.get(ship.ship_class, {}).get("hull", 0)
-            hull = max(1, int(base_hull + stats.get("hull", 0)) + vet_hull_bonus(xp))
-            # Beam (direct-fire) attack; missile/fighter ordnance is kept
-            # separate so the target's point-defense can intercept it in
-            # tactical battles too, matching the strategic resolver.
-            attack = max(0, int(stats.get("attack", 0)) + vet_attack_bonus(xp))
+            hull = max(1, int(base_hull + stats.get("hull", 0))
+                       + hull_bonus + leader_hull + vet_hull_bonus(xp))
+            # Beam (direct-fire) attack, including the hull's own base gun;
+            # missile/fighter ordnance is kept separate so the target's
+            # point-defense can intercept it here too.
+            attack = max(0, _SHIPS.get(ship.ship_class, {}).get("attack", 0)
+                         + int(stats.get("attack", 0))
+                         + atk_bonus + leader_atk + vet_attack_bonus(xp))
             missile_attack = max(0, int(stats.get("missile_attack", 0))
                                  + _SHIPS.get(ship.ship_class, {}).get(
                                      "fighter_attack", 0))
@@ -225,6 +235,7 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
                 attack=attack,
                 missile_attack=missile_attack,
                 point_defense=max(0, int(stats.get("point_defense", 0))),
+                veteran_rank=vet_rank_name(xp),
                 speed=speed, moves_left=speed,
                 shield_max=shield_max, shield_current=shield_max,
                 shield_regen=shield_regen,
@@ -450,6 +461,7 @@ def combat_tick(game, new_turn: int):
                 cm, star_entity, new_turn, player_id,
                 ships_here, _ship_stats_full,
                 def_here=def_here,
+                bonuses_fn=_bonuses, leader_map=leader_map,
             ))
             continue
 

@@ -108,12 +108,14 @@ class CombatReportScene(Scene):
         total_w = panel_w * min(2, len(sides)) + gap * (min(2, len(sides)) - 1)
         start_x = cx - total_w // 2
         y = 130
+        panel_h = 0
         for i, side in enumerate(sides[:2]):
             x = start_x + i * (panel_w + gap)
-            self._draw_side(screen, side, x, y, panel_w)
+            panel_h = max(panel_h, self._draw_side(screen, side, x, y, panel_w))
 
         # Outcome banner — whoever kept the most ships held the field.
-        outcome_y = y + 300
+        # Sits below the tallest panel (panels size to their content).
+        outcome_y = y + panel_h + 20
         self._draw_outcome(screen, report, cx, outcome_y)
 
         # Continue button.
@@ -131,7 +133,18 @@ class CombatReportScene(Scene):
         color = empire_color(emp.color) if emp else (200, 200, 200)
         is_player = emp is not None and emp.is_player
 
-        h = 280
+        # Height follows the content: the fleet list grows with the number
+        # of distinct ship classes, and the fire/interception/crew lines are
+        # conditional — a fixed height used to overflow the border.
+        n_classes = max(1, len(side.get("ships_before") or {}))
+        extra_lines = sum((
+            1 if (side.get("beam_fired") or side.get("missile_fired")) else 0,
+            1 if side.get("intercepted") else 0,
+            1 if {r: n for r, n in (side.get("veterans") or {}).items()
+                  if r != "Green"} else 0,
+            1 if side.get("defense") else 0,
+        ))
+        h = 190 + n_classes * 20 + extra_lines * 20
         rect = pygame.Rect(x, y, w, h)
         pygame.draw.rect(screen, (16, 18, 30), rect)
         pygame.draw.rect(screen, color, rect, 2)
@@ -202,6 +215,7 @@ class CombatReportScene(Scene):
         iy += 26
         screen.blit(self.body_font.render(f"Survived: {remaining}", True,
                     WIN_COLOR if remaining else LOSS_COLOR), (ix, iy))
+        return h
 
     def _draw_outcome(self, screen, report, cx, y):
         sides = report["sides"]

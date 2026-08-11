@@ -233,10 +233,15 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
         # guns + planetary defense) can't be intercepted; missile/fighter
         # fire can be shot down by the target's point-defense. Track them
         # separately, plus each side's PD interception budget.
+        # Only sides with a hostile present actually fight. A co-located
+        # neutral must not roll (which would perturb the shared RNG for the
+        # real belligerents) nor be tallied as having dealt damage.
+        fighting = [eid for eid in living
+                    if any(o != eid and hostile_fn(eid, o) for o in living)]
         side_beam: dict[int, int] = {}
         side_missile: dict[int, int] = {}
         side_pd: dict[int, int] = {}
-        for eid in living:
+        for eid in fighting:
             roster = combatants_by_eid.get(eid, [])
             beam = sum(c.attack for c in roster if not c.destroyed)
             missile = sum(c.missile_attack for c in roster if not c.destroyed)
@@ -244,13 +249,18 @@ def resolve_auto(combatants_by_eid: dict[int, list[Combatant]],
                 + defenses.get(eid, 0)
             side_missile[eid] = roll_damage(missile, rng) if missile > 0 else 0
             side_pd[eid] = sum(c.point_defense for c in roster if not c.destroyed)
-            _tally(eid, "beam", side_beam[eid])
-            _tally(eid, "missile", side_missile[eid])
 
-        for eid in living:
+        for eid in fighting:
             hostiles = [o for o in living if o != eid and hostile_fn(eid, o)]
-            beam_in = sum(side_beam[o] for o in hostiles)
-            missile_in = sum(side_missile[o] for o in hostiles)
+            beam_in = sum(side_beam.get(o, 0) for o in hostiles)
+            missile_in = sum(side_missile.get(o, 0) for o in hostiles)
+            # Credit each attacker with the fire THIS defender faced. A
+            # side's rolled pool is spent against every hostile, so tallying
+            # per-defender keeps "dealt" consistent with "intercepted"
+            # (which is inherently per-defender) in multi-way battles.
+            for o in hostiles:
+                _tally(o, "beam", side_beam.get(o, 0))
+                _tally(o, "missile", side_missile.get(o, 0))
             # This side's point-defense shoots down incoming missiles/
             # fighters (a per-round interception budget); beams get through.
             stopped = min(missile_in, side_pd.get(eid, 0))

@@ -205,7 +205,9 @@ class TacticalScene(Scene):
             for line in ai_take_turn(self.battle, eid, self._rng):
                 self._log(line)
         self._check_winner_and_maybe_finish()
-        if self.battle.finished:
+        # _finalise() clears self.battle when the fight is over (it also
+        # routes to the next scene), so re-check before touching it.
+        if self.battle is None or self.battle.finished:
             return
         self.battle.end_round()
         self._log(f"--- Round {self.battle.round} ---")

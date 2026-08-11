@@ -128,6 +128,9 @@ class TacticalShip:
     missile_attack: int = 0
     point_defense: int = 0
     pd_remaining: int = 0
+    # Crew veteran rank name (see ecs.veterancy) — display only, so the
+    # post-battle report can show what ranks fought.
+    veteran_rank: str = "Green"
     # Stationary defensive platforms (Star Base / Battlestation /
     # Star Fortress) — can fire, can be damaged, but never move and
     # don't persist damage into the strategic layer.
@@ -162,6 +165,18 @@ class TacticalBattle:
     # into the strategic layer's destruction pass.
     finished: bool = False
     winner_id: int | None = None
+    # Per-empire fire breakdown accumulated as shots resolve, mirroring
+    # ecs.battle.resolve_auto's collector so the combat report shows the
+    # same numbers whether a battle was played out or auto-resolved:
+    # {empire_id: {"beam": int, "missile": int, "intercepted": int}}
+    fire_stats: dict = field(default_factory=dict)
+
+    def tally_fire(self, empire_id: int, key: str, amount: int):
+        if not amount:
+            return
+        row = self.fire_stats.setdefault(
+            empire_id, {"beam": 0, "missile": 0, "intercepted": 0})
+        row[key] += amount
 
     # -- queries -----------------------------------------------------
 
@@ -241,11 +256,14 @@ class TacticalBattle:
         # point-defense shoots some of it down before it lands, drawing
         # down a per-round budget (mirrors the strategic resolver).
         intercepted = 0
+        self.tally_fire(attacker.empire_id, "beam", raw)
         if attacker.missile_attack > 0:
             missile_raw = _battle.roll_damage(attacker.missile_attack, rng,
                                               range_mult)
+            self.tally_fire(attacker.empire_id, "missile", missile_raw)
             intercepted = min(missile_raw, max(0, target.pd_remaining))
             target.pd_remaining = max(0, target.pd_remaining - intercepted)
+            self.tally_fire(target.empire_id, "intercepted", intercepted)
             raw += missile_raw - intercepted
         view = _combatant_view(target)
         result = _battle.apply_hit(view, raw) if raw > 0 else {
@@ -372,7 +390,13 @@ def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None):
     def hostile(a, b):
         return a != b
 
-    _battle.resolve_auto(by_eid, {}, hostile, rng)
+    # Collect the same fire breakdown a hand-played battle records, so the
+    # post-battle report is populated either way.
+    stats: dict = {}
+    _battle.resolve_auto(by_eid, {}, hostile, rng, stats=stats)
+    for eid, row in stats.items():
+        for key, amount in row.items():
+            tbattle.tally_fire(eid, key, amount)
     for side in by_eid.values():
         for c in side:
             ship = c.key
@@ -395,6 +419,7 @@ def battle_report(tbattle: TacticalBattle,
     empires = {s.empire_id for s in tbattle.ships}
     for eid in empires:
         by_class: dict[str, int] = {}
+        veterans: dict[str, int] = {}
         total = 0
         lost = 0
         for s in tbattle.ships:
@@ -406,9 +431,11 @@ def battle_report(tbattle: TacticalBattle,
             if s.is_station:
                 continue
             by_class[s.ship_class] = by_class.get(s.ship_class, 0) + 1
+            veterans[s.veteran_rank] = veterans.get(s.veteran_rank, 0) + 1
             total += 1
             if s.destroyed:
                 lost += 1
+        fire = tbattle.fire_stats.get(eid, {})
         sides.append({
             "empire_id": eid,
             "attack": attack_by_eid_before.get(eid, 0),
@@ -417,6 +444,12 @@ def battle_report(tbattle: TacticalBattle,
             "total_before": total,
             "lost": lost,
             "remaining": total - lost,
+            # Same observability keys the strategic path records, so the
+            # player's OWN battles show the fire/interception breakdown.
+            "beam_fired": fire.get("beam", 0),
+            "missile_fired": fire.get("missile", 0),
+            "intercepted": fire.get("intercepted", 0),
+            "veterans": veterans,
         })
     return {
         "turn": tbattle.turn,
