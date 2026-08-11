@@ -778,6 +778,7 @@ def production_tick(game, new_turn: int):
     empire_updates: list[tuple[int, int, int]] = []
     tech_updates: list[tuple[int, str | None, int]] = []
     tech_unlocks: list[tuple[int, str]] = []
+    tech_queue_updates: list[tuple[int, list[str]]] = []
     locked_tech_inserts: list[tuple[int, str]] = []
     tech_by_empire: dict[int, TechState] = {
         t.empire_id: t for _eid, t in cm.get_all(TechState)
@@ -858,8 +859,28 @@ def production_tick(game, new_turn: int):
                                 and alt not in tech.locked_out):
                             tech.locked_out.append(alt)
                             locked_tech_inserts.append((empire.id, alt))
+                    # Pull the next still-researchable tech off the queue
+                    # so research never idles a turn (entries invalidated
+                    # by this unlock — now-unlocked or locked-out — are
+                    # dropped as we go).
                     tech.current_target = None
                     tech.progress = 0
+                    if tech.queue:
+                        from ecs.techs import is_available
+                        unlocked_set = set(tech.unlocked)
+                        locked_set = set(tech.locked_out)
+                        while tech.queue:
+                            nxt = tech.queue.pop(0)
+                            if (nxt not in unlocked_set
+                                    and nxt not in locked_set
+                                    and is_available(nxt, unlocked_set, locked_set)):
+                                tech.current_target = nxt
+                                break
+                        tech_queue_updates.append((empire.id, list(tech.queue)))
+                        if empire.is_player and tech.current_target:
+                            nxt_name = TECHS.get(tech.current_target, {}).get(
+                                "name", tech.current_target)
+                            turn_log(game, CAT_TECH, f"Now researching {nxt_name}")
                 tech_updates.append((empire.id, tech.current_target, tech.progress))
         empire_updates.append((empire.id, empire.bc, empire.research_points))
 
@@ -870,6 +891,9 @@ def production_tick(game, new_turn: int):
             update_empire_tech(conn, empire_id, target, progress)
         for empire_id, tech_id in tech_unlocks:
             insert_empire_tech(conn, empire_id, tech_id)
+        for empire_id, queue in tech_queue_updates:
+            from ecs.db import save_empire_tech_queue
+            save_empire_tech_queue(conn, empire_id, queue)
         for empire_id, tech_id in locked_tech_inserts:
             from ecs.db import insert_empire_locked_tech
             insert_empire_locked_tech(conn, empire_id, tech_id)

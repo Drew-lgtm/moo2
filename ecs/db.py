@@ -55,6 +55,15 @@ def init_db():
             PRIMARY KEY(empire_id, tech_id)
         );
 
+        -- Ordered research queue per empire: when the current target
+        -- completes, the next still-valid entry becomes the new target.
+        CREATE TABLE IF NOT EXISTS empire_tech_queue (
+            empire_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            tech_id TEXT NOT NULL,
+            PRIMARY KEY(empire_id, position)
+        );
+
         CREATE TABLE IF NOT EXISTS planets (
             id INTEGER PRIMARY KEY,
             star_id INTEGER,
@@ -547,6 +556,23 @@ def insert_empire_locked_tech(conn, empire_id, tech_id):
     )
 
 
+def save_empire_tech_queue(conn, empire_id, tech_ids):
+    conn.execute("DELETE FROM empire_tech_queue WHERE empire_id = ?", (empire_id,))
+    for position, tech_id in enumerate(tech_ids):
+        conn.execute(
+            "INSERT INTO empire_tech_queue (empire_id, position, tech_id) "
+            "VALUES (?, ?, ?)",
+            (empire_id, position, tech_id),
+        )
+
+
+def get_empire_tech_queue(conn, empire_id):
+    rows = conn.execute(
+        "SELECT tech_id FROM empire_tech_queue WHERE empire_id = ? "
+        "ORDER BY position", (empire_id,)).fetchall()
+    return [r["tech_id"] for r in rows]
+
+
 def get_empire_locked_techs(conn, empire_id):
     return [
         row["tech_id"]
@@ -783,6 +809,7 @@ def clear_galaxy():
                       "diplomacy", "diplomacy_pending", "empire_explored",
                       "spies", "spy_missions", "spy_missions_desired",
                       "espionage_settings", "outposts", "ship_designs",
-                      "leaders", "empire_locked_techs", "space_monsters"):
+                      "leaders", "empire_locked_techs", "space_monsters",
+                      "empire_tech_queue"):
             conn.execute(f"DELETE FROM {table}")
         conn.commit()

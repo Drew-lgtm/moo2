@@ -158,6 +158,9 @@ class TechState:
     progress: int = 0
     unlocked: list[str] = field(default_factory=list)
     locked_out: list[str] = field(default_factory=list)
+    # Ordered research queue: when `current_target` completes, the next
+    # still-researchable entry here becomes the new target automatically.
+    queue: list[str] = field(default_factory=list)
 
 
 @dataclass

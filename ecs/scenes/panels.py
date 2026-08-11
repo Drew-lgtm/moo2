@@ -15,7 +15,10 @@ from ecs.palette import empire_color, planet_color
 from ecs.economy import planet_output, empire_tech_bonus
 from ecs.races import effective_traits
 from ecs.techs import TECHS, TECH_ORDER, is_available
-from ecs.db import get_connection, update_empire_tech, update_empire_government
+from ecs.db import (
+    get_connection, update_empire_tech, update_empire_government,
+    save_empire_tech_queue,
+)
 from ecs.government import (
     GOVERNMENTS, government_of, available_governments,
     colony_morale, morale_output_mult,
@@ -509,14 +512,32 @@ class InfoScene(PanelScene):
             conn.commit()
 
     def _set_tech_target(self, tech_state: TechState, tech_id: str):
-        # Switching mid-research keeps progress only if same target; otherwise reset.
+        """Click a tech: with nothing researching it becomes the target;
+        while something IS researching it joins the queue (click again to
+        drop it). Clicking the active target cancels it and pulls the next
+        queued tech up, so research never silently idles."""
+        queue_changed = False
         if tech_state.current_target == tech_id:
-            tech_state.current_target = None  # toggle off
-        else:
+            # Cancel the active research; promote the next queued tech.
+            tech_state.current_target = (
+                tech_state.queue.pop(0) if tech_state.queue else None)
+            tech_state.progress = 0
+            queue_changed = True
+        elif tech_id in tech_state.queue:
+            tech_state.queue.remove(tech_id)      # repeat click = unqueue
+            queue_changed = True
+        elif tech_state.current_target is None:
             tech_state.current_target = tech_id
             tech_state.progress = 0
+        else:
+            tech_state.queue.append(tech_id)
+            queue_changed = True
         with get_connection() as conn:
-            update_empire_tech(conn, tech_state.empire_id, tech_state.current_target, tech_state.progress)
+            update_empire_tech(conn, tech_state.empire_id,
+                               tech_state.current_target, tech_state.progress)
+            if queue_changed:
+                save_empire_tech_queue(conn, tech_state.empire_id,
+                                       list(tech_state.queue))
             conn.commit()
 
     def draw_content(self, screen, rect, font):
@@ -608,6 +629,17 @@ class InfoScene(PanelScene):
         screen.blit(font.render(target_label, True, color), (rect.x, y))
         y += 22
 
+        # Queue — researched in order once the current target completes.
+        if tech_state.queue:
+            names = [TECHS.get(t, {}).get("name", t) for t in tech_state.queue]
+            screen.blit(font.render("Queued: " + " > ".join(names), True,
+                                    (140, 190, 240)), (rect.x, y))
+            y += 22
+        elif tech_state.current_target:
+            screen.blit(font.render("(click another tech to queue it)", True,
+                                    HINT_COLOR), (rect.x, y))
+            y += 20
+
         unlocked = set(tech_state.unlocked)
         locked = set(tech_state.locked_out)
         # ---- Tech list ----
@@ -626,6 +658,10 @@ class InfoScene(PanelScene):
                 marker = "▶"
                 row_color = (220, 200, 120)
                 status = "researching"
+            elif tech_id in tech_state.queue:
+                marker = str(tech_state.queue.index(tech_id) + 1)
+                row_color = (140, 190, 240)
+                status = f"queued · cost {tech['cost']}"
             elif available:
                 marker = "○"
                 row_color = TEXT_COLOR
