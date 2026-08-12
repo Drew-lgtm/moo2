@@ -156,3 +156,76 @@ def test_cancelling_target_promotes_the_queue(temp_db):
     s._set_tech_target(ts, "laser_cannons")     # click the active one
     assert ts.current_target == "death_ray"
     assert ts.queue == ["phasors"]
+
+
+def _real_game(target="laser_cannons", queue=()):
+    """A booted Game (real layout attributes) whose player is researching
+    ``target`` — the scenes need more than a stub namespace to draw."""
+    import os
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    pygame.display.quit()
+    pygame.init()
+    from ecs.game import Game
+    from ecs.components import TechState as TS
+    player = SimpleNamespace(name="P", race="Humans", color="blue",
+                             custom_traits=[])
+    game = Game(num_stars=10)
+    game.start_new_game(player_empire=player, num_empires=2)
+    pid = game.player_empire().id
+    ts = next(t for _e, t in game.component_mgr.get_all(TS) if t.empire_id == pid)
+    ts.current_target = target
+    ts.queue = list(queue)
+    return game, ts
+
+
+def test_active_target_row_is_actually_clickable(temp_db):
+    """REGRESSION: the hit-test flag excluded the current target, so the
+    cancel/promote path above was unreachable in the real UI — the unit
+    test passed by calling the method directly."""
+    import pygame
+    from ecs.scenes.panels import InfoScene
+    game, _ts = _real_game(queue=["death_ray"])
+    scene = InfoScene(game)
+    scene.draw(pygame.Surface((game.screen_width, game.screen_height)))
+    hits = {tid: ok for tid, _rect, ok in scene._tech_row_hits}
+    assert hits.get("laser_cannons") is True, "active target must be clickable"
+    pygame.display.quit()
+
+
+def test_research_scene_active_row_is_clickable(temp_db):
+    """The standalone Research screen had the same dead cancel path."""
+    import pygame
+    from ecs.scenes.research import ResearchScene
+    game, _ts = _real_game()
+    scene = ResearchScene(game)
+    if hasattr(scene, "on_enter"):
+        scene.on_enter()
+    scene.draw(pygame.Surface((game.screen_width, game.screen_height)))
+    hits = {tid: ok for tid, _rect, ok in scene._tech_hits}
+    assert hits.get("laser_cannons") is True
+    pygame.display.quit()
+
+
+def test_queue_recovers_when_something_else_clears_the_target(temp_db):
+    """REGRESSION: an event granting the tech you're researching (Derelict
+    Ship) cleared current_target without draining the queue. Promotion
+    only ran inside the completion branch, so research stalled forever."""
+    from ecs.economy import production_tick
+    game, ts = _world("laser_cannons", ["anti_missile_rockets"])
+    # Simulate the event: tech granted outright, target cleared.
+    ts.unlocked.append("laser_cannons")
+    ts.current_target = None
+    ts.progress = 0
+    production_tick(game, new_turn=2)
+    assert ts.current_target == "anti_missile_rockets"
+    assert ts.queue == []
+
+
+def test_stalled_queue_recovers_even_with_no_research_income(temp_db):
+    from ecs.economy import production_tick
+    game, ts = _world("laser_cannons", ["anti_missile_rockets"], scientists=0)
+    ts.current_target = None
+    production_tick(game, new_turn=2)
+    assert ts.current_target == "anti_missile_rockets"

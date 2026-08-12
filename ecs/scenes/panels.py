@@ -757,7 +757,12 @@ class InfoScene(PanelScene):
             row_rect = pygame.Rect(rect.x, y, rect.width - 20, self.TECH_ROW_HEIGHT)
             is_unlocked = tech_id in unlocked
             is_current = tech_state.current_target == tech_id
-            available = (not is_unlocked) and (tech_id not in locked) and is_available(tech_id, unlocked, locked) and not is_current
+            # Clickable if researchable OR if it's the active target —
+            # clicking that one cancels research and promotes the queue,
+            # which was unreachable while `is_current` was excluded here.
+            available = ((not is_unlocked) and (tech_id not in locked)
+                         and is_available(tech_id, unlocked, locked))
+            clickable = available or is_current
 
             if is_unlocked:
                 marker = "✓"
@@ -783,7 +788,7 @@ class InfoScene(PanelScene):
 
             label = f"{marker} {tech['name']:<24} {status}"
             screen.blit(font.render(label, True, row_color), (row_rect.x, y))
-            self._tech_row_hits.append((tech_id, row_rect, available))
+            self._tech_row_hits.append((tech_id, row_rect, clickable))
             y += self.TECH_ROW_HEIGHT
 
         return y - top

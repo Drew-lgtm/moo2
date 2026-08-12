@@ -340,6 +340,31 @@ def planet_output(planet: Planet, population: Population | None,
 
 # ---- empire-level summaries (HUD + per-turn) --------------------------
 
+def advance_tech_queue(tech) -> bool:
+    """Promote the next still-researchable tech off ``tech.queue`` into
+    ``current_target``, discarding entries that have since become invalid
+    (already unlocked, locked out by a tier choice, or no longer
+    available). Returns True if the queue was touched at all — the caller
+    persists it then.
+
+    Called both when research completes AND whenever the target is found
+    empty with a queue waiting, so no path can strand the queue.
+    """
+    if not tech.queue:
+        return False
+    from ecs.techs import is_available
+    unlocked_set = set(tech.unlocked)
+    locked_set = set(tech.locked_out)
+    while tech.queue:
+        nxt = tech.queue.pop(0)
+        if (nxt not in unlocked_set and nxt not in locked_set
+                and is_available(nxt, unlocked_set, locked_set)):
+            tech.current_target = nxt
+            tech.progress = 0
+            break
+    return True
+
+
 def fleet_upkeep(component_mgr, empire_id: int) -> int:
     """Per-turn BC maintenance for an empire's whole fleet — a fraction
     of the summed build cost of every ship it owns."""
@@ -865,23 +890,28 @@ def production_tick(game, new_turn: int):
                     # dropped as we go).
                     tech.current_target = None
                     tech.progress = 0
-                    if tech.queue:
-                        from ecs.techs import is_available
-                        unlocked_set = set(tech.unlocked)
-                        locked_set = set(tech.locked_out)
-                        while tech.queue:
-                            nxt = tech.queue.pop(0)
-                            if (nxt not in unlocked_set
-                                    and nxt not in locked_set
-                                    and is_available(nxt, unlocked_set, locked_set)):
-                                tech.current_target = nxt
-                                break
+                    if advance_tech_queue(tech):
                         tech_queue_updates.append((empire.id, list(tech.queue)))
                         if empire.is_player and tech.current_target:
                             nxt_name = TECHS.get(tech.current_target, {}).get(
                                 "name", tech.current_target)
                             turn_log(game, CAT_TECH, f"Now researching {nxt_name}")
                 tech_updates.append((empire.id, tech.current_target, tech.progress))
+        # Research idle but a queue waiting? Something other than a
+        # completion cleared the target — a Derelict Ship event granting
+        # the tech, a spy steal, a manual cancel. Promote here (outside the
+        # income branch, so a turn with no research still recovers), or the
+        # queue would never start and research would stall permanently.
+        _tech = tech_by_empire.get(empire.id)
+        if _tech is not None and not _tech.current_target and _tech.queue:
+            if advance_tech_queue(_tech):
+                tech_queue_updates.append((empire.id, list(_tech.queue)))
+                tech_updates.append((empire.id, _tech.current_target,
+                                     _tech.progress))
+                if empire.is_player and _tech.current_target:
+                    nxt_name = TECHS.get(_tech.current_target, {}).get(
+                        "name", _tech.current_target)
+                    turn_log(game, CAT_TECH, f"Now researching {nxt_name}")
         empire_updates.append((empire.id, empire.bc, empire.research_points))
 
     with get_connection() as conn:

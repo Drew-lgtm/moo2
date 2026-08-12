@@ -66,14 +66,22 @@ class ResearchScene(Scene):
         return None
 
     def _set_target(self, tech_state: TechState, tech_id: str):
+        queue_changed = False
         if tech_state.current_target == tech_id:
-            tech_state.current_target = None
+            # Cancel — promote whatever is queued so research doesn't idle.
+            tech_state.current_target = (
+                tech_state.queue.pop(0) if tech_state.queue else None)
             tech_state.progress = 0
+            queue_changed = True
         else:
             tech_state.current_target = tech_id
             tech_state.progress = 0
         with get_connection() as conn:
             update_empire_tech(conn, tech_state.empire_id, tech_state.current_target, tech_state.progress)
+            if queue_changed:
+                from ecs.db import save_empire_tech_queue
+                save_empire_tech_queue(conn, tech_state.empire_id,
+                                       list(tech_state.queue))
             conn.commit()
 
     # ------------------------------------------------------------------ input
@@ -188,8 +196,11 @@ class ResearchScene(Scene):
         is_locked = tech_id in locked
         is_current = current == tech_id
         is_stub = bool(tech.get("effect_stub"))
-        available = (not is_unlocked and not is_locked and not is_current
+        available = (not is_unlocked and not is_locked
                      and is_available(tech_id, unlocked, locked))
+        # The active target stays clickable so it can be cancelled (which
+        # promotes the research queue) — excluding it made that dead code.
+        clickable = available or is_current
 
         if is_unlocked:
             fill, border, name_color = (28, 60, 36), (90, 200, 110), (220, 240, 220)
@@ -223,7 +234,7 @@ class ResearchScene(Scene):
         status_surf = self.cost_font.render(status, True, sc)
         screen.blit(status_surf, status_surf.get_rect(midright=(rect.right - 6, rect.centery)))
 
-        self._tech_hits.append((tech_id, rect, available))
+        self._tech_hits.append((tech_id, rect, clickable))
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
