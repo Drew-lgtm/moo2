@@ -120,3 +120,24 @@ def test_mutation_persists(temp_db):
     assert row["mutations_used"] == 1
     assert "ship_attack" in row["custom_traits"]
     assert "bc_bonus" not in row["custom_traits"]
+
+
+# ---- review-hardening --------------------------------------------------
+
+def test_cannot_shed_an_already_paid_one_shot_trait():
+    """REGRESSION: rich_homeworld banks its BC at galaxy generation, so
+    trading it away afterwards would be free points."""
+    from ecs.races import ONE_SHOT_TRAITS
+    e = _empire(race="Gnolam")            # bc_bonus x2, rich_homeworld
+    assert "rich_homeworld" in ONE_SHOT_TRAITS
+    assert apply_mutation(e, "rich_homeworld", "ship_attack", UNLOCKED) is None
+    assert mutations_used(e) == 0
+
+
+def test_cannot_exceed_the_trait_stack_cap():
+    """REGRESSION: mutation ignored the custom-race screen's cap of 3."""
+    from ecs.races import TRAIT_MAX_STACK
+    e = _empire(race="Custom")
+    e.custom_traits = ",".join(["ship_attack"] * TRAIT_MAX_STACK + ["bc_bonus"])
+    # bc_bonus (3) -> ship_attack (3) is cost-legal but would make a 4th stack.
+    assert apply_mutation(e, "bc_bonus", "ship_attack", UNLOCKED) is None

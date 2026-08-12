@@ -632,12 +632,19 @@ class InfoScene(PanelScene):
                 tech_state.queue.pop(0) if tech_state.queue else None)
             tech_state.progress = 0
             queue_changed = True
+        elif tech_state.current_target is None:
+            # Research is idle: start it (and drop it from the queue if it
+            # was waiting there). Checked BEFORE the unqueue branch, or
+            # clicking a queued tech with nothing running would merely
+            # remove it instead of starting it.
+            if tech_id in tech_state.queue:
+                tech_state.queue.remove(tech_id)
+                queue_changed = True
+            tech_state.current_target = tech_id
+            tech_state.progress = 0
         elif tech_id in tech_state.queue:
             tech_state.queue.remove(tech_id)      # repeat click = unqueue
             queue_changed = True
-        elif tech_state.current_target is None:
-            tech_state.current_target = tech_id
-            tech_state.progress = 0
         else:
             tech_state.queue.append(tech_id)
             queue_changed = True

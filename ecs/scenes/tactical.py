@@ -220,7 +220,10 @@ class TacticalScene(Scene):
         Auto button and a manually-played battle obey the same damage
         model. Then finalise."""
         from ecs.tactical import auto_resolve
-        auto_resolve(self.battle, self._rng)
+        from ecs.combat import empires_hostile
+        _diplo = getattr(self.game, "diplomacy", None)
+        auto_resolve(self.battle, self._rng,
+                     hostile_fn=lambda a, b: empires_hostile(_diplo, a, b))
         self._log("Auto-resolved.")
         self._finalise()
 

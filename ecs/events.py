@@ -227,6 +227,10 @@ def _trigger_derelict(game, turn: int, rng):
         ts.progress = 0
     with get_connection() as conn:
         insert_empire_tech(conn, player.id, chosen)
+        # The cleared research target must be persisted too, or a reload
+        # restores a target for a tech the empire already owns.
+        from ecs.db import update_empire_tech
+        update_empire_tech(conn, player.id, ts.current_target, ts.progress)
         conn.commit()
     name = TECHS.get(chosen, {}).get("name", chosen)
     _log(game, f"T{turn}: A derelict alien ship yielded blueprints — {name} acquired.")

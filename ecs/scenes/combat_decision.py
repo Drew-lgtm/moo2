@@ -92,7 +92,9 @@ class CombatDecisionScene(Scene):
         attack = hull = 0
         for s in ships:
             by_class[s.ship_class] = by_class.get(s.ship_class, 0) + 1
-            attack += s.attack
+            # Missile / fighter ordnance is real firepower — counting only
+            # the beam attack made missile and carrier fleets look weak.
+            attack += s.attack + s.missile_attack
             hull += s.hull
         return {
             "count": len(ships),
@@ -141,7 +143,10 @@ class CombatDecisionScene(Scene):
                      for s in battle.ships_for(eid))
             for eid in battle.empires_present()
         }
-        auto_resolve(battle, self._rng)
+        from ecs.combat import empires_hostile
+        _diplo = getattr(self.game, "diplomacy", None)
+        auto_resolve(battle, self._rng,
+                     hostile_fn=lambda a, b: empires_hostile(_diplo, a, b))
 
         # Apply destruction to the strategic layer.
         from ecs.combat import _destroy_ship

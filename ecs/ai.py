@@ -857,6 +857,8 @@ def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None, diplo=None
             continue
         if at.star_entity == target_star:
             continue  # already at target — nothing to do
+        if _blockading(cm, at.star_entity, empire.id, diplo):
+            continue  # leave a siege in place instead of re-tasking it
         ships_by_star.setdefault(at.star_entity, []).append(ship_entity)
 
     for src_star, ships in ships_by_star.items():
@@ -888,6 +890,25 @@ def _rivals_field_missiles(cm, empire_id: int) -> bool:
         if _S.get(ship.ship_class, {}).get("fighter_attack", 0):
             return True
         if stats_from_ship(ship).get("missile_attack", 0):
+            return True
+    return False
+
+
+def _blockading(cm, star_entity: int, empire_id: int, diplo) -> bool:
+    """True if ``star_entity`` hosts a colony belonging to an empire this
+    one is at war with — i.e. ships parked here are choking its trade and
+    shouldn't be pulled away by another dispatch pass."""
+    if diplo is None:
+        return False
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        if orbit.star_entity != star_entity:
+            continue
+        owner = cm.get_component(planet_entity, Owner)
+        if owner is None or owner.empire_id == empire_id:
+            continue
+        if is_antaran(owner.empire_id) or is_monster(owner.empire_id):
+            continue
+        if diplo.at_war(empire_id, owner.empire_id):
             return True
     return False
 
@@ -956,7 +977,14 @@ def _ai_wants_portal(cm, empire, unlocked, planet_ids) -> bool:
         return False
     for entity_id in planet_ids:
         bs = cm.get_component(entity_id, BuildState)
-        if bs is not None and PORTAL_BUILDING in bs.completed:
+        if bs is None:
+            continue
+        # Already built, already building, or already queued somewhere —
+        # one portal is enough. Without the in-progress checks EVERY idle
+        # colony would start its own 1200-industry copy.
+        if (PORTAL_BUILDING in bs.completed
+                or bs.current_project == PORTAL_BUILDING
+                or PORTAL_BUILDING in bs.queue):
             return False
     return True
 
@@ -967,12 +995,16 @@ def _ai_maybe_assault_antares(game, empire, unlocked):
     from ecs.antares import can_launch_assault, launch_assault
     # can_launch_assault already requires a COMPLETED portal building plus
     # a staged fleet, so the tech alone isn't enough.
+    from ecs.antares import _launch_site
     ok, _reason = can_launch_assault(game, empire.id)
     if not ok:
         return
-    cm = game.component_mgr
-    fleet = sum(1 for _e, o in cm.get_all(ShipOwner) if o.empire_id == empire.id)
-    if fleet < AI_ANTARES_MIN_FLEET:
+    # Gate on the fleet that will ACTUALLY be sent — the warships staged
+    # at the portal star — not every hull the empire owns. Counting
+    # freighters and ships in transit made the AI attack with a fraction
+    # of the force it thought it had.
+    _star, force = _launch_site(game.component_mgr, empire.id)
+    if len(force) < AI_ANTARES_MIN_FLEET:
         return
     launch_assault(game, empire.id)
 

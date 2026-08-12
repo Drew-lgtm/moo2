@@ -178,9 +178,14 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
         player_id=player_id,
     )
 
-    # Stable ordering: player first, then everyone else.
+    # Stable ordering: player first, then everyone else. Include empires
+    # that have only planetary defenses here (no ships in orbit) — they
+    # still fight via their station, and dropping them made a fortified
+    # colony defend itself with nothing.
+    _present = list(ships_here) + [e for e in (def_here or {})
+                                   if e not in ships_here]
     empire_order = ([player_id] +
-                    [eid for eid in ships_here if eid != player_id])
+                    [eid for eid in _present if eid != player_id])
     for slot_idx, eid in enumerate(empire_order):
         ships = ships_here.get(eid, [])
         # Empire-wide attack/hull bonuses (race traits + tech), same as

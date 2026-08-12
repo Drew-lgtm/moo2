@@ -161,7 +161,13 @@ class GameOverScene(Scene):
         cx = sw // 2
 
         result = getattr(self.game, "pending_endgame", None) or {}
-        won = result.get("result") == "victory"
+        # "victory" describes the RUN, not necessarily the player: an AI
+        # can win the Antares assault or a council vote. Only call it a
+        # win when the player is the one holding the trophy.
+        _player = self.game.player_empire()
+        won = (result.get("result") == "victory"
+               and _player is not None
+               and result.get("winner_id") == _player.id)
         mode = result.get("mode", "")
         title = "VICTORY" if won else "DEFEAT"
         color = TITLE_WIN if won else TITLE_LOSE

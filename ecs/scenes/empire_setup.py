@@ -58,7 +58,8 @@ class EmpireSetupScene(Scene):
     TRAIT_PANEL_WIDTH = 600
     TRAIT_ROW_HEIGHT = 26
     TRAIT_BTN = (22, 22)
-    TRAIT_MAX_STACK = 3  # each trait can be picked up to 3 times
+    # Canonical cap lives in ecs.races so mutation and setup agree.
+    from ecs.races import TRAIT_MAX_STACK
 
     def __init__(self, game):
         super().__init__(game)

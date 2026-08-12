@@ -370,7 +370,8 @@ def _combatant_view(ship: "TacticalShip"):
     )
 
 
-def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None):
+def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None,
+                 hostile_fn=None):
     """Resolve a whole tactical battle non-interactively via the shared
     ``battle.resolve_auto``. Mutates the TacticalShips in place (hull /
     shield / destroyed) and stamps ``finished`` + ``winner_id``.
@@ -387,8 +388,11 @@ def auto_resolve(tbattle: TacticalBattle, rng: random.Random | None = None):
             continue
         by_eid.setdefault(s.empire_id, []).append(_combatant_view(s))
 
-    def hostile(a, b):
-        return a != b
+    # Who actually fights whom. Defaults to "everyone present is an enemy"
+    # (fine for the usual two-sided engagement), but the caller should pass
+    # the real diplomacy predicate so a neutral third empire parked at a
+    # contested star isn't shot down in someone else's battle.
+    hostile = hostile_fn or (lambda a, b: a != b)
 
     # Collect the same fire breakdown a hand-played battle records, so the
     # post-battle report is populated either way.

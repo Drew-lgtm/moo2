@@ -216,3 +216,38 @@ def test_ai_launches_the_assault_with_a_real_fleet(temp_db):
                 or sum(1 for _e, o in cm.get_all(ShipOwner)
                        if o.empire_id == 1) < AI_ANTARES_MIN_FLEET)
     assert launched
+
+
+# ---- review-hardening --------------------------------------------------
+
+def test_only_one_colony_builds_the_portal(temp_db):
+    """REGRESSION: _ai_wants_portal only checked COMPLETED portals, so
+    every idle colony started its own 1200-industry copy."""
+    em, cm = _base()
+    star = _star(em, cm, 1, 0)
+    a = _colony(em, cm, star, owner_id=1, pid=1)
+    b = _colony(em, cm, star, owner_id=1, pid=2)
+    unlocked = {"dimensional_portal"}
+    assert _ai_wants_portal(cm, _empire(cm), unlocked, [a, b]) is True
+    # One colony starts building it -> the empire no longer wants another.
+    cm.get_component(a, BuildState).current_project = "dimensional_portal"
+    assert _ai_wants_portal(cm, _empire(cm), unlocked, [a, b]) is False
+    # Same when it's merely queued.
+    cm.get_component(a, BuildState).current_project = None
+    cm.get_component(a, BuildState).queue.append("dimensional_portal")
+    assert _ai_wants_portal(cm, _empire(cm), unlocked, [a, b]) is False
+
+
+def test_blockaders_are_not_re_tasked_away(temp_db):
+    """REGRESSION: _ai_dispatch_ships pulled the siege off an enemy colony
+    the turn after _ai_blockade put it there."""
+    from ecs.ai import _ai_dispatch_ships
+    em, cm = _base()
+    enemy_colony = _star(em, cm, 2, 80)
+    _colony(em, cm, enemy_colony, owner_id=2)
+    # Player homeworld (empire 2 is the "player" target here is irrelevant —
+    # what matters is the blockaders stay put).
+    ships = _fleet(em, cm, enemy_colony, 1, 4)
+    _ai_dispatch_ships(cm, _empire(cm), None, diplo=_war(True))
+    for s in ships:
+        assert cm.get_component(s, ShipInTransit) is None

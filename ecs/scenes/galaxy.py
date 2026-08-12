@@ -197,6 +197,7 @@ class GalaxyScene(Scene):
         if player is None:
             return
         self._scrap_armed = False
+        self._fuel_warning = ""      # stale refusal shouldn't linger
         if self.selected_fleet_star is None:
             if self._max_counts_for(star_entity):
                 self.selected_fleet_star = star_entity
@@ -496,8 +497,25 @@ class GalaxyScene(Scene):
         # Floating overlays sit on top of the map but below the bottom UI bar.
         self._draw_hover_tooltip(screen)
         self._draw_fleet_picker_overlay(screen)
+        self._draw_move_warning(screen)
         self._draw_turn_log(screen)
         self.game.ui_bar.draw(screen)
+
+    def _draw_move_warning(self, screen):
+        """Why a move order was refused (out of fuel range, or an enemy
+        Warp Dissipator pinning the fleet). Without this the order just
+        silently did nothing."""
+        if not self._fuel_warning:
+            return
+        font = self._label_font_bold or self.game.font
+        surf = font.render(self._fuel_warning, True, (255, 170, 170))
+        rect = surf.get_rect(midbottom=(screen.get_width() // 2,
+                                        screen.get_height()
+                                        - self.game.ui_bar.BAR_HEIGHT - 12))
+        bg = pygame.Surface((rect.width + 20, rect.height + 10), pygame.SRCALPHA)
+        bg.fill((30, 10, 10, 220))
+        screen.blit(bg, (rect.x - 10, rect.y - 5))
+        screen.blit(surf, rect)
 
     @staticmethod
     def _draw_dashed_line(screen, color, start, end, dash_len=12, gap_len=8, width=2):

@@ -132,6 +132,13 @@ def effective_traits(race_type: str, custom_traits: str) -> list[str]:
 
 MUTATION_TECH = "evolutionary_mutation"
 MAX_MUTATIONS = 1
+# A trait may be held at most this many times (shared with the custom-race
+# point-buy screen, so mutation can't exceed what setup allows).
+TRAIT_MAX_STACK = 3
+# Traits whose benefit is banked once at galaxy generation. Trading one
+# away after it has already paid out would be free points, so they can't
+# be the trait you shed.
+ONE_SHOT_TRAITS = {"rich_homeworld"}
 
 
 def mutations_used(empire) -> int:
@@ -163,11 +170,15 @@ def apply_mutation(empire, drop_trait: str, add_trait: str | None,
     traits = effective_traits(empire.race_type, empire.custom_traits)
     if drop_trait not in traits:
         return None
+    if drop_trait in ONE_SHOT_TRAITS:
+        return None          # already paid out — shedding it is free points
     if add_trait is not None:
         if add_trait not in TRAITS:
             return None
         if add_trait not in mutation_replacements(drop_trait):
             return None
+        if traits.count(add_trait) >= TRAIT_MAX_STACK:
+            return None      # same cap the custom-race screen enforces
     new_traits = list(traits)
     new_traits.remove(drop_trait)          # removes one instance only
     if add_trait is not None:
