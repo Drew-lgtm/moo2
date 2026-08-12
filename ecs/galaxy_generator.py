@@ -390,6 +390,10 @@ class GalaxyGenerator:
                     gov = emp["government"] or "dictatorship"
                 except (IndexError, KeyError):
                     gov = "dictatorship"
+                try:
+                    muts = emp["mutations_used"] or 0
+                except (IndexError, KeyError):
+                    muts = 0
                 self.component_mgr.add_component(
                     empire_entity,
                     Empire(
@@ -405,6 +409,7 @@ class GalaxyGenerator:
                         personality=emp["personality"] or "balanced",
                         custom_traits=raw_traits,
                         government=gov,
+                        mutations_used=muts,
                     ),
                 )
                 self.component_mgr.add_component(

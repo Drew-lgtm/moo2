@@ -432,6 +432,49 @@ class RacesScene(PanelScene):
     def __init__(self, game):
         super().__init__(game)
         self._thumbs: list[tuple[str, pygame.Surface]] = []
+        self._section_font = pygame.font.SysFont("Arial", 16, bold=True)
+        # Evolutionary Mutation UI: pick one of your traits, then pick its
+        # replacement (or shed it).
+        self._mut_drop: str | None = None
+        self._trait_hits: list[tuple[str, pygame.Rect]] = []
+        self._repl_hits: list[tuple[str | None, pygame.Rect]] = []
+
+    def _player_unlocked(self):
+        player = self.game.player_empire()
+        if player is None:
+            return set()
+        for _e, ts in self.game.component_mgr.get_all(TechState):
+            if ts.empire_id == player.id:
+                return set(ts.unlocked)
+        return set()
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for trait, rect in self._trait_hits:
+                if rect.collidepoint(event.pos):
+                    self._mut_drop = None if self._mut_drop == trait else trait
+                    return
+            for add, rect in self._repl_hits:
+                if rect.collidepoint(event.pos):
+                    self._apply_mutation(add)
+                    return
+        super().handle_event(event)
+
+    def _apply_mutation(self, add_trait):
+        from ecs.races import apply_mutation
+        from ecs.db import get_connection, update_empire_traits
+        player = self.game.player_empire()
+        if player is None or self._mut_drop is None:
+            return
+        result = apply_mutation(player, self._mut_drop, add_trait,
+                                self._player_unlocked())
+        if result is None:
+            return
+        with get_connection() as conn:
+            update_empire_traits(conn, player.id, player.custom_traits,
+                                 player.mutations_used)
+            conn.commit()
+        self._mut_drop = None
 
     def on_enter(self):
         super().on_enter()
@@ -458,6 +501,72 @@ class RacesScene(PanelScene):
             screen.blit(surface, (x, y))
             label = font.render(race_name, True, TEXT_COLOR)
             screen.blit(label, (x + (self.THUMB_SIZE[0] - label.get_width()) // 2, y + self.THUMB_SIZE[1] + 4))
+
+        rows = (len(self._thumbs) + cols - 1) // cols
+        self._draw_own_race(screen, rect, font, rect.y + rows * cell_h + 16)
+
+    def _draw_own_race(self, screen, rect, font, y):
+        """Your empire's traits, plus the Evolutionary Mutation swap once
+        that tech is researched."""
+        from ecs.races import (
+            TRAITS, effective_traits, can_mutate, mutation_replacements,
+            mutations_used, MAX_MUTATIONS,
+        )
+        self._trait_hits = []
+        self._repl_hits = []
+        player = self.game.player_empire()
+        if player is None or y > rect.bottom - 40:
+            return
+        traits = effective_traits(player.race_type, player.custom_traits)
+        unlocked = self._player_unlocked()
+        mutable = can_mutate(player, unlocked)
+
+        screen.blit(self._section_font.render(
+            f"Your Race — {player.race_type}", True, (255, 230, 120)), (rect.x, y))
+        y += 24
+        if mutable:
+            hint = ("Evolutionary Mutation ready: click a trait, then its "
+                    "replacement." if self._mut_drop is None
+                    else "Now pick a replacement below (or Shed it).")
+        elif mutations_used(player) >= MAX_MUTATIONS:
+            hint = "Evolutionary Mutation already spent."
+        else:
+            hint = "Research Evolutionary Mutation to evolve a trait."
+        screen.blit(font.render(hint, True, HINT_COLOR), (rect.x, y))
+        y += 22
+
+        for t in traits:
+            spec = TRAITS.get(t, {})
+            selected = (t == self._mut_drop)
+            color = (255, 200, 120) if selected else TEXT_COLOR
+            text = f"{'> ' if selected else '  '}{spec.get('name', t)}  ({spec.get('cost', 0):+d})"
+            row = pygame.Rect(rect.x, y, rect.width // 2 - 10, 20)
+            screen.blit(font.render(text, True, color), (rect.x, y))
+            if mutable:
+                self._trait_hits.append((t, row))
+            y += 20
+
+        if mutable and self._mut_drop is not None:
+            ry = rect.y + 24
+            rx = rect.x + rect.width // 2
+            screen.blit(font.render("Replace with:", True, (255, 230, 120)),
+                        (rx, ry))
+            ry += 22
+            shed = pygame.Rect(rx, ry, rect.width // 2 - 20, 20)
+            screen.blit(font.render("  (shed it — no replacement)", True,
+                                    (150, 220, 160)), (rx, ry))
+            self._repl_hits.append((None, shed))
+            ry += 20
+            for t in mutation_replacements(self._mut_drop):
+                if ry > rect.bottom - 20:
+                    break
+                spec = TRAITS.get(t, {})
+                row = pygame.Rect(rx, ry, rect.width // 2 - 20, 20)
+                screen.blit(font.render(
+                    f"  {spec.get('name', t)}  ({spec.get('cost', 0):+d})",
+                    True, TEXT_COLOR), (rx, ry))
+                self._repl_hits.append((t, row))
+                ry += 20
 
 
 class InfoScene(PanelScene):

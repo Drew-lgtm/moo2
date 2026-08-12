@@ -138,6 +138,8 @@ class Empire:
     # Empire-wide government policy (see ecs.government). Default is the
     # always-available Dictatorship; others are unlocked by tech.
     government: str = "dictatorship"
+    # Evolutionary Mutations spent (see ecs.races) — capped at MAX_MUTATIONS.
+    mutations_used: int = 0
 
 
 @dataclass

@@ -112,11 +112,69 @@ def race_traits(race_name: str) -> list[str]:
 
 
 def effective_traits(race_type: str, custom_traits: str) -> list[str]:
-    """Return the trait list for an empire: preset race's traits OR
-    parsed custom_traits string when race_type == CUSTOM_RACE_NAME."""
-    if race_type == CUSTOM_RACE_NAME and custom_traits:
+    """Return the trait list for an empire.
+
+    ``custom_traits`` wins whenever it's set: it's the point-buy list for
+    a Custom race, and it's also where a preset race's list is written
+    once Evolutionary Mutation edits it. Preset races that have never
+    mutated carry an empty string and fall back to their catalogue traits.
+    """
+    if custom_traits:
         return [t for t in custom_traits.split(",") if t]
     return race_traits(race_type)
+
+
+# ---- Evolutionary Mutation --------------------------------------------
+#
+# The tech lets an empire evolve past one of its inborn traits exactly
+# once: swap a trait for another that costs no more, or simply shed one
+# (the way to cure an inborn weakness like Slow Growth).
+
+MUTATION_TECH = "evolutionary_mutation"
+MAX_MUTATIONS = 1
+
+
+def mutations_used(empire) -> int:
+    return getattr(empire, "mutations_used", 0) or 0
+
+
+def can_mutate(empire, unlocked) -> bool:
+    """True if this empire may still evolve a trait."""
+    return (MUTATION_TECH in set(unlocked or ())
+            and mutations_used(empire) < MAX_MUTATIONS)
+
+
+def mutation_replacements(drop_trait: str) -> list[str]:
+    """Traits that may replace ``drop_trait`` — anything costing no more,
+    so a mutation is a sidegrade or a sacrifice, never free power."""
+    budget = TRAITS.get(drop_trait, {}).get("cost", 0)
+    return sorted(t for t, spec in TRAITS.items()
+                  if t != drop_trait and spec.get("cost", 0) <= budget)
+
+
+def apply_mutation(empire, drop_trait: str, add_trait: str | None,
+                   unlocked) -> list[str] | None:
+    """Swap ``drop_trait`` for ``add_trait`` (or drop it outright when
+    ``add_trait`` is None) on ``empire``. Returns the new trait list, or
+    None if the mutation isn't allowed. Mutates the Empire component;
+    the caller persists it."""
+    if not can_mutate(empire, unlocked):
+        return None
+    traits = effective_traits(empire.race_type, empire.custom_traits)
+    if drop_trait not in traits:
+        return None
+    if add_trait is not None:
+        if add_trait not in TRAITS:
+            return None
+        if add_trait not in mutation_replacements(drop_trait):
+            return None
+    new_traits = list(traits)
+    new_traits.remove(drop_trait)          # removes one instance only
+    if add_trait is not None:
+        new_traits.append(add_trait)
+    empire.custom_traits = ",".join(new_traits)
+    empire.mutations_used = mutations_used(empire) + 1
+    return new_traits
 
 
 def trait_cost_total(traits) -> int:

@@ -288,6 +288,8 @@ def _migrate_empires(conn):
         conn.execute("ALTER TABLE empires ADD COLUMN custom_traits TEXT DEFAULT ''")
     if "government" not in existing:
         conn.execute("ALTER TABLE empires ADD COLUMN government TEXT DEFAULT 'dictatorship'")
+    if "mutations_used" not in existing:
+        conn.execute("ALTER TABLE empires ADD COLUMN mutations_used INTEGER DEFAULT 0")
 
 
 def _migrate_hall_of_fame(conn):
@@ -511,6 +513,15 @@ def insert_empire(conn, name, race_type, color, home_star_id, tech_level, *,
     result = cursor.lastrowid
     assert result is not None
     return result
+
+
+def update_empire_traits(conn, empire_id, custom_traits, mutations_used):
+    """Persist an empire's (possibly mutated) trait list — see
+    ecs.races.apply_mutation."""
+    conn.execute(
+        "UPDATE empires SET custom_traits = ?, mutations_used = ? WHERE id = ?",
+        (custom_traits, mutations_used, empire_id),
+    )
 
 
 def update_empire_government(conn, empire_id, government):

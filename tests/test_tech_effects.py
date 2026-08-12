@@ -14,9 +14,7 @@ from ecs.projects import PROJECTS, projects_in_category
 
 # Techs deliberately left stubbed: they need a system the game doesn't
 # have yet. Kept honest — their tooltip still says "not yet implemented".
-STILL_STUBBED = {
-    "evolutionary_mutation",  # needs a mid-game trait-swap UI
-}
+STILL_STUBBED: set[str] = set()   # every tech now has a real effect
 
 
 def test_still_stubbed_are_marked():
@@ -24,6 +22,13 @@ def test_still_stubbed_are_marked():
         assert TECHS[tid].get("effect_stub") is True, (
             f"{tid} is listed as still-stubbed but lost its marker — "
             "either wire it and move it out, or restore the flag")
+
+
+def test_no_tech_is_a_stub_anymore():
+    """Every tech in the catalogue does something. If a new stub is added
+    deliberately, list it in STILL_STUBBED above (with a reason)."""
+    stubs = {tid for tid, spec in TECHS.items() if spec.get("effect_stub")}
+    assert stubs == STILL_STUBBED, f"unlisted stub techs: {stubs - STILL_STUBBED}"
 
 
 # ---- Batch 1: habitability build projects ------------------------------

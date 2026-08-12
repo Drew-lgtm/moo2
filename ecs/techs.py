@@ -610,7 +610,9 @@ TECHS: dict[str, dict] = {
         "id": "evolutionary_mutation", "name": "Evolutionary Mutation",
         "field": "biology", "tier": 5, "tier_group": _t("biology", 5),
         "cost": 1000, "prereqs": ["terraforming"],
-        "description": "Re-pick a race trait mid-game", "effect_stub": True,
+        "description": "Evolve past one inborn trait: swap it for another "
+                       "of equal or lower cost, or shed it entirely (Races "
+                       "screen). Once per empire.",
     },
     "weather_controller": {
         "id": "weather_controller", "name": "Weather Controller",
