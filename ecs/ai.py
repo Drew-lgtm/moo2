@@ -228,10 +228,17 @@ def ai_tick(game, new_turn: int):
         # of the generic auto hull.
         design_map = _ai_ensure_designs(game, empire, personality, unlocked)
 
+        # Once the Dimensional Portal is researched it jumps the build
+        # queue until one exists — it's a victory condition, not a
+        # nice-to-have. Dropped from the list again after it's built.
+        build_priority = personality["build_priority"]
+        if _ai_wants_portal(cm, empire, unlocked, planet_ids):
+            build_priority = ["dimensional_portal"] + list(build_priority)
+
         for entity_id in planet_ids:
             _ai_rebalance_workers(cm, entity_id, personality["worker_pct"], pending_writes)
             _ai_queue_building(
-                cm, entity_id, personality["build_priority"], unlocked,
+                cm, entity_id, build_priority, unlocked,
                 pending_writes, suppress=suppress, traits=traits,
                 design_map=design_map,
             )
@@ -268,12 +275,19 @@ def ai_tick(game, new_turn: int):
             # in position, then send idle Troop Transports at enemy
             # planets and warships at the player's homeworld.
             _ai_bombard(game, empire)
+            # Choke a rival's economy by parking on one of its colonies
+            # before committing the rest of the fleet to the war effort.
+            _ai_blockade(game, empire, reachable)
             _ai_dispatch_troop_transports(cm, empire, reachable, diplo=diplo)
             _ai_dispatch_ships(cm, empire, reachable, diplo=diplo)
         else:
             # Peaceful/expansionist AIs put their fleet to work clearing
             # space-monster guardians to open up rich systems.
             _ai_clear_monsters(game, empire, reachable)
+
+        # Any AI that has built a portal and massed a fleet will take its
+        # shot at Antares — the same victory path the player has.
+        _ai_maybe_assault_antares(game, empire, unlocked)
 
     if not pending_writes:
         return
@@ -854,6 +868,114 @@ def _ai_dispatch_ships(cm, empire, reachable: set[int] | None = None, diplo=None
 # guardian — a real fleet, so it doesn't feed ships to the guardian.
 AI_MONSTER_CLEAR_MIN_FLEET = 6
 
+# Warships an AI will detach to sit on an enemy colony and choke its trade.
+AI_BLOCKADE_MIN_FLEET = 3
+# Warships an AI wants staged before it dares the Antares assault.
+AI_ANTARES_MIN_FLEET = 10
+
+
+def _rivals_field_missiles(cm, empire_id: int) -> bool:
+    """True if any other empire fields missile ordnance or carrier
+    fighters — the cue for this empire to chase point-defense."""
+    from ecs.ship_design import stats_from_ship
+    for ship_entity, owner in cm.get_all(ShipOwner):
+        if owner.empire_id == empire_id:
+            continue
+        ship = cm.get_component(ship_entity, Ship)
+        if ship is None:
+            continue
+        from ecs.ships import SHIPS as _S
+        if _S.get(ship.ship_class, {}).get("fighter_attack", 0):
+            return True
+        if stats_from_ship(ship).get("missile_attack", 0):
+            return True
+    return False
+
+
+def _ai_blockade(game, empire, reachable):
+    """Send a detachment to sit on an at-war rival's colony, cutting its
+    trade (see ecs.blockade). Picks the nearest reachable enemy colony
+    this empire isn't already parked at."""
+    cm = game.component_mgr
+    diplo = getattr(game, "diplomacy", None)
+    if diplo is None:
+        return
+    # Enemy colony stars we're at war with, minus ones we already hold.
+    ours_at: set[int] = set()
+    by_star: dict[int, list[int]] = {}
+    for ship_entity, at in cm.get_all(ShipAt):
+        owner = cm.get_component(ship_entity, ShipOwner)
+        ship = cm.get_component(ship_entity, Ship)
+        if owner is None or ship is None:
+            continue
+        if owner.empire_id != empire.id or ship.ship_class not in WARSHIP_CLASSES:
+            continue
+        ours_at.add(at.star_entity)
+        by_star.setdefault(at.star_entity, []).append(ship_entity)
+    if not by_star:
+        return
+    targets: set[int] = set()
+    for planet_entity, orbit in cm.get_all(Orbiting):
+        owner = cm.get_component(planet_entity, Owner)
+        if owner is None or owner.empire_id == empire.id:
+            continue
+        if is_antaran(owner.empire_id) or is_monster(owner.empire_id):
+            continue
+        if not diplo.at_war(empire.id, owner.empire_id):
+            continue
+        star = orbit.star_entity
+        if star in ours_at:
+            continue          # already blockading this one
+        if reachable is not None and star not in reachable:
+            continue
+        targets.add(star)
+    if not targets:
+        return
+    src_star, ships = max(by_star.items(), key=lambda kv: len(kv[1]))
+    if len(ships) < AI_BLOCKADE_MIN_FLEET:
+        return
+    src_pos = cm.get_component(src_star, Position)
+
+    def _dist2(st):
+        p = cm.get_component(st, Position)
+        if p is None or src_pos is None:
+            return float("inf")
+        return (p.x - src_pos.x) ** 2 + (p.y - src_pos.y) ** 2
+
+    target = min(targets, key=_dist2)
+    # Detach half the group (rounded up) so the AI keeps a reserve.
+    detach = ships[:max(AI_BLOCKADE_MIN_FLEET, (len(ships) + 1) // 2)]
+    start_fleet_movement(cm, detach, src_star, target, diplo=diplo)
+
+
+def _ai_wants_portal(cm, empire, unlocked, planet_ids) -> bool:
+    """True if the empire can build a Dimensional Portal and doesn't have
+    one yet — it only ever needs the one."""
+    from ecs.antares import PORTAL_BUILDING, PORTAL_TECH
+    if PORTAL_TECH not in unlocked:
+        return False
+    for entity_id in planet_ids:
+        bs = cm.get_component(entity_id, BuildState)
+        if bs is not None and PORTAL_BUILDING in bs.completed:
+            return False
+    return True
+
+
+def _ai_maybe_assault_antares(game, empire, unlocked):
+    """Late game: an AI holding a Dimensional Portal and a real fleet
+    takes its shot at Antares — the same victory path open to the player."""
+    from ecs.antares import can_launch_assault, launch_assault
+    # can_launch_assault already requires a COMPLETED portal building plus
+    # a staged fleet, so the tech alone isn't enough.
+    ok, _reason = can_launch_assault(game, empire.id)
+    if not ok:
+        return
+    cm = game.component_mgr
+    fleet = sum(1 for _e, o in cm.get_all(ShipOwner) if o.empire_id == empire.id)
+    if fleet < AI_ANTARES_MIN_FLEET:
+        return
+    launch_assault(game, empire.id)
+
 
 def _ai_clear_monsters(game, empire, reachable):
     """Peaceful/expansionist AI: send its main battle fleet to storm a
@@ -1412,6 +1534,17 @@ def _score_tech(tech_id: str, empire, personality, traits, diplo,
         if slot in ("weapon", "armor", "shield"):
             score += 20
 
+    # Counter-design: if rivals are fielding missiles or carrier fighters,
+    # point-defense is the answer — chase it hard rather than trading
+    # blows with ordnance you could be shooting down.
+    if getattr(empire, "_ai_missile_threat", False) and eq.get("point_defense"):
+        score += 45
+
+    # The Dimensional Portal is a victory condition, not just a tech — an
+    # empire with the industrial base to exploit it should want it badly.
+    if tech_id == "dimensional_portal" and getattr(empire, "_ai_colonies", 0) >= 4:
+        score += 40
+
     if is_stub:
         score -= 15
 
@@ -1466,6 +1599,12 @@ def _ai_pick_research(game, empire, personality, traits, tech_state,
             if other.id != empire.id and diplo.at_war(empire.id, other.id):
                 empire._ai_at_war = True
                 break
+    # Same idea for the counter-design and portal weightings.
+    empire._ai_missile_threat = _rivals_field_missiles(game.component_mgr,
+                                                       empire.id)
+    empire._ai_colonies = sum(
+        1 for _e, o in game.component_mgr.get_all(Owner)
+        if o.empire_id == empire.id)
 
     best_id, best_score = None, float("-inf")
     for tech_id, tech in TECHS.items():
