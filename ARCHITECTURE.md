@@ -23,7 +23,8 @@ the end of a tick rather than committing per change.
 EntityManager     — hands out integer entity ids
 ComponentManager  — entity id -> component instances
 components.py     — the component dataclasses (Planet, Ship, Empire, …)
-db.py             — schema, migrations, and every SQL helper
+db.py             — schema, migrations, and most SQL helpers
+                    (a few managers run their own queries)
 ```
 
 A save is literally a copy of `galaxy.db` (`save_manager.py`), so
@@ -72,16 +73,22 @@ endgame, and flags idle colonies.
 
 ### The player's battles resolve *later*
 
-`combat_tick` does **not** resolve a battle the player is in. It builds a
-`TacticalBattle` and queues it in `game.pending_engagements`; the
-GalaxyScene routes to the combat-decision scene after the turn, and the
-battle is played out (or auto-resolved) then.
+`combat_tick` does **not** resolve a battle the player has *ships* in.
+When the player has ships at the star and at least one empire present is
+hostile to them, it builds a `TacticalBattle`, queues it in
+`game.pending_engagements`, and skips auto-resolve for that star; the
+GalaxyScene routes to the combat-decision scene after the turn and the
+battle is played out (or auto-resolved) then. Every other engagement —
+including one at a star where the player only holds a colony — resolves
+inside the tick.
 
 Anything that must happen when a battle ends therefore has to run in
 **both** places: inside `combat_tick` for AI-vs-AI, and in the scene
 finalisers (`scenes/tactical.py::_finalise`,
 `scenes/combat_decision.py::_auto_resolve`) for the player's. Veterancy
-awards and space-monster kill detection both do this.
+is awarded in `combat_tick` and in both finalisers; space-monster kills
+are reconciled by `monster_tick` (the tick after combat) and, so a save
+can't happen in between, by both finalisers too.
 
 ---
 
@@ -159,8 +166,9 @@ many hulls survive — so a killed guardian stays dead.
 `antaran.py` (raiders) · `monsters.py` (guardians) · `antares.py`
 (Dimensional Portal victory) · `events.py`
 
-**UI** — `scenes/` (one file per screen), `ui_bar.py`, `tooltips.py`,
-`palette.py`, `turn_log.py`
+**UI** — `scenes/` (roughly one file per screen; `panels.py` holds the
+four list/info panels), `ui_bar.py`, `tooltips.py`, `palette.py`,
+`turn_log.py`
 
 ---
 

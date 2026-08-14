@@ -1,8 +1,9 @@
 # Master of Galaxy — Player's Manual
 
 A 4X turn-based strategy game: **eX**plore, **eX**pand, **eX**ploit,
-**eX**terminate. You start with one homeworld and a couple of ships, and
-you win by out-growing, out-thinking, or out-shooting everyone else.
+**eX**terminate. You start with a single homeworld — no ships — and you
+win by out-growing, out-thinking, or out-shooting everyone else. Your
+first job is to build something that can leave the system.
 
 ```bash
 python main.py
@@ -51,7 +52,8 @@ scroll with the mouse wheel, `PgUp`/`PgDn`, `Home`/`End`.
 Each colony's population splits into three jobs:
 
 - **Farmers** make food. Food feeds your *whole empire* — a negative
-  balance halts growth and starves your biggest colony.
+  balance halts growth, and a colony that can't feed itself locally
+  starves (the worst local deficit goes first).
 - **Workers** make industry, which builds whatever the colony is
   constructing. With nothing queued, industry becomes **BC** (money).
 - **Scientists** make research.
@@ -121,13 +123,15 @@ hull has a space budget; you spend it on armour, shields, a weapon, and
 specials. Weapons come in three **mounts**:
 
 - **Normal** — baseline.
-- **Heavy** — double damage, double space, longer range.
+- **Heavy** — double damage for double space.
 - **Point-Defense** — half damage, but the guns shoot down incoming
   missiles and fighters.
 
 Designs are **frozen at build time** — researching better tech doesn't
-upgrade existing ships. Use **Refit** at a colony to bring parked ships
-up to your current best loadout for a fraction of the build cost.
+upgrade existing ships. Use **Refit** at a colony to rebuild parked ships
+for a fraction of the build cost: each is brought up to your newest saved
+design for its hull class, or to your best available tech if you haven't
+designed one.
 
 ### Beams vs missiles vs point-defense
 
@@ -197,7 +201,8 @@ notices.
 ## Threats
 
 - **Antaran raiders** appear from turn 40 and return periodically,
-  striking your strongest colony with apex warships. Planetary defenses
+  striking the galaxy's largest colony with apex warships — often yours,
+  but they'll hit a rival's capital just as happily. Planetary defenses
   and a home fleet matter.
 - **Space monsters** sit still and guard, but they're brutal if you
   attack under-strength.
@@ -223,8 +228,10 @@ fast you won. It's recorded in the Hall of Fame.
 
 ## Tips
 
-- Don't leave colonies idle — set them to Trade Goods if nothing's worth
-  building.
+- An idle colony already turns its industry into BC, so you lose nothing
+  by leaving one unqueued — but setting **Trade Goods** makes that choice
+  explicit, so a stray click can't quietly start a building you didn't
+  want. Use **Housing** instead when you'd rather grow than earn.
 - Watch the **food balance** in the top bar; starvation is silent and
   expensive.
 - Scrap obsolete ships instead of paying upkeep on them forever.

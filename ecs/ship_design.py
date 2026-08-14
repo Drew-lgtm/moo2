@@ -29,11 +29,16 @@ from ecs.techs import TECHS
 # ---- weapon mounts (MOO2) ---------------------------------------------
 #
 # A manual ship design may fit its weapon bank on one of three mounts.
-# Auto-built ships always use "normal". The multipliers apply to the
-# weapon's per-shot attack, its space cost, and (in tactical combat) its
-# range band. Point-Defense trades reach + punch for the ability to
-# engage missiles/fighters (that interception lands in a later stage;
-# for now it's a cheap, short-range, weak mount).
+# Auto-built ships always use "normal". ``attack_mult`` and ``space_mult``
+# are live (see stats_from_ship / design_space_used). Point-Defense trades
+# punch for the ability to shoot down incoming missiles and fighters —
+# see PD_INTERCEPT_PER_GUN and ecs.battle.resolve_auto.
+#
+# NOTE: ``range_mult`` is NOT wired up. Tactical range falloff comes only
+# from hex distance (ecs.tactical.weapon_range_mult), which never sees the
+# mount, so Heavy currently buys damage and nothing else. Kept as data for
+# whenever the tactical layer grows mount-aware ranges — don't document it
+# as a live effect until it is.
 MOUNTS: dict[str, dict] = {
     "normal": {
         "name": "Normal", "attack_mult": 1.0, "space_mult": 1.0,
