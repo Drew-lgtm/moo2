@@ -97,6 +97,9 @@ class Game:
         # Set when a victory/defeat condition is met; routes to the
         # game-over screen. {"result","mode","winner_id"}.
         self.pending_endgame: dict | None = None
+        # Scene the help overlay (F1) was opened from, so Esc goes back
+        # there instead of dumping the player on the galaxy view.
+        self._help_return_scene: str | None = None
         # Save/Load slot screen state (set before switching to "saves").
         self.save_screen_mode: str = "load"     # "load" | "save"
         self.save_screen_return: str = "main_menu"
@@ -391,9 +394,29 @@ class Game:
                 return True  # swallow this Esc — would otherwise close scene
         return False
 
+    def open_help(self):
+        """Show the help overlay over the current screen."""
+        if self.scenes.active_name == "help":
+            return
+        self._help_return_scene = self.scenes.active_name
+        self.scenes.replace("help")
+
+    def close_help(self):
+        """Return to whatever screen help was opened from."""
+        self.scenes.replace(self._help_return_scene or "galaxy")
+        self._help_return_scene = None
+
     def _handle_shortcut(self, event) -> bool:
         if event.type != pygame.KEYDOWN:
             return False
+        # Help is available from ANY screen, not just the shortcut ones —
+        # it's most useful exactly where the player is stuck.
+        if event.key == pygame.K_F1:
+            if self.scenes.active_name == "help":
+                self.close_help()
+            else:
+                self.open_help()
+            return True
         if self.scenes.active_name not in self._SHORTCUT_SCENES:
             return False
         if event.key in self._SHORTCUT_SCENE_KEYS:

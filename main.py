@@ -3,6 +3,7 @@ import pygame
 from ecs.save_manager import init_save_slots
 from ecs.game import Game
 from ecs.scenes import (
+    HelpScene,
     MainMenuScene,
     GalaxyScene,
     SystemViewScene,
@@ -57,6 +58,7 @@ def main():
     game.scenes.register("leaders", LeadersScene(game))
     game.scenes.register("races", RacesScene(game))
     game.scenes.register("info", InfoScene(game))
+    game.scenes.register("help", HelpScene(game))
 
     game.run("main_menu")
 

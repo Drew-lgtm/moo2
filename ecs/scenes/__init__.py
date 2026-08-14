@@ -14,6 +14,7 @@ from ecs.scenes.idle_colonies import IdleColoniesScene
 from ecs.scenes.game_over import GameOverScene
 from ecs.scenes.saves import SaveSlotScene
 from ecs.scenes.pause import PauseScene
+from ecs.scenes.help import HelpScene
 from ecs.scenes.empire_setup import EmpireSetupScene
 from ecs.scenes.espionage import EspionageScene
 from ecs.scenes.leaders import LeadersScene
@@ -41,6 +42,7 @@ __all__ = [
     "GameOverScene",
     "SaveSlotScene",
     "PauseScene",
+    "HelpScene",
     "EmpireSetupScene",
     "EspionageScene",
     "ColoniesScene",

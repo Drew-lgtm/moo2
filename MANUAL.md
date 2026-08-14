@@ -37,6 +37,8 @@ colonies grow and produce, fleets arrive, battles happen, events fire.
 | `E` | Espionage | Spies: steal tech, sabotage, incite revolt. |
 | `L` | Leaders | Hire and assign officers. |
 | `I` | Info | Empire stats, **government**, research + tech list. |
+| `T` | — | End turn. |
+| `F1` | Help | Quick reference, over whatever screen you're on. |
 | `Esc` | — | Back / pause menu. |
 
 **Right-click almost anything** for a tooltip explaining it. Panels

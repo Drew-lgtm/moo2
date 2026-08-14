@@ -37,6 +37,8 @@ demand and are gitignored.
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | Developers — the ECS + SQLite model, turn order, module map, persistence rules, and testing. |
 | [BACKLOG.md](BACKLOG.md) | What's planned next. |
 
+In game, press **F1** for a quick reference over whatever screen you're on.
+
 ---
 
 ## ✅ Features Completed
