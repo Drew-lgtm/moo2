@@ -424,6 +424,11 @@ class LeadersScene(PanelScene):
         _draw_lines(screen, font, ["Leaders not implemented yet."], rect, color=HINT_COLOR)
 
 
+# Sentinel for "shed the trait, no replacement" so it is distinguishable
+# from "nothing armed" in the two-click confirm.
+SHED = "__shed__"
+
+
 class RacesScene(PanelScene):
     title = "Races"
 
@@ -436,6 +441,9 @@ class RacesScene(PanelScene):
         # Evolutionary Mutation UI: pick one of your traits, then pick its
         # replacement (or shed it).
         self._mut_drop: str | None = None
+        # Armed replacement awaiting a confirming second click (the swap
+        # is irreversible and only available once per empire).
+        self._mut_confirm: str | None = None
         self._trait_hits: list[tuple[str, pygame.Rect]] = []
         self._repl_hits: list[tuple[str | None, pygame.Rect]] = []
 
@@ -456,8 +464,15 @@ class RacesScene(PanelScene):
                     return
             for add, rect in self._repl_hits:
                 if rect.collidepoint(event.pos):
-                    self._apply_mutation(add)
+                    # The mutation is irreversible and once-per-empire, so
+                    # arm on the first click and commit on the second.
+                    if self._mut_confirm != add:
+                        self._mut_confirm = add
+                    else:
+                        self._apply_mutation(None if add is SHED else add)
+                        self._mut_confirm = None
                     return
+            self._mut_confirm = None    # click elsewhere disarms
         super().handle_event(event)
 
     def _apply_mutation(self, add_trait):
@@ -547,24 +562,31 @@ class RacesScene(PanelScene):
             y += 20
 
         if mutable and self._mut_drop is not None:
-            ry = rect.y + 24
+            # Right column, aligned with the trait list — NOT rect.y, which
+            # drew this on top of the race thumbnail gallery.
+            ry = y - len(traits) * 20
             rx = rect.x + rect.width // 2
             screen.blit(font.render("Replace with:", True, (255, 230, 120)),
                         (rx, ry))
             ry += 22
             shed = pygame.Rect(rx, ry, rect.width // 2 - 20, 20)
-            screen.blit(font.render("  (shed it — no replacement)", True,
-                                    (150, 220, 160)), (rx, ry))
-            self._repl_hits.append((None, shed))
+            shed_label = ("  CONFIRM — shed it permanently?"
+                          if self._mut_confirm == SHED
+                          else "  (shed it — no replacement)")
+            screen.blit(font.render(shed_label, True, (150, 220, 160)),
+                        (rx, ry))
+            self._repl_hits.append((SHED, shed))
             ry += 20
             for t in mutation_replacements(self._mut_drop):
                 if ry > rect.bottom - 20:
                     break
                 spec = TRAITS.get(t, {})
                 row = pygame.Rect(rx, ry, rect.width // 2 - 20, 20)
-                screen.blit(font.render(
-                    f"  {spec.get('name', t)}  ({spec.get('cost', 0):+d})",
-                    True, TEXT_COLOR), (rx, ry))
+                armed = (self._mut_confirm == t)
+                label = (f"  CONFIRM — {spec.get('name', t)}?" if armed
+                         else f"  {spec.get('name', t)}  ({spec.get('cost', 0):+d})")
+                screen.blit(font.render(label, True,
+                            (255, 200, 120) if armed else TEXT_COLOR), (rx, ry))
                 self._repl_hits.append((t, row))
                 ry += 20
 

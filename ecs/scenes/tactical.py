@@ -443,7 +443,8 @@ class TacticalScene(Scene):
                 f"Hull:   {s.hull}/{s.max_hull}",
                 f"Attack: {s.attack}"
                 + (f"  +{s.missile_attack} msl" if s.missile_attack else ""),
-                (f"PD:     {s.pd_remaining}/{s.point_defense} this round"
+                (f"PD:     {s.point_defense}  (fleet screen "
+                 f"{self.battle.pd_pool.get(s.empire_id, '—')} left)"
                  if s.point_defense else "PD:     none"),
                 f"Move:   {s.moves_left}/{s.speed} MP",
                 f"Fired:  {'yes' if s.has_fired else 'no'}",

@@ -122,12 +122,11 @@ class TacticalShip:
     shield_regen: int = 0
     armor: int = 0
     # Interceptable ordnance (missile weapons + carrier fighters) and this
-    # ship's own interception rating. ``pd_remaining`` is the per-round
-    # interception budget, refreshed in ``end_round`` — the same model the
-    # strategic resolver uses (ecs.battle.resolve_auto).
+    # ship's own interception rating, which feeds its SIDE's per-round
+    # interception pool (see TacticalBattle.intercept) — the same
+    # side-pooled model the strategic resolver uses.
     missile_attack: int = 0
     point_defense: int = 0
-    pd_remaining: int = 0
     # Crew veteran rank name (see ecs.veterancy) — display only, so the
     # post-battle report can show what ranks fought.
     veteran_rank: str = "Green"
@@ -137,11 +136,6 @@ class TacticalShip:
     is_station: bool = False
     has_fired: bool = False
     destroyed: bool = False
-
-    def __post_init__(self):
-        # Start the first round with a full interception budget.
-        if self.pd_remaining == 0 and self.point_defense:
-            self.pd_remaining = self.point_defense
 
     @property
     def has_moved(self) -> bool:
@@ -170,6 +164,26 @@ class TacticalBattle:
     # same numbers whether a battle was played out or auto-resolved:
     # {empire_id: {"beam": int, "missile": int, "intercepted": int}}
     fire_stats: dict = field(default_factory=dict)
+
+    # Per-round point-defense budget per side, spent as incoming ordnance
+    # arrives and refreshed in end_round. Pooled per SIDE (not per ship) so
+    # a dedicated PD escort actually screens the ships it's escorting —
+    # and so a hand-played battle intercepts exactly like an auto-resolved
+    # one (ecs.battle.resolve_auto uses the same side-pooled model).
+    pd_pool: dict = field(default_factory=dict)
+
+    def intercept(self, empire_id: int, incoming: int) -> int:
+        """Spend ``empire_id``'s remaining interception on ``incoming``
+        missile/fighter damage. Returns how much was shot down."""
+        if incoming <= 0:
+            return 0
+        if empire_id not in self.pd_pool:
+            self.pd_pool[empire_id] = sum(
+                s.point_defense for s in self.ships
+                if s.empire_id == empire_id and not s.destroyed)
+        stopped = min(incoming, self.pd_pool[empire_id])
+        self.pd_pool[empire_id] -= stopped
+        return stopped
 
     def tally_fire(self, empire_id: int, key: str, amount: int):
         if not amount:
@@ -261,8 +275,7 @@ class TacticalBattle:
             missile_raw = _battle.roll_damage(attacker.missile_attack, rng,
                                               range_mult)
             self.tally_fire(attacker.empire_id, "missile", missile_raw)
-            intercepted = min(missile_raw, max(0, target.pd_remaining))
-            target.pd_remaining = max(0, target.pd_remaining - intercepted)
+            intercepted = self.intercept(target.empire_id, missile_raw)
             self.tally_fire(target.empire_id, "intercepted", intercepted)
             raw += missile_raw - intercepted
         view = _combatant_view(target)
@@ -286,10 +299,12 @@ class TacticalBattle:
                 continue
             s.has_fired = False
             s.moves_left = s.speed
-            s.pd_remaining = s.point_defense   # interceptors rearm
             if s.shield_max > 0:
                 s.shield_current = min(s.shield_max,
                                         s.shield_current + s.shield_regen)
+        # Interceptors rearm: recomputed lazily from the surviving ships,
+        # so losses shrink a side's screen.
+        self.pd_pool.clear()
         self.round += 1
         empires = self.empires_present()
         if len(empires) <= 1:
@@ -440,10 +455,15 @@ def battle_report(tbattle: TacticalBattle,
             if s.destroyed:
                 lost += 1
         fire = tbattle.fire_stats.get(eid, {})
+        # Stations aren't fleet losses, but their firepower IS this side's
+        # planetary defense — reporting 0 made a station-only defender look
+        # like it never fought.
+        station_attack = sum(s.attack + s.missile_attack for s in tbattle.ships
+                             if s.empire_id == eid and s.is_station)
         sides.append({
             "empire_id": eid,
             "attack": attack_by_eid_before.get(eid, 0),
-            "defense": 0,
+            "defense": station_attack,
             "ships_before": by_class,
             "total_before": total,
             "lost": lost,

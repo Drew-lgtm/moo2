@@ -228,8 +228,12 @@ def _build_tactical_battle(cm, star_entity: int, new_turn: int,
             # we surface it as the armor damage reduction here.
             armor = max(0, int(stats.get("defense", 0)))
             speed = SHIP_AP.get(ship.ship_class, DEFAULT_AP)
-            col = cols[i % len(cols)]
-            row = i % GRID_ROWS
+            # Walk the side's columns row-by-row so a big fleet fills every
+            # cell instead of wrapping onto itself: col/row both cycling
+            # independently stacked ship 22 on top of ship 1.
+            slot = i % (len(cols) * GRID_ROWS)
+            col = cols[slot // GRID_ROWS]
+            row = slot % GRID_ROWS
             battle.ships.append(TacticalShip(
                 entity_id=ship_entity,
                 empire_id=eid,
@@ -288,7 +292,28 @@ def _make_station_for(cm, star_entity: int, empire_id: int,
                     highest_tier = tier
                 break
     if highest_tier is None:
-        return None
+        # Defense that doesn't come from the Star Base chain — a Missile
+        # Base, Ground Batteries, Fighter Garrison, or the Planetary
+        # Barrier Shield. It still fires in the strategic resolver, so it
+        # must field something here too or the colony would defend itself
+        # with nothing. Scale a generic emplacement off the rating.
+        if defense_rating <= 0:
+            return None
+        return _TS(
+            entity_id=-1,
+            empire_id=empire_id,
+            ship_class="planetary_defenses",
+            name="Planetary Defenses",
+            col=back_col, row=0,
+            hull=max(20, defense_rating * 4),
+            max_hull=max(20, defense_rating * 4),
+            attack=defense_rating,
+            speed=0, moves_left=0,
+            shield_max=defense_rating, shield_current=defense_rating,
+            shield_regen=max(1, defense_rating // 4),
+            armor=max(1, defense_rating // 6),
+            is_station=True,
+        )
     stats = _STATION_STATS[highest_tier]
     return _TS(
         entity_id=-1,  # stations aren't backed by ECS ship entities

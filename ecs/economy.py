@@ -892,10 +892,19 @@ def production_tick(game, new_turn: int):
                     tech.progress = 0
                     if advance_tech_queue(tech):
                         tech_queue_updates.append((empire.id, list(tech.queue)))
-                        if empire.is_player and tech.current_target:
-                            nxt_name = TECHS.get(tech.current_target, {}).get(
-                                "name", tech.current_target)
-                            turn_log(game, CAT_TECH, f"Now researching {nxt_name}")
+                        if empire.is_player:
+                            if tech.current_target:
+                                nxt_name = TECHS.get(tech.current_target, {}).get(
+                                    "name", tech.current_target)
+                                turn_log(game, CAT_TECH,
+                                         f"Now researching {nxt_name}")
+                            else:
+                                # Everything queued was invalidated by this
+                                # unlock's tier lock-out — say so rather than
+                                # letting research go quietly idle.
+                                turn_log(game, CAT_TECH,
+                                         "Research queue empty — pick a new "
+                                         "target.")
                 tech_updates.append((empire.id, tech.current_target, tech.progress))
         # Research idle but a queue waiting? Something other than a
         # completion cleared the target — a Derelict Ship event granting

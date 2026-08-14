@@ -1,5 +1,5 @@
 """Point-defense interception in tactical (hex) battles — the same
-missile-vs-PD model the strategic resolver uses."""
+side-pooled missile-vs-PD model the strategic resolver uses."""
 import random
 
 from ecs.tactical import TacticalShip, TacticalBattle
@@ -40,9 +40,10 @@ def test_point_defense_does_not_stop_beams():
 def test_result_reports_interception():
     a = _ship(1, 0, missile_attack=30)
     d = _ship(2, 1, point_defense=10)
-    res = _battle(a, d).attack(a, d, random.Random(3))
+    b = _battle(a, d)
+    res = b.attack(a, d, random.Random(3))
     assert res["intercepted"] == 10
-    assert d.pd_remaining == 0          # budget spent
+    assert b.pd_pool[d.empire_id] == 0          # side screen spent
 
 
 def test_pd_budget_is_per_round_and_rearms():
@@ -52,12 +53,12 @@ def test_pd_budget_is_per_round_and_rearms():
     b = TacticalBattle(star_entity=1, star_name="X", turn=1, player_id=1)
     b.ships = [a, a2, d]
     b.attack(a, d, random.Random(1))
-    assert d.pd_remaining == 0
+    assert b.pd_pool[d.empire_id] == 0
     # Second attacker the SAME round faces no interception left.
     res2 = b.attack(a2, d, random.Random(1))
     assert res2["intercepted"] == 0
     b.end_round()
-    assert d.pd_remaining == d.point_defense    # rearmed
+    assert b.pd_pool == {}                      # rearms lazily next shot
 
 
 def test_overwhelming_pd_blocks_a_small_volley():
