@@ -29,6 +29,14 @@ python main.py
 Save files (`saves/slot*.db`) and the active `galaxy.db` are created on
 demand and are gitignored.
 
+## Documentation
+
+| Document | For |
+|---|---|
+| **[MANUAL.md](MANUAL.md)** | Players — the core loop, every screen, and how each system works (economy, morale, combat, victory paths). |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Developers — the ECS + SQLite model, turn order, module map, persistence rules, and testing. |
+| [BACKLOG.md](BACKLOG.md) | What's planned next. |
+
 ---
 
 ## ✅ Features Completed
