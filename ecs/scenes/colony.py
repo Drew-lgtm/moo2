@@ -727,8 +727,11 @@ class ColonyScene(Scene):
         title_surf = self.title_font.render(title, True, TITLE_COLOR)
         screen.blit(title_surf, (24, 16))
 
-        # Type dot
-        pygame.draw.circle(screen, planet_color(planet.planet_type), (24 + 8, 60), 8)
+        # Planet body — the same procedural disc the system view draws,
+        # so a world is recognisable between screens.
+        from assets.procart import planet_surface
+        body = planet_surface(planet.planet_type, 10, seed=planet.id)
+        screen.blit(body, body.get_rect(center=(24 + 8, 60)))
         # Owner color bar
         if owner is not None:
             emp = next((e for _eid, e in cm.get_all(Empire) if e.id == owner.empire_id), None)

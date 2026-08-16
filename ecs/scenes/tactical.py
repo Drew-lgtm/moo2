@@ -33,6 +33,7 @@ import pygame
 from ecs.scene import Scene
 from ecs.components import Empire, Name
 from ecs.palette import empire_color
+from assets.procart import ship_surface
 from ecs.tactical import (
     TacticalBattle, TacticalShip,
     GRID_COLS, GRID_ROWS, HEX_SIZE, HEX_WIDTH, HEX_V_SPACING,
@@ -380,14 +381,18 @@ class TacticalScene(Scene):
                     pygame.draw.rect(screen, SELECT_RING,
                                       rect.inflate(8, 8), 2)
             else:
-                pygame.draw.circle(screen, color, (int(cx), int(cy)), r)
-                pygame.draw.circle(screen, (0, 0, 0), (int(cx), int(cy)), r + 1, 1)
+                # Per-hull silhouette in the empire's colour, so classes
+                # are tellable apart at a glance. Enemy ships face left.
+                sprite = ship_surface(ship.ship_class, r * 2, color)
+                if ship.empire_id != self.battle.player_id:
+                    sprite = pygame.transform.flip(sprite, True, False)
+                screen.blit(sprite, sprite.get_rect(center=(int(cx), int(cy))))
                 if ship is self.selected:
                     pygame.draw.circle(screen, SELECT_RING,
                                         (int(cx), int(cy)), r + 4, 2)
-            glyph_char = "★" if ship.is_station else ship.ship_class[0].upper()
-            glyph = self.small_font.render(glyph_char, True, (255, 255, 255))
-            screen.blit(glyph, glyph.get_rect(center=(int(cx), int(cy))))
+            if ship.is_station:
+                glyph = self.small_font.render("★", True, (255, 255, 255))
+                screen.blit(glyph, glyph.get_rect(center=(int(cx), int(cy))))
 
             # Shield ring above the hull bar. Subtle blue arc whose
             # length tracks shield_current / shield_max.

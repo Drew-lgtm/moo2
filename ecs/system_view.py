@@ -17,6 +17,7 @@ from ecs.components import (
 )
 from ecs.palette import planet_color, empire_color
 from ecs.projects import PROJECTS
+from assets.procart import planet_surface
 
 
 # Per spectral-class colours for the central star. Each entry is
@@ -264,7 +265,11 @@ class SystemView:
             # the outline contrast against bright planet colors (Desert,
             # Tundra) on dark space; 3 px white ring outside reads as
             # "clickable".
-            pygame.draw.circle(overlay, planet_color(planet.planet_type), pos, radius)
+            # Procedural disc: biome tint, surface detail and day/night
+            # shading, seeded from the planet id so a world always looks
+            # the same. Falls back to nothing special for tiny radii.
+            body = planet_surface(planet.planet_type, radius, seed=planet.id)
+            overlay.blit(body, body.get_rect(center=pos))
             pygame.draw.circle(overlay, (0, 0, 0), pos, radius + 1, 1)
             pygame.draw.circle(overlay, (255, 255, 255), pos, radius + 3, 3)
 
