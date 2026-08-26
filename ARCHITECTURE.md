@@ -5,6 +5,38 @@ to it. For gameplay, see [MANUAL.md](MANUAL.md).
 
 ---
 
+## Quick start
+
+```bash
+pip install -r requirements.txt
+python main.py                 # play it
+python -m pytest -q            # run the suite (~1-2 min, headless)
+```
+
+**Where to start reading.** In this order, and you'll understand most of
+the game in an hour:
+
+1. `ecs/components.py` — every piece of state the game has, in one file.
+2. `ecs/game.py` — the `Game` object: the turn loop and the scene wiring.
+   The `turn_callbacks` list is the spine of the whole simulation.
+3. `ecs/economy.py::production_tick` — the biggest system, and a good
+   example of the batch-write pattern every tick follows.
+4. `ecs/battle.py` — the combat maths, small and self-contained.
+
+**Making your first change.** Say you want a new building:
+
+1. Add an entry to `PROJECTS` in `ecs/projects.py` (cost, category,
+   `effects`, optional `required_tech`).
+2. If it needs a new effect key, handle it where the others are applied
+   in `economy.production_tick`.
+3. Add a test next to the similar ones in `tests/`.
+4. `python -m pytest -q`.
+
+Nothing else needs touching — the build UI reads `PROJECTS` directly, and
+the AI picks it up through its personality's `build_priority`.
+
+---
+
 ## The model: ECS mirroring SQLite
 
 The game is a **hybrid ECS + database**:

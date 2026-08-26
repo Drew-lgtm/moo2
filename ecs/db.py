@@ -1,3 +1,14 @@
+"""SQLite persistence — schema, migrations, and query helpers.
+
+``galaxy.db`` is the source of truth; the ECS is an in-memory mirror of
+it. ``init_db()`` is idempotent: it creates any missing table and runs
+the additive ``_migrate_*`` helpers, so an older save keeps loading after
+new columns appear. It runs on new-game AND on load for that reason.
+
+Convention: schema changes are ALWAYS additive (new table, or
+``ALTER TABLE ... ADD COLUMN`` with a default). SCHEMA_VERSION is only
+bumped for a genuinely breaking change the migrations can't cover.
+"""
 import sqlite3
 from pathlib import Path
 

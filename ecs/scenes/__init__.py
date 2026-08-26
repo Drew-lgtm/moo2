@@ -1,3 +1,9 @@
+"""Scene registry — every screen the game can show.
+
+Scenes are registered by name in ``main.py`` and swapped via
+``game.scenes.replace(name)``. One file per screen, except ``panels.py``
+which holds the four list/info panels.
+"""
 from ecs.scenes.main_menu import MainMenuScene
 from ecs.scenes.galaxy import GalaxyScene
 from ecs.scenes.system_view import SystemViewScene

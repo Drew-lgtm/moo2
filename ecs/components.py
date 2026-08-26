@@ -1,3 +1,10 @@
+"""ECS component definitions — the shape of every piece of game state.
+
+Components are plain dataclasses with no behaviour: systems (economy,
+combat, fleet, …) read and mutate them. Anything that must survive a
+save/load also has a column in ``ecs.db``; see ARCHITECTURE.md for the
+mirror rule and how to add a persisted field without breaking old saves.
+"""
 from dataclasses import dataclass, field
 
 @dataclass

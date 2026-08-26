@@ -1,3 +1,4 @@
+"""Pause menu — resume, save, load, quit to menu."""
 from ecs.scene import Scene
 from ecs.menu import Menu
 

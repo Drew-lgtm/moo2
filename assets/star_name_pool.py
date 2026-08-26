@@ -1,3 +1,4 @@
+"""Star name pool loaded from ``star_names.txt``, sampled without repeats."""
 import os
 import random
 

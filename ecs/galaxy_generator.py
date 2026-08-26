@@ -1,3 +1,13 @@
+"""Galaxy creation and loading — the bridge between SQLite and the ECS.
+
+``generate()`` builds a fresh galaxy (stars, planets, empire homeworlds)
+straight into the database, then loads it. ``load_from_db()`` is the
+reverse: it reads every table and reconstructs the ECS components.
+
+Reads of columns added after the initial schema are wrapped in
+``try/except (IndexError, KeyError)`` so a save written by an older build
+still loads — see ARCHITECTURE.md.
+"""
 import random
 from ecs.components import Position, Name, Planet, Orbiting, StarVisual, StarRef, Empire, Owner, Population, BuildState, TechState, Ship, ShipOwner, ShipAt, ShipInTransit
 from ecs.palette import EMPIRE_COLOR_RGB

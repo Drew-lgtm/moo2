@@ -1,3 +1,4 @@
+"""Tiny keyboard/mouse menu widget used by the main and pause screens."""
 import pygame
 
 class Menu:

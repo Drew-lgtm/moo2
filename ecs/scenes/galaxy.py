@@ -1,3 +1,11 @@
+"""Galaxy view — the star map, and the game's home screen.
+
+Draws stars (with fog of war), fleet chips and movement paths, the top
+status bar and the Last Turn log, and owns fleet selection: click a
+fleet chip to pick it up, click a destination to send it. Also routes to
+the post-turn screens (combat decisions, reports, council, game over)
+when the turn tick queues them.
+"""
 import pygame
 
 from ecs.scene import Scene

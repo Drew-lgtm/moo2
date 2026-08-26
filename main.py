@@ -1,3 +1,11 @@
+"""Entry point.
+
+Boots pygame, registers every scene by name, and starts the main loop on
+the main menu. Scene names used here are the same strings passed to
+``game.scenes.replace(...)`` everywhere else.
+
+    python main.py
+"""
 import pygame
 
 from ecs.save_manager import init_save_slots

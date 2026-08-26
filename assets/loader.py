@@ -1,3 +1,11 @@
+"""Asset loading with graceful fallbacks.
+
+Many PNGs in this repo are 0-byte placeholders, so nothing may assume an
+asset is loadable: ``load_image`` returns a visible placeholder surface
+instead of raising. Results are cached per (path, size).
+
+For art that's generated rather than loaded, see ``assets/procart.py``.
+"""
 import os
 import pygame
 import random

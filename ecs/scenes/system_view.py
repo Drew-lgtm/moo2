@@ -1,3 +1,7 @@
+"""Scene wrapper around the SystemView widget (``ecs/system_view.py``).
+
+Shows one star's planets; clicking a planet opens its colony screen.
+"""
 from ecs.scene import Scene
 from ecs.system_view import SystemView
 

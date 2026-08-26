@@ -1,3 +1,4 @@
+"""Main menu — new game, load, quit."""
 from ecs.scene import Scene
 from ecs.menu import Menu
 

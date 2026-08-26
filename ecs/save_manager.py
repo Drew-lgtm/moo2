@@ -1,3 +1,10 @@
+"""Save slots.
+
+A save is a straight file copy of the active ``galaxy.db`` into
+``saves/slotN.db`` (and back). Because the DB is the source of truth,
+this captures everything persisted — and nothing that isn't, which is why
+transient state like an in-flight Antaran raid doesn't survive a reload.
+"""
 import shutil
 import sqlite3
 import datetime
