@@ -23,6 +23,7 @@ from ecs.ship_design import (
     _equip_specs, MOUNTS, MOUNT_ORDER, design_space_used, hull_space_budget,
     stats_from_ship,
 )
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (10, 12, 24, 240)
@@ -47,10 +48,10 @@ DESIGNABLE = [c for c in SHIP_ORDER
 class ShipDesignerScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(17, bold=True)
+        self.body_font = get_font(15)
+        self.small_font = get_font(13)
 
         # Editable working design.
         self._reset_working()

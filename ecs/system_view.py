@@ -251,10 +251,8 @@ class SystemView:
             )
             pygame.draw.ellipse(overlay, (90, 100, 150), orbit_rect, 2)
 
-        # Star: layered discs build a soft halo that survives SCALED's
-        # non-integer downscaling. Thin (1-2 px) strokes were vanishing
-        # on laptop displays — every ring here is at least 3 px wide.
-        # Colours come from the star's spectral class (set in __init__).
+        # Star: layered discs build a soft halo. Colours come from the
+        # star's spectral class (set in __init__).
         outer, inner, core = self.star_colors
         pygame.draw.circle(overlay, outer, center, STAR_RADIUS + 10, 3)
         pygame.draw.circle(overlay, inner, center, STAR_RADIUS + 4, 3)

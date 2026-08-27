@@ -13,6 +13,7 @@ from __future__ import annotations
 import pygame
 
 from ecs.scenes.panels import PanelScene, TITLE_COLOR, TEXT_COLOR, HINT_COLOR
+from ecs.ui_scale import s
 
 
 SECTION_COLOR = (255, 230, 120)
@@ -35,7 +36,7 @@ HELP_SECTIONS: list[tuple[str, list[str]]] = [
     ]),
     ("Economy", [
         "* Farmers make food. Food is empire-wide — a negative balance",
-        "  halts growth and starves your biggest colony.",
+        "  halts growth and starves the colony with the worst local deficit.",
         "* Workers make industry: it builds what's queued, or becomes BC",
         "  if nothing is.",
         "* Scientists make research.",
@@ -92,7 +93,8 @@ HELP_SECTIONS: list[tuple[str, list[str]]] = [
         "  its trade income. No shots required.",
         "* Warp Dissipator (tech) — enemy fleets can't flee a system your",
         "  warships hold.",
-        "Antaran raiders strike your strongest colony from turn 40 on.",
+        "Antaran raiders strike the galaxy's largest colony from turn 40 on —",
+        "not necessarily yours.",
     ]),
     ("Winning", [
         "* Conquest — be the last empire with colonies.",
@@ -109,8 +111,8 @@ HELP_SECTIONS: list[tuple[str, list[str]]] = [
 class HelpScene(PanelScene):
     title = "Help  —  F1 to close"
 
-    LINE_H = 20
-    SECTION_GAP = 14
+    LINE_H = s(20)
+    SECTION_GAP = s(14)
 
     def handle_event(self, event):
         # Esc and F1 both return to wherever the player opened help from,

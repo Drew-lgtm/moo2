@@ -17,6 +17,7 @@ from ecs.endgame import (
     _turn_speed_multiplier,
 )
 from ecs.db import get_hall_of_fame, get_hall_of_fame_pillar_records
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (8, 10, 22, 250)
@@ -32,10 +33,10 @@ ROW_BG_ALT = (30, 34, 50)
 class GameOverScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 48, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 15, bold=True)
+        self.title_font = get_font(48, bold=True)
+        self.header_font = get_font(22, bold=True)
+        self.body_font = get_font(17)
+        self.small_font = get_font(15)
         self._recorded = False
         self._hof: list = []
         self._pillar_records: dict = {}

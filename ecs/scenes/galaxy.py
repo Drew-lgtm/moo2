@@ -19,6 +19,7 @@ from ecs.fleet import start_fleet_movement, turns_for, empire_speed_bonus
 from ecs.fuel import in_fuel_range, supply_stars
 from ecs.sensors import sensor_points, empire_sensor_range_px, is_detected
 from assets.loader import load_image
+from ecs.ui_scale import get_font
 
 
 class GalaxyScene(Scene):
@@ -52,15 +53,13 @@ class GalaxyScene(Scene):
     def on_enter(self):
         self._preload_star_surfaces()
         if self._picker_font_bold is None:
-            self._picker_font_bold = pygame.font.SysFont("Arial", 14, bold=True)
-        # Star labels: 18pt bold for everything. Bold strokes survive the
-        # non-integer scaling that pygame.SCALED does on most laptop
-        # screens, where 1px strokes in regular weight get rounded away
-        # (e.g. the left leg of 'n' or the curve of '(' would vanish).
+            self._picker_font_bold = get_font(14, bold=True)
+        # Star labels: regular weight by default, bold reserved for
+        # emphasis (owned systems, selection, panel titles).
         if self._label_font is None:
-            self._label_font = pygame.font.SysFont("Arial", 18, bold=True)
+            self._label_font = get_font(18)
         if self._label_font_bold is None:
-            self._label_font_bold = pygame.font.SysFont("Arial", 18, bold=True)
+            self._label_font_bold = get_font(18, bold=True)
 
     def update(self, dt):
         # A decided victory/defeat trumps everything else.

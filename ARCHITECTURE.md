@@ -216,6 +216,35 @@ four list/info panels), `ui_bar.py`, `tooltips.py`, `palette.py`,
 
 ---
 
+## Display scaling
+
+The game renders **1:1 at the panel's native resolution** and scales the
+interface, rather than drawing a fixed 1200x800 canvas and letting pygame
+stretch it. The old approach needed a fractional stretch on every real
+laptop panel (1.35x at 1080p, 1.8x at 1440p, 2.25x at 2880x1800), which
+resampled every glyph and every hairline into a soft smear — the reason
+every font used to be forced to `bold=True`.
+
+`ecs/ui_scale.py` owns this:
+
+| Call | Use |
+| --- | --- |
+| `s(px)` | a design-space measurement -> device pixels |
+| `line_width(px)` | a stroke width, never thinner than a hairline |
+| `get_font(size, bold=False)` | a cached, scaled font |
+
+So in UI code: **no bare pixel numbers.** Write `s(48)`, not `48`, and
+`get_font(14)`, not `pygame.font.SysFont("Arial", 14)`. Bold is for real
+emphasis now (titles, the active selection), not for legibility.
+
+**Import order matters.** Scene class bodies evaluate `s(...)` at import
+time, so the scale has to be set *before* `ecs.game` or `ecs.scenes` is
+imported. `main.py` does this deliberately — it reads the desktop size,
+calls `ui_scale.set_scale(...)`, and only then imports them. Don't hoist
+those imports back to the top of the file.
+
+---
+
 ## Tests
 
 ```bash

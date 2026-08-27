@@ -18,6 +18,7 @@ from ecs.scene import Scene
 from ecs.save_manager import (
     NUM_SLOTS, slot_info, save_to_slot, load_from_slot,
 )
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 245)
@@ -33,14 +34,14 @@ BTN_BORDER = (160, 170, 210)
 
 
 class SaveSlotScene(Scene):
-    ROW_H = 64
+    ROW_H = s(64)
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 28, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 18, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(28, bold=True)
+        self.header_font = get_font(18, bold=True)
+        self.body_font = get_font(16)
+        self.small_font = get_font(14)
 
         self.mode = "load"
         self.return_scene = "main_menu"

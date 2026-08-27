@@ -20,6 +20,7 @@ from ecs.techs import (
 )
 from ecs.db import get_connection, update_empire_tech
 from ecs.tooltips import tech_tooltip
+from ecs.ui_scale import get_font, s, line_width
 
 
 BG_COLOR = (10, 12, 24, 230)
@@ -30,20 +31,19 @@ TEXT_COLOR = (240, 240, 240)
 
 class ResearchScene(Scene):
     # Each tier slot stacks up to 3 alternative cards (MOO2 choice point).
-    TIER_H = 92            # vertical room per tier slot
-    ALT_H = 26             # each alternative inside a tier
-    ALT_GAP = 3
-    TIER_GAP = 8
-    PADDING_X = 16
-    HEADER_H = 56
+    TIER_H = s(92)            # vertical room per tier slot
+    ALT_H = s(26)             # each alternative inside a tier
+    ALT_GAP = s(3)
+    TIER_GAP = s(8)
+    PADDING_X = s(16)
+    HEADER_H = s(56)
 
     def __init__(self, game):
         super().__init__(game)
-        # Bigger + bold so the tech card text stays sharp under SCALED.
-        self.title_font = pygame.font.SysFont("Arial", 26, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 18, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.cost_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(26, bold=True)
+        self.header_font = get_font(18, bold=True)
+        self.body_font = get_font(15)
+        self.cost_font = get_font(14)
         # (tech_id, rect, available) — refreshed each draw for hit testing.
         self._tech_hits: list[tuple[str, pygame.Rect, bool]] = []
         self._close_rect = pygame.Rect(0, 0, 0, 0)
@@ -52,7 +52,7 @@ class ResearchScene(Scene):
 
     def on_enter(self):
         sw = self.game.screen_width
-        self._close_rect = pygame.Rect(sw - 100, 16, 80, 32)
+        self._close_rect = pygame.Rect(sw - s(100), s(16), s(80), s(32))
 
     # ------------------------------------------------------------------ helpers
 
@@ -122,13 +122,13 @@ class ResearchScene(Scene):
         overlay.fill(BG_COLOR)
         screen.blit(overlay, (0, 0))
 
-        screen.blit(self.title_font.render("Research", True, TITLE_COLOR), (self.PADDING_X, 12))
+        screen.blit(self.title_font.render("Research", True, TITLE_COLOR), (self.PADDING_X, s(12)))
 
         self._tech_hits = []
         tech_state = self._player_tech_state()
         if tech_state is None:
             screen.blit(self.header_font.render("No player empire.", True, HINT_COLOR),
-                        (self.PADDING_X, 60))
+                        (self.PADDING_X, s(60)))
             self._draw_close_button(screen)
             return
 
@@ -141,15 +141,15 @@ class ResearchScene(Scene):
             proj = TECHS.get(current, {})
             target_line = f"Researching: {proj.get('name', current)} ({tech_state.progress}/{proj.get('cost', '?')})"
             screen.blit(self.header_font.render(target_line, True, (220, 200, 120)),
-                        (self.PADDING_X, 48))
+                        (self.PADDING_X, s(48)))
         else:
             screen.blit(self.header_font.render(
                 "No active research — pick a tech below (one per tier; the others get locked).",
-                True, HINT_COLOR), (self.PADDING_X, 48))
+                True, HINT_COLOR), (self.PADDING_X, s(48)))
 
         col_area_w = sw - 2 * self.PADDING_X
         col_w = col_area_w // len(FIELDS)
-        top_y = self.HEADER_H + 36
+        top_y = self.HEADER_H + s(36)
 
         # Group techs by (field, tier) for stacked alternatives.
         for col, field in enumerate(FIELDS):
@@ -157,7 +157,7 @@ class ResearchScene(Scene):
             field_name = FIELD_NAMES.get(field, field.title())
             field_color = FIELD_COLORS.get(field, TEXT_COLOR)
             label = self.header_font.render(field_name, True, field_color)
-            screen.blit(label, (x + 6, top_y - 28))
+            screen.blit(label, (x + s(6), top_y - s(28)))
 
             # Find all tiers present in this field.
             tiers = sorted({t.get("tier", 1) for t in techs_in_field(field)})
@@ -165,7 +165,7 @@ class ResearchScene(Scene):
                 alts = [t for t in techs_in_field(field) if t.get("tier") == tier]
                 slot_y = top_y + (tier - 1) * (self.TIER_H + self.TIER_GAP)
                 self._draw_tier_slot(
-                    screen, x + 2, slot_y, col_w - 6, alts,
+                    screen, x + s(2), slot_y, col_w - s(6), alts,
                     tech_state, unlocked, locked, current, field_color,
                 )
 
@@ -175,7 +175,7 @@ class ResearchScene(Scene):
             "Click an alternative to research it. Completing one locks the others (steal them later).   Esc returns.",
             True, HINT_COLOR,
         )
-        screen.blit(hint, (self.PADDING_X, sh - hint.get_height() - 10))
+        screen.blit(hint, (self.PADDING_X, sh - hint.get_height() - s(10)))
 
     def _draw_tier_slot(self, screen, x, y, w, alts, tech_state, unlocked,
                         locked, current, field_color):
@@ -214,11 +214,12 @@ class ResearchScene(Scene):
             fill, border, name_color = (22, 24, 36), (70, 70, 90), (130, 130, 150)
 
         pygame.draw.rect(screen, fill, rect)
-        pygame.draw.rect(screen, border, rect, 2 if is_current else 1)
+        pygame.draw.rect(screen, border, rect,
+                         line_width(2) if is_current else line_width())
 
         name = tech["name"] + (" *" if is_stub else "")
         name_surf = self.cost_font.render(name, True, name_color)
-        screen.blit(name_surf, (rect.x + 5, rect.y + 3))
+        screen.blit(name_surf, (rect.x + s(5), rect.y + s(3)))
 
         # Status line at bottom-right of the small card.
         if is_unlocked:
@@ -232,12 +233,12 @@ class ResearchScene(Scene):
         else:
             status, sc = "—", (130, 130, 150)
         status_surf = self.cost_font.render(status, True, sc)
-        screen.blit(status_surf, status_surf.get_rect(midright=(rect.right - 6, rect.centery)))
+        screen.blit(status_surf, status_surf.get_rect(midright=(rect.right - s(6), rect.centery)))
 
         self._tech_hits.append((tech_id, rect, clickable))
 
     def _draw_close_button(self, screen):
         pygame.draw.rect(screen, (150, 0, 0), self._close_rect)
-        pygame.draw.rect(screen, (240, 240, 240), self._close_rect, 1)
+        pygame.draw.rect(screen, (240, 240, 240), self._close_rect, line_width())
         label = self.body_font.render("Close", True, (240, 240, 240))
         screen.blit(label, label.get_rect(center=self._close_rect.center))

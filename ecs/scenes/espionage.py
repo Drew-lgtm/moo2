@@ -20,6 +20,7 @@ from ecs.techs import (
     empire_spy_offense, empire_spy_defense, empire_has_stealth, empire_has_mind_scan,
 )
 from ecs.db import get_connection, update_empire_economy
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -36,14 +37,14 @@ BAD_COLOR = (240, 130, 130)
 class EspionageScene(Scene):
     # Five missions now share a row; height bumped so the steppers can
     # wrap onto two short rows under the empire name.
-    ROW_H = 86
+    ROW_H = s(86)
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(17, bold=True)
+        self.body_font = get_font(15)
+        self.small_font = get_font(13)
 
         self.banner: str = ""
         self.banner_color = HINT_COLOR

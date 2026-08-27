@@ -41,9 +41,14 @@ colonies grow and produce, fleets arrive, battles happen, events fire.
 | `T` | — | End turn. |
 | `F1` | Help | Quick reference, over whatever screen you're on. |
 | `Esc` | — | Back / pause menu. |
+| `F11` | — | Toggle fullscreen / windowed. |
 
 **Right-click almost anything** for a tooltip explaining it. Panels
 scroll with the mouse wheel, `PgUp`/`PgDn`, `Home`/`End`.
+
+The game opens fullscreen at your screen's own resolution and sizes the
+interface to match, so text stays sharp on a small laptop panel and
+readable on a large one.
 
 ---
 

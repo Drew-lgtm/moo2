@@ -30,6 +30,7 @@ from ecs.designs import (
     design_project_id, design_project_spec, parse_design_project,
 )
 from ecs.db import get_connection, update_planet_build, save_planet_build_queue
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -46,18 +47,18 @@ SELECTED_RING = (255, 230, 120)
 
 
 class BuildScene(Scene):
-    HEADER_H = 56
-    SEARCH_H = 32
-    TAB_H = 30
-    ROW_H = 56
+    HEADER_H = s(56)
+    SEARCH_H = s(32)
+    TAB_H = s(30)
+    ROW_H = s(56)
     LEFT_PANEL_W_FRAC = 0.62  # left list takes ~62% of width
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(17, bold=True)
+        self.body_font = get_font(15)
+        self.small_font = get_font(13)
 
         # State.
         self._planet_entity: int | None = None
@@ -451,7 +452,7 @@ class BuildScene(Scene):
         bottom_margin = 60
         return pygame.Rect(24, top, left_w - 48, sh - top - bottom_margin)
 
-    SUBHEADER_H = 28
+    SUBHEADER_H = s(28)
 
     def _draw_list(self, screen, build_state):
         area = self._list_area()

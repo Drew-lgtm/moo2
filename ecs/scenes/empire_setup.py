@@ -22,6 +22,7 @@ from ecs.races import (
     trait_cost_total,
 )
 from assets.loader import load_image, find_race_portrait
+from ecs.ui_scale import get_font, s
 
 
 TITLE_COLOR = (255, 230, 120)
@@ -49,28 +50,25 @@ class EmpireSetupScene(Scene):
     NUM_EMPIRES_DEFAULT = 4
     PICKER_BTN = (28, 28)
     DIFFICULTY_BTN_SIZE = (100, 28)
-    DIFFICULTY_BTN_GAP = 8
+    DIFFICULTY_BTN_GAP = s(8)
     AGE_BTN_SIZE = (100, 28)
-    AGE_BTN_GAP = 8
+    AGE_BTN_GAP = s(8)
 
     # Right-side trait picker panel.
-    TRAIT_PANEL_X = 560
-    TRAIT_PANEL_WIDTH = 600
-    TRAIT_ROW_HEIGHT = 26
+    TRAIT_PANEL_X = s(560)
+    TRAIT_PANEL_WIDTH = s(600)
+    TRAIT_ROW_HEIGHT = s(26)
     TRAIT_BTN = (22, 22)
     # Canonical cap lives in ecs.races so mutation and setup agree.
     from ecs.races import TRAIT_MAX_STACK
 
     def __init__(self, game):
         super().__init__(game)
-        # Bumped sizes a couple steps so 1-px stroke widths survive
-        # SCALED's non-integer scaling on laptop displays. Bold + larger
-        # is the same fix applied to galaxy star labels.
-        self.title_font = pygame.font.SysFont("Arial", 30, bold=True)
-        self.label_font = pygame.font.SysFont("Arial", 18, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.button_font = pygame.font.SysFont("Arial", 20, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(30, bold=True)
+        self.label_font = get_font(18)
+        self.body_font = get_font(16)
+        self.button_font = get_font(20)
+        self.small_font = get_font(14)
 
         self.colors: list[str] = list(EMPIRE_COLOR_RGB.keys())
         # Curated catalog + a Custom slot at the end.

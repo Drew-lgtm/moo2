@@ -40,6 +40,7 @@ from ecs.tactical import (
     hex_to_pixel, pixel_to_hex, hex_distance,
     ai_take_turn,
 )
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (6, 8, 18)
@@ -76,10 +77,10 @@ LOG_H = 220
 class TacticalScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 12, bold=True)
+        self.title_font = get_font(22, bold=True)
+        self.header_font = get_font(16, bold=True)
+        self.body_font = get_font(14)
+        self.small_font = get_font(12)
 
         self.battle: TacticalBattle | None = None
         self.selected: TacticalShip | None = None

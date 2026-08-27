@@ -16,6 +16,7 @@ from ecs.scene import Scene
 from ecs.components import Empire, Name
 from ecs.palette import empire_color
 from ecs.ships import SHIPS
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (8, 10, 22, 245)
@@ -31,10 +32,10 @@ BTN_BORDER = (160, 170, 210)
 class CombatReportScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 30, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 20, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(30, bold=True)
+        self.header_font = get_font(20, bold=True)
+        self.body_font = get_font(16)
+        self.small_font = get_font(14)
         self.reports: list = []
         self.index = 0
         self._buttons: list[tuple[str, pygame.Rect]] = []

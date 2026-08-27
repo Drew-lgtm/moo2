@@ -10,10 +10,11 @@ height.
 from __future__ import annotations
 
 import pygame
+from ecs.ui_scale import get_font, s
 
 
 class BottomUIBar:
-    BAR_HEIGHT = 56
+    BAR_HEIGHT = s(56)
 
     BG_COLOR        = (18, 20, 32)
     SEPARATOR_COLOR = (90, 100, 140)
@@ -43,7 +44,7 @@ class BottomUIBar:
             0, screen_height - self.BAR_HEIGHT,
             screen_width, self.BAR_HEIGHT,
         )
-        self.font = pygame.font.SysFont("Arial", 18, bold=True)
+        self.font = get_font(18)
 
         button_width = screen_width // len(self.BUTTON_NAMES)
         self.buttons: list[UIButton] = []

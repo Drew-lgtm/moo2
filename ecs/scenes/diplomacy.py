@@ -24,6 +24,7 @@ from ecs.diplomacy import (
 )
 from ecs.techs import TECHS
 from ecs.db import get_connection, update_empire_economy, insert_empire_tech
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -50,7 +51,7 @@ LEVEL_COLOR = {
 
 
 class DiplomacyScene(Scene):
-    ROW_H = 48
+    ROW_H = s(48)
     LEFT_W_FRAC = 0.42
 
     # Treaties the player can propose, in display order.
@@ -58,10 +59,10 @@ class DiplomacyScene(Scene):
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(17, bold=True)
+        self.body_font = get_font(15)
+        self.small_font = get_font(13)
 
         self.selected_empire_id: int | None = None
         self.banner: str = ""

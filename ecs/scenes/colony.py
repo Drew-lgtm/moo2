@@ -30,6 +30,7 @@ from ecs.autobuild import cycle_profile, profile_label
 from ecs.db import (
     get_connection, update_planet_workers, update_planet_autobuild,
 )
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (10, 12, 24, 230)
@@ -46,10 +47,10 @@ class ColonyScene(Scene):
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
-        self.glyph_font = pygame.font.SysFont("Arial", 18, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(16, bold=True)
+        self.body_font = get_font(14)
+        self.glyph_font = get_font(18)
 
         # Hit rects rebuilt on layout.
         self._worker_widgets: list[tuple] = []  # (role, minus, plus)

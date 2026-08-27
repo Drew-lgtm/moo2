@@ -1,5 +1,6 @@
 """Tiny keyboard/mouse menu widget used by the main and pause screens."""
 import pygame
+from ecs.ui_scale import get_font
 
 class Menu:
     def __init__(self, screen, options, title=""):
@@ -7,7 +8,7 @@ class Menu:
         self.options = options
         self.selected_index = 0
         self.title = title
-        self.font = pygame.font.SysFont("Arial", 24, bold=True)
+        self.font = get_font(24, bold=True)
 
 
     def draw(self):

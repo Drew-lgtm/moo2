@@ -20,6 +20,7 @@ A left-click, scene change, or Esc hides the tooltip (handled in
 from __future__ import annotations
 
 import pygame
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (20, 24, 40, 235)
@@ -30,8 +31,8 @@ HINT_COLOR = (180, 190, 210)
 
 
 class Tooltip:
-    PAD_X = 10
-    PAD_Y = 8
+    PAD_X = s(10)
+    PAD_Y = s(8)
     LINE_GAP = 2
 
     def __init__(self):
@@ -54,8 +55,8 @@ class Tooltip:
 
     def _fonts(self):
         if self._title_font is None:
-            self._title_font = pygame.font.SysFont("Arial", 15, bold=True)
-            self._body_font = pygame.font.SysFont("Arial", 13, bold=True)
+            self._title_font = get_font(15, bold=True)
+            self._body_font = get_font(13)
         return self._title_font, self._body_font
 
     def draw(self, screen):

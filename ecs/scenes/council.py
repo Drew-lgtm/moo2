@@ -23,6 +23,7 @@ from ecs.scene import Scene
 from ecs.components import Empire
 from ecs.palette import empire_color
 from ecs.council import VICTORY_FRACTION, finalize, defy_emperor
+from ecs.ui_scale import get_font
 
 
 BG_COLOR = (8, 10, 22, 245)
@@ -38,10 +39,10 @@ BTN_BORDER = (160, 170, 210)
 class CouncilScene(Scene):
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 34, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(34, bold=True)
+        self.header_font = get_font(22, bold=True)
+        self.body_font = get_font(17)
+        self.small_font = get_font(14)
         self.result: dict | None = None
         self.phase: str = "result"   # "vote" | "result"
         self._buttons: list[tuple[str, object, pygame.Rect]] = []

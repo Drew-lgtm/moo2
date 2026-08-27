@@ -8,39 +8,51 @@ the main menu. Scene names used here are the same strings passed to
 """
 import pygame
 
+from ecs import ui_scale
 from ecs.save_manager import init_save_slots
-from ecs.game import Game
-from ecs.scenes import (
-    HelpScene,
-    MainMenuScene,
-    GalaxyScene,
-    SystemViewScene,
-    ColonyScene,
-    BuildScene,
-    ShipDesignerScene,
-    ResearchScene,
-    DiplomacyScene,
-    CouncilScene,
-    CombatReportScene,
-    CombatDecisionScene,
-    TacticalScene,
-    IdleColoniesScene,
-    GameOverScene,
-    SaveSlotScene,
-    PauseScene,
-    EmpireSetupScene,
-    EspionageScene,
-    ColoniesScene,
-    PlanetsScene,
-    LeadersScene,
-    RacesScene,
-    InfoScene,
-)
 
 
 def main():
     pygame.init()
     init_save_slots()
+
+    # Decide the UI scale from the real panel BEFORE importing the scenes:
+    # their class bodies bake row heights and bar sizes through
+    # ``ui_scale.s()``, so the scale has to be known first.
+    try:
+        _w, _h = pygame.display.get_desktop_sizes()[0]
+    except (pygame.error, IndexError, AttributeError):
+        _w, _h = ui_scale.DESIGN_WIDTH, ui_scale.DESIGN_HEIGHT
+    ui_scale.set_scale(ui_scale.detect_scale(_w, _h))
+
+    from ecs.game import Game
+    from ecs.scenes import (
+        HelpScene,
+        MainMenuScene,
+        GalaxyScene,
+        SystemViewScene,
+        ColonyScene,
+        BuildScene,
+        ShipDesignerScene,
+        ResearchScene,
+        DiplomacyScene,
+        CouncilScene,
+        CombatReportScene,
+        CombatDecisionScene,
+        TacticalScene,
+        IdleColoniesScene,
+        GameOverScene,
+        SaveSlotScene,
+        PauseScene,
+        EmpireSetupScene,
+        EspionageScene,
+        ColoniesScene,
+        PlanetsScene,
+        LeadersScene,
+        RacesScene,
+        InfoScene,
+    )
+
 
     game = Game(screen_width=1200, screen_height=800, num_stars=40)
     game.scenes.register("main_menu", MainMenuScene(game))

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pygame
 
+from ecs import ui_scale
+
 from ecs.entity_manager import EntityManager
 from ecs.component_manager import ComponentManager
 from ecs.galaxy_generator import GalaxyGenerator
@@ -37,6 +39,7 @@ from ecs.monsters import (
     monster_tick as _monster_tick,
 )
 from assets.loader import load_random_background
+from ecs.ui_scale import get_font
 
 
 class Game:
@@ -45,19 +48,29 @@ class Game:
         self.screen_height = screen_height
         self.num_stars = num_stars
 
-        # Start fullscreen at the game's logical resolution; SCALED makes
-        # pygame stretch the 1200x800 content to fill whatever physical
-        # display the user has. F11 toggles to windowed mode at runtime.
+        # Render 1:1 at the panel's native resolution. The old approach
+        # drew a fixed 1200x800 canvas and let pygame stretch it, but that
+        # stretch is fractional on every common laptop panel (1.35x at
+        # 1080p, 2.25x at 2880x1800), which resampled every glyph and
+        # hairline into a grey smear. Native + a UI scale keeps text the
+        # same physical size while landing every stroke on a real pixel.
+        try:
+            native_w, native_h = pygame.display.get_desktop_sizes()[0]
+        except (pygame.error, IndexError, AttributeError):
+            native_w, native_h = screen_width, screen_height
+        if native_w >= 800 and native_h >= 600:
+            screen_width, screen_height = native_w, native_h
         self.screen = pygame.display.set_mode(
-            (screen_width, screen_height),
-            pygame.SCALED | pygame.FULLSCREEN,
+            (screen_width, screen_height), pygame.FULLSCREEN,
         )
+        # Must happen before any scene builds its fonts.
+        ui_scale.set_scale(ui_scale.detect_scale(screen_width, screen_height))
+        self.screen_width = screen_width
+        self.screen_height = screen_height
         pygame.display.set_caption("Master Of Galaxy")
         self.clock = pygame.time.Clock()
-        # Bold weight everywhere so 1px strokes survive non-integer
-        # display scaling under pygame.SCALED. See galaxy labels for the
-        # same fix.
-        self.font = pygame.font.SysFont("Arial", 14, bold=True)
+        # Default body font, scaled to the panel (see ecs/ui_scale.py).
+        self.font = get_font(14)
 
         # World state — populated by start_new_game / load_game.
         self.entity_mgr = EntityManager()
@@ -120,7 +133,7 @@ class Game:
 
     # Galaxy view reserves this many pixels at the top for the slim
     # status strip (empire summary + per-turn stats + turn).
-    GALAXY_TOP_BAR_HEIGHT = 36
+    GALAXY_TOP_BAR_HEIGHT = ui_scale.s(36)
     # Legacy alias — some saves/scenes may still reference the old
     # right-panel constant. Kept at 0 so any consumer treats the right
     # edge as free space now.
@@ -436,8 +449,8 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
-                    # F11 toggles between the SCALED window and fullscreen at
-                    # the same logical resolution.
+                    # F11 drops to a window; both modes render 1:1, so
+                    # nothing is resampled either way.
                     pygame.display.toggle_fullscreen()
                 elif self._handle_tooltip(event):
                     pass  # consumed: right-click inspect or auto-hide

@@ -16,6 +16,7 @@ from ecs.scene import Scene
 from ecs.components import Empire, Owner, Planet, Orbiting, Name, Ship, ShipOwner
 from ecs.leaders import MAX_LEADERS_PER_EMPIRE, WARSHIP_CLASSES
 from ecs.db import get_connection, update_empire_economy
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -33,14 +34,14 @@ SHIP_TINT = (240, 180, 140)
 
 
 class LeadersScene(Scene):
-    ROW_H = 40
+    ROW_H = s(40)
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 17, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 15, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self.title_font = get_font(24, bold=True)
+        self.header_font = get_font(17, bold=True)
+        self.body_font = get_font(15)
+        self.small_font = get_font(13)
 
         self.banner = ""
         self.banner_color = HINT_COLOR

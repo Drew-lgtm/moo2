@@ -24,6 +24,7 @@ from ecs.government import (
     colony_morale, morale_output_mult,
 )
 from assets.loader import load_image, find_race_portrait
+from ecs.ui_scale import get_font, s
 
 
 PANEL_BG = (10, 12, 24, 220)
@@ -49,15 +50,15 @@ class PanelScene(Scene):
 
     title = "Panel"
     SCROLL_STEP = 40
-    SCROLLBAR_WIDTH = 6
+    SCROLLBAR_WIDTH = s(6)
     SCROLLBAR_PADDING = 2
     SCROLLBAR_TRACK = (40, 40, 60)
     SCROLLBAR_THUMB = (180, 180, 220)
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(22, bold=True)
+        self.body_font = get_font(14)
         self.scroll_offset = 0
         self._content_height = 0
         self._body_rect_cache: pygame.Rect | None = None
@@ -187,15 +188,15 @@ class ColoniesScene(PanelScene):
     title = "Colonies"
 
     PORTRAIT_SIZE = (40, 40)
-    ROW_HEIGHT = 48
-    HEADER_HEIGHT = 24
+    ROW_HEIGHT = s(48)
+    HEADER_HEIGHT = s(24)
 
     # Column x offsets relative to the body rect.
     COL_SWATCH = 0
     COL_PORTRAIT = 20
     COL_STAR = 68
     COL_PLANET = 190
-    COL_SIZE = 310
+    COL_SIZE = s(310)
     COL_POP = 376
     COL_FWS = 440        # F/W/S worker split
     COL_FOOD = 530
@@ -207,7 +208,7 @@ class ColoniesScene(PanelScene):
     def __init__(self, game):
         super().__init__(game)
         self._portraits: dict[str, pygame.Surface] = {}
-        self._header_font = pygame.font.SysFont("Arial", 13, bold=True)
+        self._header_font = get_font(13, bold=True)
 
     def on_enter(self):
         super().on_enter()
@@ -336,11 +337,11 @@ class ColoniesScene(PanelScene):
 class PlanetsScene(PanelScene):
     title = "Planets"
 
-    ROW_HEIGHT = 24
-    GROUP_HEADER_HEIGHT = 28
+    ROW_HEIGHT = s(24)
+    GROUP_HEADER_HEIGHT = s(28)
 
     # Column offsets relative to the body rect's left edge.
-    COL_INDENT = 16
+    COL_INDENT = s(16)
     COL_DOT = COL_INDENT
     COL_TYPE = COL_INDENT + 18
     COL_SIZE = COL_INDENT + 160
@@ -351,7 +352,7 @@ class PlanetsScene(PanelScene):
 
     def __init__(self, game):
         super().__init__(game)
-        self._group_font = pygame.font.SysFont("Arial", 16, bold=True)
+        self._group_font = get_font(16)
 
     def draw_content(self, screen, rect, font):
         cm = self.game.component_mgr
@@ -437,7 +438,7 @@ class RacesScene(PanelScene):
     def __init__(self, game):
         super().__init__(game)
         self._thumbs: list[tuple[str, pygame.Surface]] = []
-        self._section_font = pygame.font.SysFont("Arial", 16, bold=True)
+        self._section_font = get_font(16)
         # Evolutionary Mutation UI: pick one of your traits, then pick its
         # replacement (or shed it).
         self._mut_drop: str | None = None
@@ -595,11 +596,11 @@ class InfoScene(PanelScene):
     title = "Info"
 
     SECTION_HEADER_COLOR = (255, 230, 120)
-    TECH_ROW_HEIGHT = 22
+    TECH_ROW_HEIGHT = s(22)
 
     def __init__(self, game):
         super().__init__(game)
-        self._section_font = pygame.font.SysFont("Arial", 16, bold=True)
+        self._section_font = get_font(16)
         # (tech_id, rect, available) recorded per draw so handle_event can hit-test.
         self._tech_row_hits: list[tuple[str, pygame.Rect, bool]] = []
         # (government_key, rect) rows for switching government.

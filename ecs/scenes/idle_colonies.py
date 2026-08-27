@@ -15,6 +15,7 @@ import pygame
 from ecs.scene import Scene
 from ecs.components import Planet, Orbiting, Name
 from ecs.palette import planet_color
+from ecs.ui_scale import get_font, s
 
 
 BG_COLOR = (10, 12, 24, 235)
@@ -28,14 +29,14 @@ BTN_BORDER = (160, 170, 210)
 
 
 class IdleColoniesScene(Scene):
-    ROW_H = 44
+    ROW_H = s(44)
 
     def __init__(self, game):
         super().__init__(game)
-        self.title_font = pygame.font.SysFont("Arial", 26, bold=True)
-        self.header_font = pygame.font.SysFont("Arial", 18, bold=True)
-        self.body_font = pygame.font.SysFont("Arial", 16, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 14, bold=True)
+        self.title_font = get_font(26, bold=True)
+        self.header_font = get_font(18, bold=True)
+        self.body_font = get_font(16)
+        self.small_font = get_font(14)
         self._row_hits: list[tuple[int, pygame.Rect]] = []
         self._dismiss_rect = pygame.Rect(0, 0, 0, 0)
 
